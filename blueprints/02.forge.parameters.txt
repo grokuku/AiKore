@@ -1,0 +1,16 @@
+# Web + Network
+--listen
+--port 9000
+
+# options
+--enable-insecure-extension-access
+--xformers
+--api
+--cuda-malloc
+--cuda-stream
+
+#--no-half-vae
+#--disable-nan-check
+#--update-all-extensions
+#--reinstall-xformers
+#--reinstall-torch  

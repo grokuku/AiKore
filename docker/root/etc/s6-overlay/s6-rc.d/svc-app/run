@@ -1,0 +1,7 @@
+#!/usr/bin/with-contenv bash
+
+# This service is now solely responsible for running the AiKore application.
+# The KasmVNC startup logic has been removed as it's not needed for a backend service.
+
+echo "--- Preparing to launch AiKore application ---"
+exec s6-setuidgid abc /opt/sd-install/entry.sh

@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Set environment variables
+export PATH="/home/abc/miniconda3/bin:$PATH"
+
+# Activate the base conda environment which will host AiKore
+source activate base
+
+echo "--- Installing/Updating AiKore dependencies ---"
+pip install --upgrade pip
+pip install -r /opt/sd-install/aikore/requirements.txt
+
+echo "--- Starting AiKore Backend ---"
+# Change to the application's root directory
+cd /opt/sd-install
+
+# Launch the FastAPI application using uvicorn on an internal port
+exec uvicorn aikore.main:app --host 0.0.0.0 --port 8000

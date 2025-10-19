@@ -1,0 +1,5 @@
+#### file aikore/requirements.txt
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic

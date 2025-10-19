@@ -1,0 +1,23 @@
+#!/usr/bin/with-contenv bash
+
+# This script runs as root and watches for a flag file created by the AiKore app.
+# When the flag is found, it reloads NGINX and removes the flag.
+
+FLAG_FILE="/run/aikore/nginx_reload.flag"
+
+echo "Starting NGINX reloader service..."
+
+# Loop indefinitely
+while true; do
+    # Check if the flag file exists
+    if [ -f "$FLAG_FILE" ]; then
+    echo "Reload flag detected. Reloading NGINX..."
+    # Use the standard command, which works reliably as root
+    nginx -s reload
+    # Remove the flag file to reset the state
+    rm -f "$FLAG_FILE"
+    echo "NGINX reloaded and flag removed."
+    fi
+    # Wait for a short interval before checking again
+    sleep 1
+done

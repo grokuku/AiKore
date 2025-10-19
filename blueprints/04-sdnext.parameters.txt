@@ -1,0 +1,8 @@
+# Web + Network
+--listen
+--port=9000
+
+# SD-Next options
+--insecure
+--medvram
+--allow-code

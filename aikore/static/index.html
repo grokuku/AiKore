@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AiKore Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>AiKore Instance Management</h1>
+        <button class="add-new-btn">Add New Instance</button>
+        <table class="instances-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Base Blueprint</th>
+                    <th>GPU IDs</th>
+                    <th>Autostart</th>
+                    <th>Persistent UI</th>
+                    <th class="status-column">Status</th>
+                    <th>Port</th>
+                    <th class="actions-column">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="instances-tbody">
+                <!-- Instance rows will be dynamically inserted here by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- The Add New Instance Modal is removed as per requirements -->
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
