@@ -1,5 +1,5 @@
 #!/bin/bash
-source /functions.sh
+source /opt/sd-install/functions.sh
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
@@ -61,7 +61,7 @@ fi
 # Activate the environment and install base packages
 source activate "${INSTANCE_CONF_DIR}/env"
 conda install -n base conda-libmamba-solver -y
-conda install -c python=3.12 pip --solver=libmamba -y 
+conda install -c conda-forge python=3.12 pip --solver=libmamba -y # CORRECTED SYNTAX
 pip install --upgrade pip
 pip install torch==2.8.0 torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu128
 conda install -c conda-forge git gxx libcurand --solver=libmamba -y
@@ -99,18 +99,18 @@ if [ "$active_clean" = "1" ]; then
 fi
 
 # Symlink shared models folders into the ComfyUI directory
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "checkpoints" "${BASE_DIR}/models/stable-diffusion"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "hypernetworks" "${BASE_DIR}/models/hypernetwork"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "loras" "${BASE_DIR}/models/lora"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "vae" "${BASE_DIR}/models/vae"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "vae_approx" "${BASE_DIR}/models/vae_approx"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "embeddings" "${BASE_DIR}/models/embeddings"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "upscale_models" "${BASE_DIR}/models/upscale"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "clip_vision" "${BASE_DIR}/models/clip_vision"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "clip" "${BASE_DIR}/models/clip"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "controlnet" "${BASE_DIR}/models/controlnet"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "t5" "${BASE_DIR}/models/t5"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "unet" "${BASE_DIR}/models/unet"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "checkpoints" "/config/models/stable-diffusion"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "hypernetworks" "/config/models/hypernetwork"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "loras" "/config/models/lora"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "vae" "/config/models/vae"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "vae_approx" "/config/models/vae_approx"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "embeddings" "/config/models/embeddings"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "upscale_models" "/config/models/upscale"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "clip_vision" "/config/models/clip_vision"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "clip" "/config/models/clip"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "controlnet" "/config/models/controlnet"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "t5" "/config/models/t5"
+sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "unet" "/config/models/unet"
 
 # Symlink the output directory to the instance-specific output folder
 # This ensures ComfyUI writes to /outputs/<instance_name>/ by default
@@ -123,7 +123,8 @@ if [ -n "$WEBUI_PORT" ]; then
     CMD+=" --port ${WEBUI_PORT}"
 fi
 while IFS= read -r param; do
-    if [[ $param != \#* ]]; then
+    # Only add parameter if the line is not empty and not a comment
+    if [[ -n "$param" && $param != \#* ]]; then
         CMD+=" ${param}"
     fi
 done < "${INSTANCE_CONF_DIR}/parameters.txt"

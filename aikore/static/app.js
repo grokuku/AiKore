@@ -3,6 +3,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const addInstanceBtn = document.querySelector('.add-new-btn');
     let availableBlueprints = []; // Store blueprints globally
 
+    // Tools/Logs pane elements
+    const toolsPaneTitle = document.getElementById('tools-pane-title');
+    const toolsPaneContent = document.getElementById('tools-pane-content');
+    const toolsPaneTerminal = document.querySelector('.terminal-style'); // Get the parent for scroll checks
+
+    // State for live logs
+    let activeLogInstanceId = null;
+    let activeLogInterval = null;
+    let cachedLogContent = ""; // Cache for smart log updates
+
     // --- Helper function to fetch blueprints and populate the global array ---
     async function fetchAndStoreBlueprints() {
         try {
@@ -137,6 +147,16 @@ document.addEventListener('DOMContentLoaded', () => {
         stopButton.textContent = 'Stop';
         stopButton.disabled = !isRunning || isNew;
         actionsCell.appendChild(stopButton);
+
+        // Logs button
+        const logsButton = document.createElement('button');
+        logsButton.classList.add('action-btn');
+        logsButton.dataset.action = 'logs';
+        logsButton.dataset.id = instance.id;
+        logsButton.dataset.name = instance.name; // Store name for title
+        logsButton.textContent = 'Logs';
+        logsButton.disabled = isNew; // Disabled for new unsaved instances
+        actionsCell.appendChild(logsButton);
 
         // Save/Update button
         const saveUpdateButton = document.createElement('button');
@@ -336,6 +356,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // For now, just refresh to reset button state
             // fetchAndRenderInstances();
         } else if (action === 'delete') {
+            if (activeLogInstanceId === instanceId) {
+                clearInterval(activeLogInterval);
+                activeLogInstanceId = null;
+                toolsPaneTitle.textContent = 'Tools / Logs';
+                toolsPaneContent.textContent = '> Console output will be displayed here...';
+            }
             if (!confirm('Are you sure you want to delete this instance?')) return;
             try {
                 const response = await fetch(`/api/instances/${instanceId}`, { method: 'DELETE' });
@@ -348,12 +374,147 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('Error deleting instance:', error);
                 alert(`Error: ${error.message}`);
             }
+        } else if (action === 'logs') {
+            const instanceName = target.dataset.name;
+            
+            // Clear any previous interval and reset state
+            clearInterval(activeLogInterval);
+            cachedLogContent = ""; // IMPORTANT: Reset cache for the new instance
+            activeLogInstanceId = instanceId;
+
+            toolsPaneTitle.textContent = `Logs: ${instanceName}`;
+            toolsPaneContent.textContent = 'Loading logs...';
+
+            const fetchLogs = async () => {
+                if (!activeLogInstanceId) return;
+
+                try {
+                    const response = await fetch(`/api/instances/${activeLogInstanceId}/logs`);
+                    if (!response.ok) {
+                        throw new Error('Instance stopped or logs unavailable.');
+                    }
+                    const data = await response.json();
+
+                    // --- Smart Update Logic ---
+                    const selection = window.getSelection();
+                    const hasSelectionInLogs = selection.toString().length > 0 && toolsPaneContent.contains(selection.anchorNode);
+                    
+                    if (hasSelectionInLogs) return; // Skip update if user is selecting text
+
+                    const isScrolledToBottom = toolsPaneTerminal.scrollHeight - toolsPaneTerminal.scrollTop <= toolsPaneTerminal.clientHeight + 2; // +2 for buffer
+                    
+                    if (data.logs.startsWith(cachedLogContent)) {
+                        // Append only new content
+                        const newContent = data.logs.substring(cachedLogContent.length);
+                        if (newContent) {
+                            toolsPaneContent.appendChild(document.createTextNode(newContent));
+                        }
+                    } else {
+                        // Full refresh if logs were cleared or are different
+                        toolsPaneContent.textContent = data.logs;
+                    }
+                    cachedLogContent = data.logs; // Update cache
+
+                    if (isScrolledToBottom) {
+                        toolsPaneTerminal.scrollTop = toolsPaneTerminal.scrollHeight;
+                    }
+
+                } catch (error) {
+                    console.warn('Could not refresh logs:', error.message);
+                    clearInterval(activeLogInterval);
+                    activeLogInstanceId = null;
+                }
+            };
+
+            fetchLogs(); // Initial fetch
+            activeLogInterval = setInterval(fetchLogs, 500); // Poll every 500ms
+
         } else if (action === 'open') {
             // Handled by the <a> tag href directly
-            // No specific JS action needed here as long as href is set correctly
         }
     });
 
     // --- Initial Load ---
     fetchAndStoreBlueprints().then(fetchAndRenderInstances);
+
+    // --- System Monitoring ---
+    const cpuProgress = document.getElementById('cpu-progress');
+    const cpuPercentText = document.getElementById('cpu-percent-text');
+    const ramProgress = document.getElementById('ram-progress');
+    const ramUsageText = document.getElementById('ram-usage-text');
+    const gpuStatsContainer = document.getElementById('gpu-stats-container');
+    const gpuStatTemplate = document.getElementById('gpu-stat-template');
+
+    function formatBytes(bytes, decimals = 2) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    }
+
+    async function updateSystemStats() {
+        try {
+            const response = await fetch('/api/system/stats');
+            if (!response.ok) throw new Error('Failed to fetch system stats');
+            const stats = await response.json();
+
+            // Update CPU
+            cpuProgress.style.width = `${stats.cpu_percent}%`;
+            cpuPercentText.textContent = `${stats.cpu_percent.toFixed(1)}%`;
+
+            // Update RAM
+            ramProgress.style.width = `${stats.ram.percent}%`;
+            ramUsageText.textContent = `${formatBytes(stats.ram.used)} / ${formatBytes(stats.ram.total)}`;
+
+            // Update GPUs
+            gpuStatsContainer.innerHTML = ''; // Clear previous entries
+            if (stats.gpus && stats.gpus.length > 0) {
+                stats.gpus.forEach(gpu => {
+                    const gpuStatElement = gpuStatTemplate.content.cloneNode(true);
+                    
+                    gpuStatElement.querySelector('.gpu-name').textContent = `GPU ${gpu.id}: ${gpu.name}`;
+                    
+                    const vramProgress = gpuStatElement.querySelector('.vram-progress');
+                    const vramText = gpuStatElement.querySelector('.vram-usage-text');
+                    vramProgress.style.width = `${gpu.vram.percent}%`;
+                    vramText.textContent = `${formatBytes(gpu.vram.used)} / ${formatBytes(gpu.vram.total)}`;
+
+                    const utilProgress = gpuStatElement.querySelector('.util-progress');
+                    const utilText = gpuStatElement.querySelector('.util-percent-text');
+                    utilProgress.style.width = `${gpu.utilization_percent}%`;
+                    utilText.textContent = `${gpu.utilization_percent}%`;
+
+                    gpuStatsContainer.appendChild(gpuStatElement);
+                });
+            } else {
+                gpuStatsContainer.innerHTML = '<p style="text-align: center; color: #aaa;">No NVIDIA GPUs detected.</p>';
+            }
+
+        } catch (error) {
+            console.error("Error fetching system stats:", error);
+        }
+    }
+
+    // Fetch stats immediately and then every 2 seconds
+    updateSystemStats();
+    setInterval(updateSystemStats, 2000);
+
+    // --- Initialize Split Panes ---
+    Split(['#instance-pane', '#bottom-split'], {
+        sizes: [60, 40],
+        minSize: [200, 150],
+        gutterSize: 5,
+        direction: 'vertical',
+        cursor: 'row-resize'
+    });
+
+    Split(['#tools-pane', '#monitoring-pane'], {
+        sizes: [65, 35],
+        minSize: [300, 200],
+        gutterSize: 5,
+        direction: 'horizontal',
+        cursor: 'col-resize'
+    });
 });

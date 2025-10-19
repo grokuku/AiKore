@@ -184,10 +184,8 @@
     
     3.  **Phase 3: Frontend & Basic Management (In Progress)**
         *   **Completed:** Refactored instance management to use dynamic, instance-name-based paths for configurations and outputs (`/config/instances/<name>`, `/config/outputs/<name>`). This makes blueprints truly reusable templates.
-        *   Build the frontend for the Instance Management Dashboard.
-        *   Connect the frontend to the API to display and manage instances.
-        *   Implement the `Start`/`Stop`/`Delete` functionality.
-        *   Implement the "Add New Instance" functionality.
+        *   **Completed:** Built the core frontend functionality (display, start/stop, delete, add).
+        *   **Completed:** Established the final, resizable multi-pane dashboard layout (Instance Manager, Tools/Logs, Monitoring) and applied a polished visual style to the instance table.
         *   **TODO:** Implement the `Update` functionality for existing instances.
     
     4.  **Phase 4: Advanced Features & UX (Planned)**

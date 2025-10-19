@@ -7,30 +7,107 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>AiKore Instance Management</h1>
-        <button class="add-new-btn">Add New Instance</button>
-        <table class="instances-table">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Base Blueprint</th>
-                    <th>GPU IDs</th>
-                    <th>Autostart</th>
-                    <th>Persistent UI</th>
-                    <th class="status-column">Status</th>
-                    <th>Port</th>
-                    <th class="actions-column">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="instances-tbody">
-                <!-- Instance rows will be dynamically inserted here by JavaScript -->
-            </tbody>
-        </table>
+    <div class="main-container">
+        <h1 class="main-title">AiKore</h1>
+
+        <!-- This is the PARENT for the VERTICAL split -->
+        <div id="main-split" class="split-container split-vertical">
+            
+            <!-- PANNEAU SUPÉRIEUR : INSTANCE MANAGER -->
+            <div id="instance-pane" class="pane">
+                <div class="pane-header">
+                    <h2>Instances Manager</h2>
+                    <button class="add-new-btn">Add New Instance</button>
+                </div>
+                <div class="pane-content table-container">
+                    <table class="instances-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Base Blueprint</th>
+                                <th>GPU IDs</th>
+                                <th>Autostart</th>
+                                <th>Persistent UI</th>
+                                <th class="status-column">Status</th>
+                                <th>Port</th>
+                                <th class="actions-column">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="instances-tbody">
+                            <!-- Instance rows will be dynamically inserted here by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- This is the PARENT for the HORIZONTAL split -->
+            <div id="bottom-split" class="split-container split-horizontal">
+                <!-- Colonne de gauche : Outils -->
+                <div id="tools-pane" class="pane">
+                    <div class="pane-header">
+                        <h2 id="tools-pane-title">Tools / Logs</h2>
+                    </div>
+                    <div class="pane-content terminal-style">
+                        <!-- Content like logs or script editor will go here -->
+                        <pre><code id="tools-pane-content">&gt; Console output will be displayed here...</code></pre>
+                    </div>
+                </div>
+                <!-- Colonne de droite : Monitoring -->
+                <div id="monitoring-pane" class="pane">
+                    <div class="pane-header">
+                        <h2>System Monitoring</h2>
+                    </div>
+                    <div class="pane-content" id="system-stats-container">
+                        <!-- System Stats will be dynamically inserted here -->
+                        <div class="system-stat-row">
+                            <span class="stat-label">CPU</span>
+                            <div class="progress-bar-container">
+                                <div id="cpu-progress" class="progress-bar"></div>
+                            </div>
+                            <span id="cpu-percent-text" class="stat-value">...</span>
+                        </div>
+                        <div class="system-stat-row">
+                            <span class="stat-label">RAM</span>
+                            <div class="progress-bar-container">
+                                <div id="ram-progress" class="progress-bar"></div>
+                            </div>
+                            <span id="ram-usage-text" class="stat-value">...</span>
+                        </div>
+                        <div id="gpu-stats-container">
+                            <!-- GPU stats will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- The Add New Instance Modal is removed as per requirements -->
+    <!-- Template for a single GPU display -->
+    <template id="gpu-stat-template">
+        <div class="gpu-stat">
+            <span class="gpu-name">GPU 0: NVIDIA GeForce RTX 3090</span>
+            <div class="gpu-metrics">
+                <div class="gpu-metric">
+                    <span class="stat-label">VRAM</span>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar vram-progress"></div>
+                    </div>
+                    <span class="stat-value vram-usage-text">...</span>
+                </div>
+                <div class="gpu-metric">
+                    <span class="stat-label">Util.</span>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar util-progress"></div>
+                    </div>
+                    <span class="stat-value util-percent-text">...</span>
+                </div>
+            </div>
+        </div>
+    </template>
 
+    <!-- Split.js library -->
+    <script src="https://unpkg.com/split.js/dist/split.min.js"></script>
+    <!-- Our application script -->
     <script src="/static/app.js"></script>
 </body>
 </html>

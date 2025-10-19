@@ -8,6 +8,7 @@ from ..database import crud
 from ..database.session import SessionLocal
 from ..schemas import instance as schemas
 from ..core import process_manager
+from ..core.process_manager import INSTANCES_DIR # Import the constant
 
 router = APIRouter(
     prefix="/api/instances",
@@ -88,3 +89,29 @@ def delete_instance(instance_id: int, db: Session = Depends(get_db)):
     
     crud.delete_instance(db, instance_id=instance_id)
     return {"ok": True, "detail": "Instance deleted successfully"}
+
+@router.get("/{instance_id}/logs", tags=["Instance Actions"])
+def get_instance_logs(instance_id: int, db: Session = Depends(get_db)):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    instance_conf_dir = os.path.join(INSTANCES_DIR, db_instance.name)
+    stdout_log_path = os.path.join(instance_conf_dir, "stdout.log")
+    stderr_log_path = os.path.join(instance_conf_dir, "stderr.log")
+
+    logs = []
+    if os.path.exists(stdout_log_path):
+        with open(stdout_log_path, 'r') as f:
+            logs.append("--- STDOUT ---")
+            logs.append(f.read())
+    
+    if os.path.exists(stderr_log_path):
+        with open(stderr_log_path, 'r') as f:
+            logs.append("\n--- STDERR ---")
+            logs.append(f.read())
+
+    if not logs:
+        return {"logs": "No log files found for this instance. It might have never been started."}
+
+    return {"logs": "\n".join(logs)}

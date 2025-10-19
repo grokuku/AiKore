@@ -72,9 +72,14 @@ RUN mkdir -p ${BASE_DIR}/temp ${SD_INSTALL_DIR}
 COPY --chown=abc:abc aikore/ ${SD_INSTALL_DIR}/aikore/
 COPY --chown=abc:abc blueprints/ ${SD_INSTALL_DIR}/blueprints/
 
-# Copy and set permissions for the main entry script
+# Copy application scripts
 COPY --chown=abc:abc entry.sh ${SD_INSTALL_DIR}/entry.sh
-RUN chmod +x ${SD_INSTALL_DIR}/entry.sh
+COPY --chown=abc:abc functions.sh ${SD_INSTALL_DIR}/functions.sh
+
+# --- SCRIPT CLEANUP & PERMISSIONS ---
+# Convert all copied .sh files to Unix line endings and make them executable.
+RUN find ${SD_INSTALL_DIR} -type f -name "*.sh" -print0 | xargs -0 dos2unix -- && \
+    find ${SD_INSTALL_DIR} -type f -name "*.sh" -print0 | xargs -0 chmod +x
 
 # --- User and Environment Setup ---
 # Set home directory for the application user

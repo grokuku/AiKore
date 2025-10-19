@@ -1,8 +1,8 @@
 # Web + Network
---listen
---port 9000
+# --listen and --port are now handled automatically by AiKore.
+# Do not add them here.
 
 # Directories
---output-directory /config/outputs/05-comfy-ui
 
 # Options
+

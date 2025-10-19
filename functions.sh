@@ -1,27 +1,49 @@
 #!/bin/bash
 
-#Function to move folder and replace with symlink
-sl_folder()     {
-  echo "moving folder ${1}/${2} to ${3}/${4}"
-  mkdir -p "${3}/${4}"
-  if [ -d "${1}/${2}" ]; then
-    rsync -r "${1}/${2}/" "${3}/${4}/" --verbose
-  fi
-  echo "removing folder ${1}/${2} and create symlink"
-  if [ -d "${1}/${2}" ]; then
-    rm -rf "${1}/${2}"
-  fi
-  
-  # always remove previous symlink
-  # b/c if user changed target locations current symlink will be incorrect
-  if [ -L "${1}/${2}" ]; then
-    rm "${1}/${2}"
-  fi
-  # create symlink
-  ln -s "${3}/${4}/" "${1}"
-  if [ ! -L "${1}/${2}" ]; then
-    mv "${1}/${4}" "${1}/${2}"
-  fi
+# Function to synchronize a folder to a central location and replace it with a symlink.
+# Args:
+#   $1: Parent directory for the link (e.g., /app/models)
+#   $2: Name of the link to be created (e.g., checkpoints)
+#   $3: Parent directory of the storage location (e.g., /config/models)
+#   $4: Folder name in the storage location (e.g., stable-diffusion)
+sl_folder() {
+    local link_parent_dir="$1"
+    local link_name="$2"
+    local storage_parent_dir="$3"
+    local storage_folder_name="$4"
+
+    local source_path="${link_parent_dir}/${link_name}"
+    local target_path="${storage_parent_dir}/${storage_folder_name}"
+
+    echo "--- Synchronizing and linking folder: ${link_name} ---"
+
+    # 1. Ensure the final target storage directory exists.
+    mkdir -p "${target_path}"
+
+    # 2. If the source path exists AND it's a real directory (not a symlink),
+    #    synchronize its contents to the target storage location.
+    if [ -d "${source_path}" ] && [ ! -L "${source_path}" ]; then
+        echo "Source folder '${source_path}' found. Synchronizing contents to '${target_path}'..."
+        # rsync -a preserves permissions, ownership, etc., and is generally better for this.
+        # The trailing slash on source_path is crucial to copy contents, not the folder itself.
+        rsync -a --info=progress2 "${source_path}/" "${target_path}/"
+    fi
+
+    # 3. Remove the original source path (whether it's a directory or an old symlink)
+    #    to make a clean slate for the new symlink. This is safe because we've synced.
+    if [ -e "${source_path}" ] || [ -L "${source_path}" ]; then
+        echo "Removing original path at '${source_path}' to create symlink."
+        rm -rf "${source_path}"
+    fi
+
+    # 4. Create the new, correct symbolic link.
+    #    ln -sfn [TARGET] [LINK_NAME]
+    #    -s: symbolic, -f: force (overwrite), -n: treat LINK_NAME as a normal file if it's a symlink to a dir
+    echo "Creating symlink from '${target_path}' to '${source_path}'"
+    ln -sfn "${target_path}" "${source_path}"
+
+    echo "Synchronization for '${link_name}' complete."
+    echo "------------------------------------------------"
 }
 
 clean_env()     {
@@ -97,7 +119,7 @@ sync_repo() {
             fi
         fi
         if [ -n "$remote_head_branch_name" ] && [ -z "$final_target_ref" ]; then # Si on a trouvé un nom de branche HEAD et que final_target_ref est toujours vide
-             final_target_ref="$remote_name/$remote_head_branch_name"
+                final_target_ref="$remote_name/$remote_head_branch_name"
         fi
         echo "Using default remote HEAD: $final_target_ref"
     fi
@@ -143,7 +165,7 @@ sync_repo() {
         # Il faut d'abord s'assurer que l'on peut faire un checkout de cette référence pour ne pas casser la branche actuelle si elle n'est pas la cible
         # Sauf si la cible est la branche actuelle
         if [ "$final_target_ref" != "$current_local_branch_name" ] || [ "$is_detached_head" == "true" ]; then
-             git checkout "$final_target_ref" # Ceci va passer en detached HEAD si final_target_ref est un tag/commit
+                git checkout "$final_target_ref" # Ceci va passer en detached HEAD si final_target_ref est un tag/commit
         fi
         git reset --hard "$final_target_ref" # Appliquer le reset sur la (potentiellement nouvelle) HEAD
     fi

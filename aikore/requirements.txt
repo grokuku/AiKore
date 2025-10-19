@@ -3,3 +3,7 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 pydantic
+
+# System monitoring dependencies
+psutil
+nvidia-ml-py
