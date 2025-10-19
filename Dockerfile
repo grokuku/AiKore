@@ -66,7 +66,7 @@ RUN echo '#!/bin/bash\necho "Window manager startup script disabled for AiKore."
 
 # --- Application Setup ---
 # Create application directories
-RUN mkdir -p ${BASE_DIR}/temp ${SD_INSTALL_DIR} ${BASE_DIR}/outputs
+RUN mkdir -p ${BASE_DIR}/temp ${SD_INSTALL_DIR}
 
 # Copy AiKore application and its blueprints
 COPY --chown=abc:abc aikore/ ${SD_INSTALL_DIR}/aikore/
@@ -93,7 +93,8 @@ RUN cd /tmp && \
     # Set final ownership for application folders
     chown -R abc:abc /root && \
     chown -R abc:abc ${SD_INSTALL_DIR} && \
-    chown -R abc:abc /home/abc
+    chown -R abc:abc /home/abc && \
+    chown -R abc:abc ${BASE_DIR}
 
 # Expose default ports
 EXPOSE 9000/tcp
