@@ -24,15 +24,25 @@ def create_instance(db: Session, instance: schemas.InstanceCreate):
     db.refresh(db_instance)
     return db_instance
 
-def update_instance_status(db: Session, instance_id: int, status: str, pid: int | None = None, port: int | None = None):
+def update_instance_status(
+    db: Session,
+    instance_id: int,
+    status: str,
+    pid: int | None = None,
+    port: int | None = None,
+    vnc_port: int | None = None,
+    vnc_display: int | None = None
+):
     """
-    Update the status, PID, and port of an instance.
+    Update the status, PID, port, and VNC details of an instance.
     """
     db_instance = db.query(models.Instance).filter(models.Instance.id == instance_id).first()
     if db_instance:
         db_instance.status = status
         db_instance.pid = pid
-        db_instance.port = port # <-- Update port as well
+        db_instance.port = port
+        db_instance.vnc_port = vnc_port       # <-- ADD THIS LINE
+        db_instance.vnc_display = vnc_display # <-- ADD THIS LINE
         db.commit()
         db.refresh(db_instance)
     return db_instance

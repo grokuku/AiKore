@@ -12,7 +12,9 @@ class Instance(Base):
     base_blueprint = Column(String, nullable=False)
     gpu_ids = Column(String, nullable=True)
     autostart = Column(Boolean, default=False, nullable=False)
-    persistent_mode = Column(Boolean, default=False, nullable=False) # <-- ADD THIS LINE
+    persistent_mode = Column(Boolean, default=False, nullable=False)
     status = Column(String, default="stopped", nullable=False)
     pid = Column(Integer, nullable=True)
     port = Column(Integer, nullable=True)
+    vnc_port = Column(Integer, nullable=True)    # <-- ADD THIS LINE
+    vnc_display = Column(Integer, nullable=True) # <-- ADD THIS LINE

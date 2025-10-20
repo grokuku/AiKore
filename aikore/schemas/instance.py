@@ -7,7 +7,7 @@ class InstanceBase(BaseModel):
     base_blueprint: str
     gpu_ids: str | None = None
     autostart: bool = False
-    persistent_mode: bool = False # <-- ADD THIS LINE
+    persistent_mode: bool = False # <-- VÉRIFIEZ CETTE LIGNE
 
 # --- Creation Schema ---
 # Inherits from Base and is used specifically when creating a new instance via the API.
@@ -22,6 +22,8 @@ class Instance(InstanceBase):
     status: str
     pid: int | None = None
     port: int | None = None
+    vnc_port: int | None = None
+    vnc_display: int | None = None
 
     class Config:
         # This tells Pydantic to read the data even if it is not a dict,

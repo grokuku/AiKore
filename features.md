@@ -27,13 +27,13 @@ This document tracks the progress of feature implementation based on the roadmap
 - [x] Harden `Dockerfile` to handle permissions and line endings.
 - [x] Implement instance script editing from the web UI (`launch.sh` convention).
 - [ ] Implement the `Update` functionality for saving changes to existing instances.
-- [ ] Finalize debugging of the live log display for perfect stability.
 
 ## Phase 4: Advanced Features & UX
 
 - [x] Integrate NGINX reverse proxy for unique instance URLs (`/app/<instance_name>`).
 - [x] Harden NGINX configuration to support both standard and path-aware (Gradio) applications.
-- [ ] Implement Persistent Session (VNC) launch mode.
+- [x] Implement Persistent Session (VNC) launch mode with isolated per-instance servers.
+- [ ] Resolve "502 Bad Gateway" error on persistent VNC sessions.
 
 ## Phase 5: Refinement
 

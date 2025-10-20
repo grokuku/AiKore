@@ -66,12 +66,16 @@ def start_instance(instance_id: int, db: Session = Depends(get_db)):
 
     crud.update_instance_status(db, instance_id=instance_id, status="starting")
     try:
-        pid, port = process_manager.start_instance_process(
+        pid, app_port, vnc_port, vnc_display = process_manager.start_instance_process(
             instance_name=db_instance.name,
             blueprint_script=db_instance.base_blueprint,
-            gpu_ids=db_instance.gpu_ids
+            gpu_ids=db_instance.gpu_ids,
+            persistent_mode=db_instance.persistent_mode
         )
-        updated_instance = crud.update_instance_status(db, instance_id=instance_id, status="running", pid=pid, port=port)
+        updated_instance = crud.update_instance_status(
+            db, instance_id=instance_id, status="running", 
+            pid=pid, port=app_port, vnc_port=vnc_port, vnc_display=vnc_display
+        )
         return updated_instance
     except Exception as e:
         crud.update_instance_status(db, instance_id=instance_id, status="error")
@@ -95,7 +99,10 @@ def stop_instance(instance_id: int, db: Session = Depends(get_db)):
     # Clean up NGINX config
     process_manager.cleanup_instance_process(instance_name=db_instance.name)
     
-    updated_instance = crud.update_instance_status(db, instance_id=instance_id, status="stopped", pid=None, port=None)
+    updated_instance = crud.update_instance_status(
+        db, instance_id=instance_id, status="stopped", 
+        pid=None, port=None, vnc_port=None, vnc_display=None
+    )
     return updated_instance
 
 @router.delete("/{instance_id}", status_code=200, tags=["Instance Actions"])

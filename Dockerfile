@@ -16,7 +16,7 @@ ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12"
 
 # --- System & Package Installation ---
 RUN apt-get update -q && \
-    # Install system dependencies for Ubuntu 24.04, including dos2unix for script cleanup
+    # Install system dependencies for Ubuntu 24.04, including VNC tools
     apt-get install -y -q=2 curl \
     software-properties-common \
     wget \
@@ -34,7 +34,10 @@ RUN apt-get update -q && \
     g++-13 \
     git \
     gawk \
-    dos2unix && \
+    dos2unix \
+    firefox \
+    websockify \
+    novnc && \
     # Remove any conflicting system Python to ensure Conda's version is used
     apt-get purge python3 -y && \
     # Install CUDA Toolkit for Ubuntu 24.04
