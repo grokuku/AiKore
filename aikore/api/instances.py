@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from typing import List
 import os
@@ -8,12 +8,16 @@ from ..database import crud
 from ..database.session import SessionLocal
 from ..schemas import instance as schemas
 from ..core import process_manager
-from ..core.process_manager import INSTANCES_DIR # Import the constant
+from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR # Import constants
 
 router = APIRouter(
     prefix="/api/instances",
     tags=["Instances"]
 )
+
+# Define a simple Pydantic model for the request body of the file update
+class FileContent(schemas.BaseModel):
+    content: str
 
 def get_db():
     db = SessionLocal()
@@ -21,6 +25,24 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Helper function to resolve file paths
+def get_instance_file_path(db_instance):
+    """
+    Gets the path for an instance's file.
+    The instance-specific script is ALWAYS named 'launch.sh'.
+    The blueprint path is the original script name.
+    """
+    base_script_name = db_instance.base_blueprint
+    instance_conf_dir = os.path.join(INSTANCES_DIR, db_instance.name)
+    
+    # The customized script for an instance is ALWAYS saved as launch.sh
+    instance_file_path = os.path.join(instance_conf_dir, "launch.sh")
+    
+    # The original blueprint file path keeps its original name
+    blueprint_file_path = os.path.join(BLUEPRINTS_DIR, base_script_name)
+
+    return instance_file_path, blueprint_file_path
 
 @router.post("/", response_model=schemas.Instance)
 def create_new_instance(instance: schemas.InstanceCreate, db: Session = Depends(get_db)):
@@ -91,27 +113,76 @@ def delete_instance(instance_id: int, db: Session = Depends(get_db)):
     return {"ok": True, "detail": "Instance deleted successfully"}
 
 @router.get("/{instance_id}/logs", tags=["Instance Actions"])
-def get_instance_logs(instance_id: int, db: Session = Depends(get_db)):
+def get_instance_logs(
+    instance_id: int, 
+    db: Session = Depends(get_db),
+    offset: int = 0
+):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
         raise HTTPException(status_code=404, detail="Instance not found")
 
     instance_conf_dir = os.path.join(INSTANCES_DIR, db_instance.name)
-    stdout_log_path = os.path.join(instance_conf_dir, "stdout.log")
-    stderr_log_path = os.path.join(instance_conf_dir, "stderr.log")
+    output_log_path = os.path.join(instance_conf_dir, "output.log")
 
-    logs = []
-    if os.path.exists(stdout_log_path):
-        with open(stdout_log_path, 'r') as f:
-            logs.append("--- STDOUT ---")
-            logs.append(f.read())
-    
-    if os.path.exists(stderr_log_path):
-        with open(stderr_log_path, 'r') as f:
-            logs.append("\n--- STDERR ---")
-            logs.append(f.read())
+    content = ""
+    size = offset
 
-    if not logs:
-        return {"logs": "No log files found for this instance. It might have never been started."}
+    try:
+        if os.path.exists(output_log_path):
+            current_size = os.path.getsize(output_log_path)
+            if current_size > offset:
+                with open(output_log_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    f.seek(offset)
+                    content = f.read()
+                size = current_size
+    except FileNotFoundError:
+        # This can happen in a race condition if the file is deleted after os.path.exists
+        pass
 
-    return {"logs": "\n".join(logs)}
+    return {
+        "content": content,
+        "size": size,
+    }
+
+@router.get("/{instance_id}/file", response_model=FileContent, tags=["Instance Actions"])
+def get_instance_file(instance_id: int, file_type: str, db: Session = Depends(get_db)):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    if file_type != "script":
+        raise HTTPException(status_code=400, detail="Invalid file type specified")
+
+    instance_file_path, blueprint_file_path = get_instance_file_path(db_instance)
+
+    read_path = instance_file_path if os.path.exists(instance_file_path) else blueprint_file_path
+
+    try:
+        with open(read_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return FileContent(content=content)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Source file '{os.path.basename(blueprint_file_path)}' not found in blueprints.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+        
+@router.put("/{instance_id}/file", status_code=200, tags=["Instance Actions"])
+def update_instance_file(instance_id: int, file_type: str, file_content: FileContent, db: Session = Depends(get_db)):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    if file_type != "script":
+        raise HTTPException(status_code=400, detail="Invalid file type specified")
+
+    instance_file_path, _ = get_instance_file_path(db_instance)
+
+    try:
+        # Ensure the instance config directory exists
+        os.makedirs(os.path.dirname(instance_file_path), exist_ok=True)
+        
+        with open(instance_file_path, 'w', encoding='utf-8') as f:
+            f.write(file_content.content)
+        
+        return {"ok": True, "detail": "File updated successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error writing file: {str(e)}")

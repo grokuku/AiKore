@@ -85,11 +85,22 @@ html, body {
 .pane-content {
     overflow: auto;
     flex-grow: 1;
-    padding: 0 1.5rem 1.5rem 1.5rem; /* Padding moved here */
+    /* Padding is now applied more specifically below */
 }
 
-.table-container {
-    /* This is now just a structural element, no padding */
+#instance-pane .pane-content,
+#monitoring-pane .pane-content {
+    padding: 0 1.5rem 1.5rem 1.5rem;
+}
+
+#tools-pane .pane-content {
+    padding: 0;
+    display: flex; /* Enable flex for children */
+    flex-direction: column;
+}
+
+.hidden {
+    display: none !important;
 }
 
 /* --- INSTANCE MANAGER --- */
@@ -129,6 +140,10 @@ html, body {
     font-weight: 500;
     white-space: nowrap;
     background-color: #1e1e3f;
+}
+
+.instances-table th.actions-column {
+    width: 1%; /* Allow this column to be as wide as its content */
 }
 
 .instances-table th:first-child {
@@ -196,6 +211,7 @@ html, body {
     white-space: nowrap;
     transition: filter 0.2s ease, opacity 0.2s ease;
     font-weight: 500;
+    font-size: 13px; /* Slightly smaller for more buttons */
 }
 
 .action-btn:hover:not(:disabled) {
@@ -212,6 +228,7 @@ html, body {
     justify-content: flex-end;
     align-items: center;
     gap: 5px;
+    padding: 8px 5px; /* Add some vertical padding to the cell */
 }
 
 /* BUTTON COLORS */
@@ -219,11 +236,16 @@ html, body {
 [data-action="stop"] { background-color: #ffc107; color: #333; }
 [data-action="delete"] { background-color: #dc3545; }
 [data-action="logs"] { background-color: #17a2b8; }
+[data-action="script"], [data-action="parameters"] { background-color: #6f42c1; } /* New color for edit buttons */
 [data-action="open"] { background-color: #4a4a70; }
 .action-btn:not([data-action]) { background-color: #4a4a70; }
 
 
 /* --- TOOLS / LOGS PANE --- */
+#log-viewer-container {
+    flex-grow: 1; /* Take up available space */
+}
+
 .terminal-style {
     background-color: #111;
     font-family: 'Courier New', Courier, monospace;
@@ -231,6 +253,7 @@ html, body {
     padding: 1rem;
     height: 100%;
     box-sizing: border-box;
+    overflow: auto; /* Add scroll to the log viewer itself */
 }
 
 .terminal-style pre, .terminal-style code {
@@ -242,6 +265,47 @@ html, body {
     white-space: pre-wrap;
     word-wrap: break-word;
 }
+
+.log-error {
+    color: #ff6b6b; /* A bright red/pink for errors */
+}
+
+/* --- FILE EDITOR --- */
+#editor-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    flex-grow: 1;
+    background-color: #111; /* Match terminal background */
+}
+
+#file-editor-textarea {
+    flex-grow: 1;
+    width: 100%;
+    padding: 1rem;
+    box-sizing: border-box;
+    background-color: #111; /* Match terminal background */
+    border: none;
+    color: #00ff41; /* Match terminal text color */
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+    resize: none;
+    outline: none;
+    user-select: text;
+}
+
+.editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 1rem;
+    border-top: 1px solid #3b3b6b;
+    flex-shrink: 0;
+    background-color: #2c2c54; /* Match pane background */
+}
+
+#editor-save-btn { background-color: #28a745; }
+#editor-exit-btn { background-color: #4a4a70; }
 
 /* --- MONITORING PANE --- */
 #system-stats-container {

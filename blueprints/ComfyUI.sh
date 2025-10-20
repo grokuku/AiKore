@@ -3,6 +3,9 @@ source /opt/sd-install/functions.sh
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
+# Clean up conda cache and packages to prevent metadata errors
+conda clean -ya
+
 # The following variables are provided by the process manager:
 # - INSTANCE_NAME: The unique user-defined name for this instance (e.g., "MyTestUI").
 # - INSTANCE_CONF_DIR: The dedicated directory for this instance's configuration, repos, and venv.
@@ -14,18 +17,6 @@ echo "--- Starting Blueprint: ${BLUEPRINT_ID} for Instance: ${INSTANCE_NAME} ---
 # Ensure instance-specific directories exist
 mkdir -p "${INSTANCE_CONF_DIR}"
 mkdir -p "${INSTANCE_OUTPUT_DIR}"
-
-# Copy default launch parameters if the instance does not have its own
-if [ ! -f "${INSTANCE_CONF_DIR}/parameters.txt" ]; then
-    source_parameters_file="/opt/sd-install/blueprints/${BLUEPRINT_ID}.parameters.txt"
-    if [ -f "$source_parameters_file" ]; then
-        echo "Copying default parameters from ${source_parameters_file}..."
-        cp -v "$source_parameters_file" "${INSTANCE_CONF_DIR}/parameters.txt"
-    else
-        echo "Warning: Default parameter file not found at ${source_parameters_file}. Creating an empty one."
-        touch "${INSTANCE_CONF_DIR}/parameters.txt"
-    fi
-fi
 
 # Install or update the main ComfyUI repository
 if [ ! -d "${INSTANCE_CONF_DIR}/ComfyUI/.git" ]; then
@@ -66,7 +57,7 @@ pip install --upgrade pip
 pip install torch==2.8.0 torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu128
 conda install -c conda-forge git gxx libcurand --solver=libmamba -y
 conda install -c nvidia cuda-cudart --solver=libmamba -y
-pip install --force-reinstall --no-cache-dir --no-deps flash-attn
+pip install --no-deps flash-attn
 
 # Install ComfyUI's Python requirements
 cd "${INSTANCE_CONF_DIR}/ComfyUI"
@@ -118,16 +109,12 @@ ln -sfn "${INSTANCE_OUTPUT_DIR}" "${INSTANCE_CONF_DIR}/ComfyUI/output"
 
 # Launch ComfyUI
 cd "${INSTANCE_CONF_DIR}/ComfyUI"
+
+# Construct the final command. Parameters must be added directly inside this script if needed.
 CMD="python3 main.py"
 if [ -n "$WEBUI_PORT" ]; then
     CMD+=" --port ${WEBUI_PORT}"
 fi
-while IFS= read -r param; do
-    # Only add parameter if the line is not empty and not a comment
-    if [[ -n "$param" && $param != \#* ]]; then
-        CMD+=" ${param}"
-    fi
-done < "${INSTANCE_CONF_DIR}/parameters.txt"
 
 echo "---"
 echo "Launching ComfyUI with command:"

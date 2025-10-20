@@ -3,15 +3,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const addInstanceBtn = document.querySelector('.add-new-btn');
     let availableBlueprints = []; // Store blueprints globally
 
-    // Tools/Logs pane elements
+    // Tools/Logs/Editor pane elements
     const toolsPaneTitle = document.getElementById('tools-pane-title');
-    const toolsPaneContent = document.getElementById('tools-pane-content');
-    const toolsPaneTerminal = document.querySelector('.terminal-style'); // Get the parent for scroll checks
+    const logViewerContainer = document.getElementById('log-viewer-container');
+    const toolsPaneContent = document.getElementById('tools-pane-content'); // This is the <code> in the log viewer
+    const editorContainer = document.getElementById('editor-container');
+    const fileEditorTextarea = document.getElementById('file-editor-textarea');
+    const editorSaveBtn = document.getElementById('editor-save-btn');
+    const editorExitBtn = document.getElementById('editor-exit-btn');
 
     // State for live logs
     let activeLogInstanceId = null;
     let activeLogInterval = null;
-    let cachedLogContent = ""; // Cache for smart log updates
+    let logSize = 0; // Single size tracker for the unified log file
+
+    // State for editor
+    let editorState = {
+        instanceId: null,
+        instanceName: null,
+        fileType: null, // 'script'
+    };
 
     // --- Helper function to fetch blueprints and populate the global array ---
     async function fetchAndStoreBlueprints() {
@@ -22,7 +33,6 @@ document.addEventListener('DOMContentLoaded', () => {
             availableBlueprints = data.blueprints;
         } catch (error) {
             console.error("Failed to fetch blueprints:", error);
-            // Fallback if blueprints cannot be loaded
             availableBlueprints = ["Error loading blueprints"];
         }
     }
@@ -45,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
             defaultOption.value = '';
             defaultOption.textContent = 'Select a blueprint';
             defaultOption.disabled = true;
-            defaultOption.selected = true; // Set as selected by default
+            defaultOption.selected = true;
             select.appendChild(defaultOption);
 
             availableBlueprints.forEach(bp => {
@@ -54,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 option.textContent = bp;
                 if (bp === selectedValue) {
                     option.selected = true;
-                    defaultOption.selected = false; // Unselect default if a value matches
+                    defaultOption.selected = false;
                 }
                 select.appendChild(option);
             });
@@ -75,62 +85,50 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusClass = `status status-${instance.status.toLowerCase()}`;
         const isRunning = instance.status === 'running';
         const isStarting = instance.status === 'starting';
-        const isStopped = instance.status === 'stopped';
-        const isError = instance.status === 'error';
 
-        // Store original values for change detection
         row.dataset.originalName = instance.name;
         row.dataset.originalBlueprint = instance.base_blueprint;
         row.dataset.originalGpuIds = instance.gpu_ids || '';
         row.dataset.originalAutostart = instance.autostart;
         row.dataset.originalPersistentMode = instance.persistent_mode;
 
-        // Name (editable)
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
         nameInput.value = instance.name;
         nameInput.dataset.field = 'name';
         nameInput.required = true;
-        nameInput.disabled = !isNew; // Name is only editable for new instances
+        nameInput.disabled = !isNew;
         row.insertCell().appendChild(nameInput);
 
-        // Base Blueprint (editable select)
         const blueprintSelect = createBlueprintSelect(instance.base_blueprint);
-        blueprintSelect.disabled = !isNew; // Blueprint is only editable for new instances
+        blueprintSelect.disabled = !isNew;
         row.insertCell().appendChild(blueprintSelect);
 
-        // GPU IDs (editable)
         const gpuInput = document.createElement('input');
         gpuInput.type = 'text';
         gpuInput.value = instance.gpu_ids || '';
         gpuInput.dataset.field = 'gpu_ids';
         row.insertCell().appendChild(gpuInput);
 
-        // Autostart (editable checkbox)
         const autostartCheckbox = document.createElement('input');
         autostartCheckbox.type = 'checkbox';
         autostartCheckbox.checked = instance.autostart;
         autostartCheckbox.dataset.field = 'autostart';
         row.insertCell().appendChild(autostartCheckbox);
 
-        // Persistent UI (editable checkbox)
         const persistentModeCheckbox = document.createElement('input');
         persistentModeCheckbox.type = 'checkbox';
         persistentModeCheckbox.checked = instance.persistent_mode;
         persistentModeCheckbox.dataset.field = 'persistent_mode';
         row.insertCell().appendChild(persistentModeCheckbox);
 
-        // Status (display only)
         row.insertCell().innerHTML = `<span class="${statusClass}">${instance.status}</span>`;
-
-        // Port (display only)
         row.insertCell().textContent = instance.port || 'N/A';
 
-        // Actions column
+        // --- Unified Actions Cell ---
         const actionsCell = row.insertCell();
         actionsCell.classList.add('actions-column');
 
-        // Start button
         const startButton = document.createElement('button');
         startButton.classList.add('action-btn');
         startButton.dataset.action = 'start';
@@ -139,7 +137,6 @@ document.addEventListener('DOMContentLoaded', () => {
         startButton.disabled = isRunning || isStarting || isNew;
         actionsCell.appendChild(startButton);
 
-        // Stop button
         const stopButton = document.createElement('button');
         stopButton.classList.add('action-btn');
         stopButton.dataset.action = 'stop';
@@ -148,33 +145,38 @@ document.addEventListener('DOMContentLoaded', () => {
         stopButton.disabled = !isRunning || isNew;
         actionsCell.appendChild(stopButton);
 
-        // Logs button
         const logsButton = document.createElement('button');
         logsButton.classList.add('action-btn');
         logsButton.dataset.action = 'logs';
         logsButton.dataset.id = instance.id;
-        logsButton.dataset.name = instance.name; // Store name for title
+        logsButton.dataset.name = instance.name;
         logsButton.textContent = 'Logs';
-        logsButton.disabled = isNew; // Disabled for new unsaved instances
+        logsButton.disabled = isNew;
         actionsCell.appendChild(logsButton);
 
-        // Save/Update button
+        const scriptButton = document.createElement('button');
+        scriptButton.classList.add('action-btn');
+        scriptButton.dataset.action = 'script';
+        scriptButton.dataset.id = instance.id;
+        scriptButton.dataset.name = instance.name;
+        scriptButton.textContent = 'Script';
+        scriptButton.disabled = isNew || isRunning || isStarting;
+        actionsCell.appendChild(scriptButton);
+
         const saveUpdateButton = document.createElement('button');
         saveUpdateButton.classList.add('action-btn');
         saveUpdateButton.dataset.id = instance.id;
         if (isNew) {
             saveUpdateButton.dataset.action = 'save';
             saveUpdateButton.textContent = 'Save';
-            // Enable Save for new rows if name and blueprint are filled
             saveUpdateButton.disabled = !nameInput.value || blueprintSelect.value === '';
         } else {
             saveUpdateButton.dataset.action = 'update';
             saveUpdateButton.textContent = 'Update';
-            saveUpdateButton.disabled = true; // Disabled by default, enabled on change
+            saveUpdateButton.disabled = true;
         }
         actionsCell.appendChild(saveUpdateButton);
 
-        // Delete button
         const deleteButton = document.createElement('button');
         deleteButton.classList.add('action-btn');
         deleteButton.dataset.action = 'delete';
@@ -183,7 +185,6 @@ document.addEventListener('DOMContentLoaded', () => {
         deleteButton.disabled = isRunning || isStarting;
         actionsCell.appendChild(deleteButton);
         
-        // Open button (always last)
         const openButton = document.createElement('a');
         openButton.classList.add('action-btn');
         openButton.dataset.action = 'open';
@@ -192,24 +193,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isRunning) {
             openButton.href = `/app/${instance.name}/`;
             openButton.target = '_blank';
-            openButton.disabled = false; // Ensure it's not disabled if running
+            openButton.disabled = false;
         } else {
-            openButton.href = '#'; // No valid link if not running
+            openButton.href = '#';
             openButton.disabled = true;
-            openButton.style.pointerEvents = 'none'; // Prevent click events when disabled
+            openButton.style.pointerEvents = 'none';
         }
         actionsCell.appendChild(openButton);
 
-        // Add event listeners for input changes to enable/disable Update button
         if (!isNew) {
             const editableFields = row.querySelectorAll('input[type="text"], select, input[type="checkbox"]');
             editableFields.forEach(field => {
-                field.addEventListener('input', () => {
-                    checkRowForChanges(row);
-                });
+                field.addEventListener('input', () => checkRowForChanges(row));
             });
         } else {
-            // For new rows, enable Save button if name and blueprint are filled
             nameInput.addEventListener('input', () => {
                 saveUpdateButton.disabled = !nameInput.value || blueprintSelect.value === '';
             });
@@ -221,12 +218,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return row;
     }
 
-    /**
-     * Checks a row for changes against original values and enables/disables the Update button.
-     * @param {HTMLElement} row - The table row element.
-     */
     function checkRowForChanges(row) {
-        const instanceId = row.dataset.id;
         const nameField = row.querySelector('input[data-field="name"]');
         const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
         const gpuIdsField = row.querySelector('input[data-field="gpu_ids"]');
@@ -238,29 +230,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nameField.value !== row.dataset.originalName) changed = true;
         if (blueprintField.value !== row.dataset.originalBlueprint) changed = true;
         if (gpuIdsField.value !== row.dataset.originalGpuIds) changed = true;
-        if (autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true; // Compare boolean as string
-        if (persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) changed = true; // Compare boolean as string
+        if (autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
+        if (persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) changed = true;
 
         updateButton.disabled = !changed;
     }
 
-
-    /**
-     * Fetches instances from the API and renders them in the table.
-     */
     async function fetchAndRenderInstances() {
         try {
             const response = await fetch('/api/instances/');
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const instances = await response.json();
 
-            instancesTbody.innerHTML = ''; // Clear existing rows
+            instancesTbody.innerHTML = '';
 
             if (instances.length === 0) {
                 instancesTbody.innerHTML = `<tr><td colspan="8" style="text-align: center;">No instances created yet.</td></tr>`;
             } else {
                 instances.forEach(instance => {
-                    const row = renderInstanceRow(instance, false); // Render existing instances
+                    const row = renderInstanceRow(instance, false);
                     instancesTbody.appendChild(row);
                 });
             }
@@ -270,56 +258,121 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /**
-     * Adds an empty, editable row for a new instance to the table.
-     */
     function addNewInstanceRow() {
-        // Create a dummy instance object for the new row
         const newInstance = {
-            id: 'new', // Use 'new' as a temporary ID
-            name: '',
-            base_blueprint: '',
-            gpu_ids: '',
-            autostart: false,
-            persistent_mode: false,
-            status: 'stopped', // Default status for a new instance
-            pid: null,
-            port: null
+            id: 'new', name: '', base_blueprint: '', gpu_ids: '',
+            autostart: false, persistent_mode: false, status: 'stopped',
+            pid: null, port: null
         };
         const newRow = renderInstanceRow(newInstance, true);
         instancesTbody.appendChild(newRow);
 
-        // Make name and blueprint fields immediately editable for the new row
         newRow.querySelector('input[data-field="name"]').focus();
         newRow.querySelector('input[data-field="name"]').disabled = false;
         newRow.querySelector('select[data-field="base_blueprint"]').disabled = false;
     }
 
-    // --- Event Listeners ---
     addInstanceBtn.addEventListener('click', addNewInstanceRow);
 
+    // --- Editor Functions ---
+    function exitEditor() {
+        editorContainer.classList.add('hidden');
+        logViewerContainer.classList.remove('hidden');
+        toolsPaneTitle.textContent = 'Tools / Logs';
+        fileEditorTextarea.value = '';
+        editorState.instanceId = null;
+        editorState.instanceName = null;
+        editorState.fileType = null;
+    }
+
+    async function openEditor(instanceId, instanceName, fileType) {
+        clearInterval(activeLogInterval);
+        activeLogInstanceId = null;
+
+        logViewerContainer.classList.add('hidden');
+        editorContainer.classList.remove('hidden');
+
+        const fileTypeName = fileType.charAt(0).toUpperCase() + fileType.slice(1);
+        toolsPaneTitle.textContent = `Editing ${fileTypeName} for: ${instanceName}`;
+        fileEditorTextarea.value = `Loading ${fileType} content...`;
+
+        editorState = { instanceId, instanceName, fileType };
+
+        try {
+            const response = await fetch(`/api/instances/${instanceId}/file?file_type=${fileType}`);
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to load file.');
+            }
+            const data = await response.json();
+            fileEditorTextarea.value = data.content;
+        } catch (error) {
+            console.error(`Error loading file content:`, error);
+            fileEditorTextarea.value = `[ERROR] Could not load file: ${error.message}`;
+        }
+    }
+
+    async function saveFileContent() {
+        if (!editorState.instanceId || !editorState.fileType) return;
+
+        const content = fileEditorTextarea.value;
+        editorSaveBtn.textContent = 'Saving...';
+        editorSaveBtn.disabled = true;
+
+        try {
+            const response = await fetch(`/api/instances/${editorState.instanceId}/file?file_type=${editorState.fileType}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: content })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to save file.');
+            }
+            
+            // On success, briefly show confirmation
+            editorSaveBtn.textContent = 'Saved!';
+            setTimeout(() => {
+                editorSaveBtn.textContent = 'Save';
+                editorSaveBtn.disabled = false;
+            }, 1500);
+
+        } catch (error) {
+            console.error(`Error saving file content:`, error);
+            alert(`Error saving file: ${error.message}`);
+            editorSaveBtn.textContent = 'Save';
+            editorSaveBtn.disabled = false;
+        }
+    }
+
+    editorSaveBtn.addEventListener('click', saveFileContent);
+    editorExitBtn.addEventListener('click', exitEditor);
+
+    // --- Main Event Listener for Instance Actions ---
     instancesTbody.addEventListener('click', async (event) => {
-        const target = event.target;
-        if (!target.classList.contains('action-btn')) return;
+        const target = event.target.closest('.action-btn');
+        if (!target) return;
 
         const instanceId = target.dataset.id;
         const action = target.dataset.action;
         const row = target.closest('tr');
 
         if (action === 'start' || action === 'stop') {
+            exitEditor(); // Ensure editor is closed before starting/stopping
             try {
                 const response = await fetch(`/api/instances/${instanceId}/${action}`, { method: 'POST' });
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.detail || `Failed to ${action} instance.`);
                 }
-                fetchAndRenderInstances(); // Refresh the table
+                fetchAndRenderInstances();
             } catch (error) {
                 console.error(`Error ${action}ing instance:`, error);
                 alert(`Error: ${error.message}`);
             }
         } else if (action === 'save') {
-            // Logic to save a new instance
+            exitEditor();
             const name = row.querySelector('input[data-field="name"]').value;
             const base_blueprint = row.querySelector('select[data-field="base_blueprint"]').value;
             const gpu_ids = row.querySelector('input[data-field="gpu_ids"]').value || null;
@@ -344,24 +397,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     const errorData = await response.json();
                     throw new Error(errorData.detail || 'Failed to create instance.');
                 }
-                fetchAndRenderInstances(); // Refresh the table
+                fetchAndRenderInstances();
             } catch (error) {
                 console.error('Error creating instance:', error);
                 alert(`Error: ${error.message}`);
             }
 
         } else if (action === 'update') {
-            // Logic to update an existing instance (not yet implemented)
             alert('Update functionality coming soon!');
-            // For now, just refresh to reset button state
-            // fetchAndRenderInstances();
         } else if (action === 'delete') {
             if (activeLogInstanceId === instanceId) {
                 clearInterval(activeLogInterval);
                 activeLogInstanceId = null;
-                toolsPaneTitle.textContent = 'Tools / Logs';
-                toolsPaneContent.textContent = '> Console output will be displayed here...';
             }
+            exitEditor(); // Close editor if it was for this instance
             if (!confirm('Are you sure you want to delete this instance?')) return;
             try {
                 const response = await fetch(`/api/instances/${instanceId}`, { method: 'DELETE' });
@@ -369,72 +418,85 @@ document.addEventListener('DOMContentLoaded', () => {
                     const errorData = await response.json();
                     throw new Error(errorData.detail || 'Failed to delete instance.');
                 }
-                fetchAndRenderInstances(); // Refresh the table
+                fetchAndRenderInstances();
             } catch (error) {
                 console.error('Error deleting instance:', error);
                 alert(`Error: ${error.message}`);
             }
         } else if (action === 'logs') {
+            exitEditor(); // Close editor before showing logs
             const instanceName = target.dataset.name;
             
-            // Clear any previous interval and reset state
             clearInterval(activeLogInterval);
-            cachedLogContent = ""; // IMPORTANT: Reset cache for the new instance
             activeLogInstanceId = instanceId;
+            logSize = 0; // Reset log size
 
             toolsPaneTitle.textContent = `Logs: ${instanceName}`;
             toolsPaneContent.textContent = 'Loading logs...';
+
+            const errorKeywords = /(warning|warn|error|traceback|exception|failed)/i;
 
             const fetchLogs = async () => {
                 if (!activeLogInstanceId) return;
 
                 try {
-                    const response = await fetch(`/api/instances/${activeLogInstanceId}/logs`);
-                    if (!response.ok) {
-                        throw new Error('Instance stopped or logs unavailable.');
-                    }
+                    const url = `/api/instances/${activeLogInstanceId}/logs?offset=${logSize}`;
+                    const response = await fetch(url);
+                    
+                    if (!response.ok) throw new Error('Instance stopped or logs unavailable.');
+                    
                     const data = await response.json();
 
-                    // --- Smart Update Logic ---
                     const selection = window.getSelection();
                     const hasSelectionInLogs = selection.toString().length > 0 && toolsPaneContent.contains(selection.anchorNode);
-                    
-                    if (hasSelectionInLogs) return; // Skip update if user is selecting text
+                    if (hasSelectionInLogs) return;
 
-                    const isScrolledToBottom = toolsPaneTerminal.scrollHeight - toolsPaneTerminal.scrollTop <= toolsPaneTerminal.clientHeight + 2; // +2 for buffer
+                    const isScrolledToBottom = logViewerContainer.scrollHeight - logViewerContainer.scrollTop <= logViewerContainer.clientHeight + 2;
                     
-                    if (data.logs.startsWith(cachedLogContent)) {
-                        // Append only new content
-                        const newContent = data.logs.substring(cachedLogContent.length);
-                        if (newContent) {
-                            toolsPaneContent.appendChild(document.createTextNode(newContent));
+                    if (data.content) {
+                        if (toolsPaneContent.textContent === 'Loading logs...') {
+                            toolsPaneContent.textContent = '';
                         }
-                    } else {
-                        // Full refresh if logs were cleared or are different
-                        toolsPaneContent.textContent = data.logs;
-                    }
-                    cachedLogContent = data.logs; // Update cache
 
-                    if (isScrolledToBottom) {
-                        toolsPaneTerminal.scrollTop = toolsPaneTerminal.scrollHeight;
+                        const lines = data.content.split('\n');
+                        lines.forEach((line, index) => {
+                            if (index === lines.length - 1 && line === '') return;
+                            
+                            const lineContent = line + (index < lines.length - 1 ? '\n' : '');
+
+                            if (errorKeywords.test(lineContent)) {
+                                const errorSpan = document.createElement('span');
+                                errorSpan.className = 'log-error';
+                                errorSpan.textContent = lineContent;
+                                toolsPaneContent.appendChild(errorSpan);
+                            } else {
+                                toolsPaneContent.appendChild(document.createTextNode(lineContent));
+                            }
+                        });
+                        
+                        logSize = data.size;
+
+                        if (isScrolledToBottom) {
+                            logViewerContainer.scrollTop = logViewerContainer.scrollHeight;
+                        }
                     }
 
                 } catch (error) {
                     console.warn('Could not refresh logs:', error.message);
                     clearInterval(activeLogInterval);
                     activeLogInstanceId = null;
+                    toolsPaneContent.textContent = `[ERROR] Log fetching stopped: ${error.message}`;
                 }
             };
 
-            fetchLogs(); // Initial fetch
-            activeLogInterval = setInterval(fetchLogs, 500); // Poll every 500ms
-
-        } else if (action === 'open') {
-            // Handled by the <a> tag href directly
+            fetchLogs();
+            activeLogInterval = setInterval(fetchLogs, 500);
+        } else if (action === 'script') {
+            const instanceName = target.dataset.name;
+            openEditor(instanceId, instanceName, action);
         }
     });
 
-    // --- Initial Load ---
     fetchAndStoreBlueprints().then(fetchAndRenderInstances);
 
     // --- System Monitoring ---
@@ -460,16 +522,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error('Failed to fetch system stats');
             const stats = await response.json();
 
-            // Update CPU
             cpuProgress.style.width = `${stats.cpu_percent}%`;
             cpuPercentText.textContent = `${stats.cpu_percent.toFixed(1)}%`;
 
-            // Update RAM
             ramProgress.style.width = `${stats.ram.percent}%`;
             ramUsageText.textContent = `${formatBytes(stats.ram.used)} / ${formatBytes(stats.ram.total)}`;
 
-            // Update GPUs
-            gpuStatsContainer.innerHTML = ''; // Clear previous entries
+            gpuStatsContainer.innerHTML = '';
             if (stats.gpus && stats.gpus.length > 0) {
                 stats.gpus.forEach(gpu => {
                     const gpuStatElement = gpuStatTemplate.content.cloneNode(true);
@@ -497,24 +556,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Fetch stats immediately and then every 2 seconds
     updateSystemStats();
     setInterval(updateSystemStats, 2000);
 
-    // --- Initialize Split Panes ---
     Split(['#instance-pane', '#bottom-split'], {
-        sizes: [60, 40],
-        minSize: [200, 150],
-        gutterSize: 5,
-        direction: 'vertical',
-        cursor: 'row-resize'
+        sizes: [60, 40], minSize: [200, 150], gutterSize: 5,
+        direction: 'vertical', cursor: 'row-resize'
     });
 
     Split(['#tools-pane', '#monitoring-pane'], {
-        sizes: [65, 35],
-        minSize: [300, 200],
-        gutterSize: 5,
-        direction: 'horizontal',
-        cursor: 'col-resize'
+        sizes: [65, 35], minSize: [300, 200], gutterSize: 5,
+        direction: 'horizontal', cursor: 'col-resize'
     });
 });

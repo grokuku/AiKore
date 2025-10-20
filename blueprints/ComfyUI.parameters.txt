@@ -1,8 +1,0 @@
-# Web + Network
-# --listen and --port are now handled automatically by AiKore.
-# Do not add them here.
-
-# Directories
-
-# Options
-

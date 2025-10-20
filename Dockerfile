@@ -33,6 +33,7 @@ RUN apt-get update -q && \
     gcc-13 \
     g++-13 \
     git \
+    gawk \
     dos2unix && \
     # Remove any conflicting system Python to ensure Conda's version is used
     apt-get purge python3 -y && \
