@@ -1,0 +1,5 @@
+# Disable requiretty for the 'abc' user to allow sudo from scripts/daemons
+Defaults:abc !requiretty
+
+# Allow the abc user to move nginx config files from /tmp without a password
+abc ALL=(root) NOPASSWD: /usr/bin/mv /tmp/*.conf /etc/nginx/locations.d/

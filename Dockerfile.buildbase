@@ -13,11 +13,11 @@ RUN apt-get update && apt-get install -y -q=2 \
      libxft2 xvfb \
      python3.12 python3.12-dev python3.12-venv python3-setuptools \
      cuda-toolkit-12-8 \
-&& curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
-&& update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
-&& update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
-&& apt-get clean \
-&& rm -rf /var/lib/apt/lists/*
+     && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
+     && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+     && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
+     && apt-get clean \
+     && rm -rf /var/lib/apt/lists/*
 
 # Ajouter CUDA dans le PATH (au cas où)
 ENV PATH="/usr/local/cuda/bin:$PATH"
@@ -25,9 +25,9 @@ ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include"
 
 # --- Paquets Python ---
 RUN python3.12 -m pip install --no-cache-dir wheel packaging \
-&& python3.12 -m pip install --no-cache-dir torch==2.8.0 torchvision torchaudio \
+     && python3.12 -m pip install --no-cache-dir torch==2.8.0 torchvision torchaudio \
      --extra-index-url https://download.pytorch.org/whl/cu128 \
-&& python3.12 -m pip install --no-cache-dir cython==0.29.37
+     && python3.12 -m pip install --no-cache-dir cython==0.29.37
 
 # --- Compilation des wheels ---
 
@@ -39,44 +39,72 @@ RUN python3.12 -m pip install --no-cache-dir wheel packaging \
 
 # diso
 RUN git clone https://github.com/SarahWeiii/diso --recurse-submodules \
-&& cd diso \
-&& python3.12 setup.py bdist_wheel \
-&& cp dist/*.whl /build/
+     && cd diso \
+     && python3.12 setup.py bdist_wheel \
+     && cp dist/*.whl /build/
 
 # nvdiffrast
 RUN git clone https://github.com/NVlabs/nvdiffrast.git \
-&& cd nvdiffrast \
-&& python3.12 setup.py bdist_wheel \
-&& cp dist/*.whl /build/
+     && cd nvdiffrast \
+     && python3.12 setup.py bdist_wheel \
+     && cp dist/*.whl /build/
 
 # kaolin
 RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git \
-&& cd kaolin_5090 \
-&& export IGNORE_TORCH_VER=1 && python3.12 setup.py bdist_wheel \
-&& cp dist/*.whl /build/
+     && cd kaolin_5090 \
+     && export IGNORE_TORCH_VER=1 && python3.12 setup.py bdist_wheel \
+     && cp dist/*.whl /build/
 
 ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a"
 
 # mip-splatting / diff-gaussian-rasterization
 RUN git clone https://github.com/autonomousvision/mip-splatting --recurse-submodules \
-&& cd mip-splatting/submodules/diff-gaussian-rasterization \
-&& python3.12 setup.py bdist_wheel \
-&& cp dist/*.whl /build/
+     && cd mip-splatting/submodules/diff-gaussian-rasterization \
+     && python3.12 setup.py bdist_wheel \
+     && cp dist/*.whl /build/
 
 # vox2seq / TRELLIS
 # Source found in a Hugging Face Space, as it seems to be removed from the original MS repo.
 RUN git clone https://huggingface.co/spaces/dkatz2391/TRELLIS_TextTo3D_Try2 TRELLIS_source \
-&& cd TRELLIS_source/extensions/vox2seq \
-&& python3.12 setup.py bdist_wheel \
-&& cp dist/*.whl /build/
+     && cd TRELLIS_source/extensions/vox2seq \
+     && python3.12 setup.py bdist_wheel \
+     && cp dist/*.whl /build/
 
 # --- Final Stage ---
-FROM ghcr.io/linuxserver/baseimage-kasmvnc:ubuntunoble
+# On part d'une base Ubuntu + s6-overlay propre.
+FROM lscr.io/linuxserver/baseimage-ubuntu:noble
 
-# Apply security updates to the base image to patch known vulnerabilities
-RUN apt-get update && \
-     apt-get upgrade -y && \
+# On CONSOLIDE ICI l'installation de TOUS les paquets système nécessaires à l'exécution.
+RUN apt-get update -q && \
+     apt-get install -y -q=2 --no-install-recommends \
+     # Utilitaires de base
+     curl software-properties-common wget gnupg mc bc nano rsync \
+     libxft2 xvfb cmake build-essential ffmpeg gcc-13 g++-13 git \
+     gawk dos2unix \
+     # La pile VNC complète
+     tigervnc-standalone-server websockify novnc openbox \
+     # Le proxy et l'escalade de privilèges
+     nginx sudo && \
+     # Installation PPA Firefox
+     add-apt-repository ppa:mozillateam/ppa -y && \
+     echo 'Package: *' > /etc/apt/preferences.d/mozilla-firefox && \
+     echo 'Pin: release o=LP-PPA-mozillateam' >> /etc/apt/preferences.d/mozilla-firefox && \
+     echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mozilla-firefox && \
+     apt-get update -q && \
+     apt-get install -y firefox && \
+     # Installation CUDA et DotNet
+     cd /tmp/ && \
+     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
+     dpkg -i cuda-keyring_1.1-1_all.deb && \
+     wget https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
+     dpkg -i packages-microsoft-prod.deb && \
+     rm packages-microsoft-prod.deb && \
+     apt-get update && \
+     apt-get -y install cuda-toolkit-12-8 dotnet-sdk-8.0 && \
+     # Nettoyage final
      apt-get clean && \
-     rm -rf /var/lib/apt/lists/*
+     apt autoremove -y && \
+     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+# On copie les wheels compilées
 COPY --from=builder /build/*.whl /wheels/

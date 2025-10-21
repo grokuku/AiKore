@@ -1,0 +1,5 @@
+#!/usr/bin/with-contenv bash
+
+# Start NGINX in the foreground, as required by s6-overlay
+# This syntax is more robust than execlineb for this command.
+exec nginx -g 'daemon off;'

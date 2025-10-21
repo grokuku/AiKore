@@ -3,6 +3,12 @@ FROM ghcr.io/grokuku/stable-diffusion-buildbase:latest
 # Copy s6-overlay and custom service configuration
 COPY docker/root/ /
 
+# --- AJOUT IMPORTANT : Sécurisation du fichier sudoers ---
+# Sudo ignore les fichiers avec des permissions non sécurisées.
+# 0440 = lecture seule pour root et le groupe root.
+RUN chown root:root /etc/sudoers.d/aikore-sudo && \
+    chmod 0440 /etc/sudoers.d/aikore-sudo
+
 # --- Environment Variables ---
 ENV DEBIAN_FRONTEND=noninteractive
 ENV BASE_DIR=/config \
@@ -14,73 +20,11 @@ ENV CC=/usr/bin/gcc-13
 ENV CXX=/usr/bin/g++-13
 ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12"
 
-# --- System & Package Installation ---
-RUN apt-get update -q && \
-    # Install system dependencies for Ubuntu 24.04, including VNC tools
-    apt-get install -y -q=2 curl \
-    software-properties-common \
-    wget \
-    gnupg \
-    mc \
-    bc \
-    nano \
-    rsync \
-    libxft2 \
-    xvfb \
-    cmake \
-    build-essential \
-    ffmpeg \
-    gcc-13 \
-    g++-13 \
-    git \
-    gawk \
-    dos2unix \
-    # --- VNC Dependencies ---
-    tigervnc-standalone-server \
-    websockify \
-    novnc \
-    openbox
-
-# --- Firefox Installation (DEB version) ---
-# Add Mozilla PPA to get the official non-snap Firefox build
-RUN add-apt-repository ppa:mozillateam/ppa -y && \
-    # Set PPA priority to ensure we get Firefox from Mozilla, not Ubuntu repos
-    echo 'Package: *' > /etc/apt/preferences.d/mozilla-firefox && \
-    echo 'Pin: release o=LP-PPA-mozillateam' >> /etc/apt/preferences.d/mozilla-firefox && \
-    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mozilla-firefox && \
-    apt-get update -q && \
-    apt-get install -y firefox
-
-# Isolate the destructive python purge into its own layer to prevent conflicts
-RUN apt-get purge python3 -y && \
-    # --- Continue with setup ---
-    # Install CUDA Toolkit for Ubuntu 24.04
-    cd /tmp/ && \
-    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
-    dpkg -i cuda-keyring_1.1-1_all.deb && \
-    # Ajoute le dépôt Microsoft pour dotnet
-    wget https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
-    dpkg -i packages-microsoft-prod.deb && \
-    rm packages-microsoft-prod.deb && \
-    apt-get update && \
-    apt-get -y install cuda-toolkit-12-8 dotnet-sdk-8.0 && \
-    # Clean up package cache
-    apt autoremove -y && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
 # --- s6-overlay Script Cleanup and Permissions ---
 # Convert all s6 scripts to Unix line endings and ensure they are executable.
-# This prevents errors caused by files edited on Windows (CRLF).
 RUN find /etc/s6-overlay -type f -print0 | xargs -0 dos2unix --
 RUN find /etc/s6-overlay -type f -name "run" -exec chmod +x {} +
 RUN find /etc/s6-overlay -type f -name "finish" -exec chmod +x {} + || true
-
-# --- KasmVNC Pacification ---
-# The dummy openbox-session is no longer needed as we install it properly.
-# RUN printf '%s\n' '#!/bin/bash' 'exit 0' > /usr/bin/openbox-session && chmod +x /usr/bin/openbox-session
-# Overwrite the window manager startup script to prevent the nvidia-smi loop.
-RUN echo '#!/bin/bash\necho "Window manager startup script disabled for AiKore."\nsleep infinity' > /defaults/startwm.sh && chmod +x /defaults/startwm.sh
 
 # --- Application Setup ---
 # Create application directories

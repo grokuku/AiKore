@@ -4,6 +4,8 @@ echo "-------------------------------------"
 # AiKore specific permissions
 echo "Ensuring AiKore has ownership of necessary directories..."
 mkdir -p /etc/nginx/locations.d
+# --- MODIFICATION CLÉ ---
+# On donne la propriété du dossier à l'utilisateur 'abc' pour supprimer le besoin de sudo.
 chown -R abc:abc /etc/nginx/locations.d
 # Create and permit the directory for NGINX reload flags
 mkdir -p /run/aikore
@@ -19,15 +21,15 @@ echo -e "-------------------------------------\n"
 
 # Reset rights if the reset-flag file isn't present
 if [ ! -f "$BASE_DIR/Delete_this_file_to_reset_access_rights_at_next_launch" ]; then
-    echo "-------------------------------------"
-    echo "chown'ing main config directory to ensure correct permissions."
-    mkdir -p $BASE_DIR/models $BASE_DIR/outputs
-    chown -R abc:users $BASE_DIR
-    chmod -R 774 $BASE_DIR
-    chmod -R 664 $BASE_DIR/models
-    chmod -R 664 $BASE_DIR/outputs
-    find $BASE_DIR -type d -exec chmod 777 {} +
-    echo "Delete this file to reset access rights at next launch" > "$BASE_DIR/Delete_this_file_to_reset_access_rights_at_next_launch"
-    echo "Done!"
-    echo -e "-------------------------------------\n"
+echo "-------------------------------------"
+echo "chown'ing main config directory to ensure correct permissions."
+mkdir -p $BASE_DIR/models $BASE_DIR/outputs
+chown -R abc:users $BASE_DIR
+chmod -R 774 $BASE_DIR
+chmod -R 664 $BASE_DIR/models
+chmod -R 664 $BASE_DIR/outputs
+find $BASE_DIR -type d -exec chmod 777 {} +
+echo "Delete this file to reset access rights at next launch" > "$BASE_DIR/Delete_this_file_to_reset_access_rights_at_next_launch"
+echo "Done!"
+echo -e "-------------------------------------\n"
 fi
