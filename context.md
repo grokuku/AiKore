@@ -151,19 +151,16 @@
     
     4.  **Phase 4: Advanced Features & UX (In Progress)**
     
-        *   **Debugging Session Summary (VNC Proxy Logic): RESOLVED**
-            *   An extensive debugging session was conducted to resolve a chain of issues preventing the Persistent VNC mode from functioning. The core logic is now fully validated and integrated into `process_manager.py`.
-            *   **Initial Blockers (Solved):** The root cause of the `ERR_CONNECTION_REFUSED` and subsequent `404 Not Found` errors was identified as a faulty NGINX redirection and reload mechanism.
-            *   **Resolution & Key Findings:**
-                1.  **NGINX Redirection:** The `return 302` directive was modified to use an **absolute URL** (`$scheme://$http_host...`), which solved the critical issue of the browser being redirected incorrectly (losing the port, switching to HTTPS).
-                2.  **NGINX Proxy Logic:** A robust, two-part `location` block was implemented: one for the WebSocket connection (`/ws/...`) and one for the noVNC web client (`/app/...`). This configuration correctly handles both types of traffic.
-                3.  **NGINX Location Matching:** The generated NGINX configuration now uses the **original instance name** (e.g., `ComfyUI-AO`) for the location path, ensuring a direct and case-sensitive match with the URL requested by the frontend, which solved the final `404` errors.
-                4.  **Application Isolation:** The VNC launcher script was updated to create a **unique Firefox profile** for each instance, resolving the "Firefox is already running" error and ensuring stability.
-            *   **Outcome:** The core functionality for the Persistent VNC mode is now functional. The system can successfully launch an isolated VNC session, configure NGINX to proxy all required traffic, and make it accessible to the user.
+        *   **Persistent VNC Session Implementation:** A significant effort was made to implement and stabilize the "Persistent UI" mode.
+            *   **Resolved Issues:**
+                1.  **Database Persistence:** VNC port and display numbers are now correctly saved to the database, ensuring state consistency.
+                2.  **Dynamic Resizing:** The VNC session now correctly resizes to fit the browser window via the `resize=remote` parameter.
+                3.  **Window Management:** A lightweight window manager (`openbox`) is now launched within the VNC session, allowing applications like Firefox to run correctly in full-screen or kiosk mode.
+                4.  **Robust Build Process:** The `Dockerfile.buildbase` has been hardened by fixing multiple dependency issues, using the official Mozilla APT repository for Firefox, and adding missing system libraries (`python3-xdg`).
+                5.  **Reliable App Launch:** The VNC launcher script now uses a robust `curl` loop to wait for the target application to be fully responsive before launching the browser, eliminating race conditions.
     
-        *   **Known Minor Issues / Next Steps for Refinement:**
-            1.  **VNC Dynamic Resizing:** The VNC desktop does not automatically resize to fit the browser window. The `resize=remote` parameter is correctly passed, but the `Xvnc` server-side configuration may require adjustment (e.g., ensuring `xrandr` is available and configured).
-            2.  **VNC Firefox Auto-Navigation:** The Firefox instance launched within the VNC session does not automatically open the target WebUI's URL. This is likely a timing issue or a sandbox restriction that needs to be investigated.
+            *   **Known Unresolved Issue:**
+                1.  **Firefox Auto-Navigation:** Despite all improvements, Firefox still fails to navigate to the target application's URL (`http://127.0.0.1:<port>`) upon launch, defaulting to its homepage instead. This is likely due to an internal security policy or sandboxing feature within Firefox that prevents navigation to `localhost` in this specific execution context. Further investigation is required, potentially exploring alternative browsers or more advanced Firefox configuration policies.
     
     5.  **Phase 5: Refinement (Planned)**
         *   Implement the `Update` functionality for saving changes to existing instances (Name, GPU IDs, etc.).

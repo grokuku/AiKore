@@ -93,7 +93,6 @@ def start_instance_process(
         proxy_target_port = app_port
         main_cmd = ['bash', dest_script_path]
         vnc_web_port, vnc_display = None, None
-        # --- MODIFICATION --- Use original `instance_name` for the location path.
         nginx_conf_content = f"""
         location /app/{instance_name}/ {{
             rewrite ^/app/[^/]+/(.*)$ /$1 break;
@@ -119,14 +118,35 @@ def start_instance_process(
         #!/bin/bash
         cleanup() {{ kill 0; }}
         trap cleanup SIGTERM SIGINT
+        
         /usr/bin/Xvnc :{vnc_display} -rfbport {vnc_rfb_port} -SecurityTypes None &
         /usr/bin/websockify -v --web /usr/share/novnc/ {vnc_web_port} 127.0.0.1:{vnc_rfb_port} &
+        
         sleep 2
         export DISPLAY=:{vnc_display}
+        
+        # Start a window manager to handle kiosk mode and window placement correctly
+        /usr/bin/openbox-session &
+        
+        # Start the main application script in the background
         bash {dest_script_path} &
-        sleep 10
-        mkdir -p "{firefox_profile_dir}"
-        /usr/bin/firefox --no-sandbox --profile "{firefox_profile_dir}" http://127.0.0.1:{app_port} &
+        
+        # Actively wait for the application's web server to be ready by checking for a valid HTTP response
+        echo "Waiting for application to respond at http://127.0.0.1:{app_port}..."
+        timeout=120 # Increased timeout for heavy models
+        while ! curl -s --fail http://127.0.0.1:{app_port} > /dev/null && [ $timeout -gt 0 ]; do
+            sleep 1
+            ((timeout--))
+        done
+        
+        if [ $timeout -gt 0 ]; then
+            echo "Application is ready. Launching Firefox in kiosk mode."
+            mkdir -p "{firefox_profile_dir}"
+            /usr/bin/firefox --no-sandbox --profile "{firefox_profile_dir}" --kiosk http://127.0.0.1:{app_port} &
+        else
+            echo "[ERROR] Application failed to respond at http://127.0.0.1:{app_port} within 120 seconds."
+        fi
+        
         wait
         """
         with open(vnc_launcher_path, 'w') as f:
@@ -135,7 +155,6 @@ def start_instance_process(
         os.chmod(vnc_launcher_path, stat.S_IRWXU)
         main_cmd = ['bash', vnc_launcher_path]
 
-        # --- MODIFICATION --- Use original `instance_name` everywhere and restore the working redirect logic.
         nginx_conf_content = f"""
         location /ws/{instance_name}/ {{
             proxy_pass http://127.0.0.1:{vnc_web_port}/;
