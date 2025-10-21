@@ -140,7 +140,7 @@
         *   Create API endpoints for basic CRUD (Create, Read, Delete) of instances.
         *   Implement the `process_manager` to start/stop blueprints as subprocesses.
     
-    3.  **Phase 3: Frontend & Basic Management (In Progress)**
+    3.  **Phase 3: Frontend & Basic Management (Completed)**
         *   Refactored instance management to use dynamic paths for configurations and outputs.
         *   Built the final, resizable multi-pane dashboard layout and applied a polished visual style.
         *   Implemented the System Monitoring feature (backend endpoint and frontend panel).
@@ -151,18 +151,19 @@
     
     4.  **Phase 4: Advanced Features & UX (In Progress)**
     
-        *   **Debugging Session Summary (VNC, Permissions & NGINX Proxy):**
-            *   An extensive debugging session was conducted to resolve errors related to the Persistent VNC mode.
-            *   **Initial Blocker (Solved):** The Docker image build was unstable. The command `apt-get purge python3` was identified as the root cause, corrupting the system base.
-            *   **Resolution:** The Dockerfiles (`Dockerfile` and `Dockerfile.buildbase`) were re-architected. All `apt` installations were consolidated into the base image, and the destructive python purge was removed. This resulted in a stable base image with all required binaries (`sudo`, `nginx`, `websockify`, etc.) correctly installed.
-            *   **Second Blocker (Solved):** The `sudo` command consistently failed, asking for a password despite a correct `NOPASSWD` rule in the `sudoers` configuration. This was due to an intractable conflict with the `s6-overlay` execution environment from the `linuxserver.io` base image.
-            *   **Resolution:** The need for `sudo` was eliminated entirely. The startup script `init-chown/run` was modified to grant the `abc` user direct ownership of the NGINX configuration directory (`/etc/nginx/locations.d`), allowing it to write configuration files without privilege escalation.
-            *   **Current Blocker:** The final hurdle is an `ERR_CONNECTION_REFUSED` error. The current NGINX configuration successfully redirects the user to the noVNC client page and adds the necessary auto-connect parameters. The page and its assets load correctly. However, the subsequent WebSocket connection attempt from the client to the server is actively refused by the NGINX proxy.
+        *   **Debugging Session Summary (VNC Proxy Logic): RESOLVED**
+            *   An extensive debugging session was conducted to resolve a chain of issues preventing the Persistent VNC mode from functioning. The core logic is now fully validated and integrated into `process_manager.py`.
+            *   **Initial Blockers (Solved):** The root cause of the `ERR_CONNECTION_REFUSED` and subsequent `404 Not Found` errors was identified as a faulty NGINX redirection and reload mechanism.
+            *   **Resolution & Key Findings:**
+                1.  **NGINX Redirection:** The `return 302` directive was modified to use an **absolute URL** (`$scheme://$http_host...`), which solved the critical issue of the browser being redirected incorrectly (losing the port, switching to HTTPS).
+                2.  **NGINX Proxy Logic:** A robust, two-part `location` block was implemented: one for the WebSocket connection (`/ws/...`) and one for the noVNC web client (`/app/...`). This configuration correctly handles both types of traffic.
+                3.  **NGINX Location Matching:** The generated NGINX configuration now uses the **original instance name** (e.g., `ComfyUI-AO`) for the location path, ensuring a direct and case-sensitive match with the URL requested by the frontend, which solved the final `404` errors.
+                4.  **Application Isolation:** The VNC launcher script was updated to create a **unique Firefox profile** for each instance, resolving the "Firefox is already running" error and ensuring stability.
+            *   **Outcome:** The core functionality for the Persistent VNC mode is now functional. The system can successfully launch an isolated VNC session, configure NGINX to proxy all required traffic, and make it accessible to the user.
     
-        *   **Next Steps for Resolution:**
-            1.  **Isolate and Simplify NGINX:** The dynamic generation of NGINX configurations within `entry.sh` has introduced complexity. The next step is to create a minimal, static NGINX configuration with hardcoded paths for a single VNC instance to prove the proxy concept works in isolation.
-            2.  **Verify WebSocket Handshake:** Investigate NGINX's handling of the WebSocket `Upgrade` and `Connection` headers. The issue likely lies in how these headers are being proxied. Increasing NGINX's logging verbosity to `debug` will be essential to see the full request and response headers during the failed handshake.
-            3.  **Integrate Solution:** Once a working static NGINX configuration is found, re-integrate that proven logic back into the dynamic generation script in `entry.sh`.
+        *   **Known Minor Issues / Next Steps for Refinement:**
+            1.  **VNC Dynamic Resizing:** The VNC desktop does not automatically resize to fit the browser window. The `resize=remote` parameter is correctly passed, but the `Xvnc` server-side configuration may require adjustment (e.g., ensuring `xrandr` is available and configured).
+            2.  **VNC Firefox Auto-Navigation:** The Firefox instance launched within the VNC session does not automatically open the target WebUI's URL. This is likely a timing issue or a sandbox restriction that needs to be investigated.
     
     5.  **Phase 5: Refinement (Planned)**
         *   Implement the `Update` functionality for saving changes to existing instances (Name, GPU IDs, etc.).
