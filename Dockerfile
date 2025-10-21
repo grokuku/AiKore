@@ -35,11 +35,25 @@ RUN apt-get update -q && \
     git \
     gawk \
     dos2unix \
-    firefox \
+    # --- VNC Dependencies ---
+    tigervnc-standalone-server \
     websockify \
-    novnc && \
-    # Remove any conflicting system Python to ensure Conda's version is used
-    apt-get purge python3 -y && \
+    novnc \
+    openbox
+
+# --- Firefox Installation (DEB version) ---
+# Add Mozilla PPA to get the official non-snap Firefox build
+RUN add-apt-repository ppa:mozillateam/ppa -y && \
+    # Set PPA priority to ensure we get Firefox from Mozilla, not Ubuntu repos
+    echo 'Package: *' > /etc/apt/preferences.d/mozilla-firefox && \
+    echo 'Pin: release o=LP-PPA-mozillateam' >> /etc/apt/preferences.d/mozilla-firefox && \
+    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mozilla-firefox && \
+    apt-get update -q && \
+    apt-get install -y firefox
+
+# Isolate the destructive python purge into its own layer to prevent conflicts
+RUN apt-get purge python3 -y && \
+    # --- Continue with setup ---
     # Install CUDA Toolkit for Ubuntu 24.04
     cd /tmp/ && \
     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
@@ -63,8 +77,8 @@ RUN find /etc/s6-overlay -type f -name "run" -exec chmod +x {} +
 RUN find /etc/s6-overlay -type f -name "finish" -exec chmod +x {} + || true
 
 # --- KasmVNC Pacification ---
-# Create a dummy openbox-session script to prevent log spam.
-RUN printf '%s\n' '#!/bin/bash' 'exit 0' > /usr/bin/openbox-session && chmod +x /usr/bin/openbox-session
+# The dummy openbox-session is no longer needed as we install it properly.
+# RUN printf '%s\n' '#!/bin/bash' 'exit 0' > /usr/bin/openbox-session && chmod +x /usr/bin/openbox-session
 # Overwrite the window manager startup script to prevent the nvidia-smi loop.
 RUN echo '#!/bin/bash\necho "Window manager startup script disabled for AiKore."\nsleep infinity' > /defaults/startwm.sh && chmod +x /defaults/startwm.sh
 

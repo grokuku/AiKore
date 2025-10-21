@@ -2,7 +2,8 @@ import subprocess
 import os
 import stat
 import socket
-import re # <--- Import regular expressions
+import re
+import textwrap
 from pathlib import Path
 from subprocess import PIPE, STDOUT
 
@@ -31,8 +32,11 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 def _find_free_display() -> int:
-    """Finds an available X display number by checking for lock files."""
-    display = 1
+    """
+    Finds an available X display number by checking for lock files.
+    Starts searching from 10 to avoid conflicts with default KasmVNC services.
+    """
+    display = 10
     while os.path.exists(f"/tmp/.X11-unix/X{display}"):
         display += 1
     return display
@@ -99,72 +103,103 @@ def start_instance_process(
         proxy_target_port = app_port
         main_cmd = ['bash', dest_script_path]
         vnc_web_port, vnc_display = None, None
+        nginx_conf_content = f"""
+        location /app/{instance_name}/ {{
+            rewrite ^/app/[^/]+/(.*)$ /$1 break;
+            proxy_pass http://127.0.0.1:{proxy_target_port}/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }}
+        """
     else:
         vnc_display = _find_free_display()
         vnc_web_port = _find_free_port()
         vnc_rfb_port = 5900 + vnc_display
         proxy_target_port = vnc_web_port
 
-        vnc_launcher_path = os.path.join(instance_conf_dir, f"vnc_launcher_{instance_slug}.sh") # <-- Use slug here
-        vnc_password_file = "/home/abc/.vnc/passwd" # Provided by base image
+        vnc_launcher_path = os.path.join(instance_conf_dir, f"vnc_launcher_{instance_slug}.sh")
+        vnc_password_dir = "/home/abc/.vnc"
+        vnc_password_file = os.path.join(vnc_password_dir, "passwd")
 
-        vnc_launcher_content = f"""#!/bin/bash
-# Launcher for instance '{instance_name}' on DISPLAY=:{vnc_display}
-
-cleanup() {{
-    echo "VNC launcher caught signal, cleaning up child processes..."
-    kill 0
-}}
-trap cleanup SIGTERM SIGINT
-
-echo "--- Starting VNC Server (Xvnc) on display :{vnc_display} (port {vnc_rfb_port}) ---"
-/usr/bin/Xvnc :{vnc_display} \\
-    -desktop VNC -auth /home/abc/.Xauthority -geometry 1280x800 -depth 24 \\
-    -rfbwait 120000 -rfbauth {vnc_password_file} -rfbport {vnc_rfb_port} \\
-    -fp /usr/share/fonts/X11/misc,/usr/share/fonts/X11/Type1 \\
-    -SecurityTypes VncAuth,TLSVnc &
-
-echo "--- Starting VNC Web Client (websockify) on port {vnc_web_port} ---"
-/usr/bin/websockify -v --web /usr/share/novnc/ --cert /etc/ssl/novnc.pem {vnc_web_port} 127.0.0.1:{vnc_rfb_port} &
-
-sleep 2
-export DISPLAY=:{vnc_display}
-
-echo "--- Starting Window Manager (openbox) ---"
-/usr/bin/openbox-session &
-
-echo "--- Starting WebUI script in background ---"
-bash {dest_script_path} &
-
-echo "--- Waiting 15s for server to initialize... ---"
-sleep 15
-
-echo "--- Launching Firefox ---"
-firefox http://127.0.0.1:{app_port}
-
-wait
-"""
+        vnc_launcher_content = f"""
+        #!/bin/bash
+        # Launcher for instance '{instance_name}' on DISPLAY=:{vnc_display}
+        
+        cleanup() {{
+        echo "VNC launcher caught signal, cleaning up child processes..."
+        kill 0 # Kills all processes in the current process group
+        }}
+        trap cleanup SIGTERM SIGINT
+        
+        echo "--- Preparing VNC Environment ---"
+        mkdir -p {vnc_password_dir}
+        echo "aikore" | vncpasswd -f > {vnc_password_file}
+        chmod 600 {vnc_password_file}
+        
+        echo "--- Starting VNC Server (Xvnc) on display :{vnc_display} (port {vnc_rfb_port}) ---"
+        /usr/bin/Xvnc :{vnc_display} \\
+        -desktop VNC -auth /home/abc/.Xauthority -geometry 1280x800 -depth 24 \\
+        -rfbauth {vnc_password_file} -rfbport {vnc_rfb_port} \\
+        -fp /usr/share/fonts/X11/misc,/usr/share/fonts/X11/Type1 \\
+        -SecurityTypes VncAuth &
+        
+        echo "--- Starting VNC Web Client (websockify) on port {vnc_web_port} ---"
+        /usr/bin/websockify -v --web /usr/share/novnc/ {vnc_web_port} 127.0.0.1:{vnc_rfb_port} &
+        
+        sleep 2
+        export DISPLAY=:{vnc_display}
+        
+        echo "--- Starting Window Manager (openbox) ---"
+        /usr/bin/openbox-session &
+        
+        echo "--- Starting WebUI script in background ---"
+        bash {dest_script_path} &
+        
+        echo "--- Waiting 15s for server to initialize... ---"
+        sleep 15
+        
+        echo "--- Launching Firefox (in background) ---"
+        /usr/bin/firefox http://127.0.0.1:{app_port} &
+        
+        wait # Wait for all background jobs to finish
+        """
         with open(vnc_launcher_path, 'w') as f:
-            f.write(vnc_launcher_content)
+            f.write(textwrap.dedent(vnc_launcher_content))
         
         os.chmod(vnc_launcher_path, stat.S_IRWXU)
         main_cmd = ['bash', vnc_launcher_path]
 
-    # Use the slug for the NGINX config filename, but the original name in the location path
+        nginx_conf_content = f"""
+        location /app/{instance_name}/websockify {{
+            proxy_pass http://127.0.0.1:{proxy_target_port}/;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto http;
+        }}
+
+        location = /app/{instance_name}/ {{
+            return 302 /app/{instance_name}/vnc_auto.html?path=/app/{instance_name}/websockify;
+        }}
+
+        location /app/{instance_name}/ {{
+            proxy_pass http://127.0.0.1:{proxy_target_port}/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto http;
+        }}
+        """
+
     nginx_conf_path = os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf")
-    nginx_conf_content = f"""
-    location /app/{instance_name}/ {{
-        rewrite ^/app/[^/]+/(.*)$ /$1 break;
-        proxy_pass http://127.0.0.1:{proxy_target_port}/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }}
-    """
     with open(nginx_conf_path, 'w') as f:
         f.write(nginx_conf_content)
     
@@ -188,7 +223,7 @@ wait
     return main_process.pid, app_port, vnc_web_port, vnc_display
 
 def cleanup_instance_process(instance_name: str):
-    instance_slug = _slugify(instance_name) # <-- Use the slug to find the correct file
+    instance_slug = _slugify(instance_name)
     nginx_conf_path = os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf")
     if os.path.exists(nginx_conf_path):
         os.remove(nginx_conf_path)
