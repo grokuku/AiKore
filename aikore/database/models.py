@@ -13,8 +13,11 @@ class Instance(Base):
     gpu_ids = Column(String, nullable=True)
     autostart = Column(Boolean, default=False, nullable=False)
     persistent_mode = Column(Boolean, default=False, nullable=False)
+    
+    # Possible statuses: 'stopped', 'starting', 'stalled', 'started'
     status = Column(String, default="stopped", nullable=False)
+    
     pid = Column(Integer, nullable=True)
     port = Column(Integer, nullable=True)
-    vnc_port = Column(Integer, nullable=True)    # <-- ADD THIS LINE
-    vnc_display = Column(Integer, nullable=True) # <-- ADD THIS LINE
+    vnc_port = Column(Integer, nullable=True)
+    vnc_display = Column(Integer, nullable=True)

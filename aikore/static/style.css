@@ -1,10 +1,13 @@
 /* --- GLOBAL & LAYOUT --- */
-html, body {
+html,
+body {
     height: 100vh;
     margin: 0;
-    overflow: hidden; /* Prevent body from scrolling */
+    overflow: hidden;
+    /* Prevent body from scrolling */
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: #1a1a2e; /* Main background color */
+    background-color: #1a1a2e;
+    /* Main background color */
     color: #e0e0e0;
 }
 
@@ -14,12 +17,14 @@ html, body {
     height: 100%;
     padding: 1rem;
     box-sizing: border-box;
-    user-select: none; /* Disable text selection globally within the app */
+    user-select: none;
+    /* Disable text selection globally within the app */
 }
 
 .main-title {
     color: #ffffff;
-    margin: 0 0 8px 0; /* Space below the main title */
+    margin: 0 0 8px 0;
+    /* Space below the main title */
     flex-shrink: 0;
 }
 
@@ -63,9 +68,17 @@ html, body {
 }
 
 /* --- PANE-SPECIFIC COLORS --- */
-#instance-pane { background-color: #2a2a4a; }
-#tools-pane { background-color: #2c2c54; }
-#monitoring-pane { background-color: #252545; }
+#instance-pane {
+    background-color: #2a2a4a;
+}
+
+#tools-pane {
+    background-color: #2c2c54;
+}
+
+#monitoring-pane {
+    background-color: #252545;
+}
 
 .pane-header {
     display: flex;
@@ -95,7 +108,8 @@ html, body {
 
 #tools-pane .pane-content {
     padding: 0;
-    display: flex; /* Enable flex for children */
+    display: flex;
+    /* Enable flex for children */
     flex-direction: column;
 }
 
@@ -130,7 +144,8 @@ html, body {
     position: sticky;
     top: 0;
     z-index: 10;
-    background-color: #2a2a4a; /* Match pane background for solid effect */
+    background-color: #2a2a4a;
+    /* Match pane background for solid effect */
 }
 
 .instances-table th {
@@ -143,7 +158,8 @@ html, body {
 }
 
 .instances-table th.actions-column {
-    width: 1%; /* Allow this column to be as wide as its content */
+    width: 1%;
+    /* Allow this column to be as wide as its content */
 }
 
 .instances-table th:first-child {
@@ -162,8 +178,10 @@ html, body {
 }
 
 /* CENTER CHECKBOX COLUMNS */
-.instances-table th:nth-child(4), .instances-table th:nth-child(5),
-.instances-table td:nth-child(4), .instances-table td:nth-child(5) {
+.instances-table th:nth-child(4),
+.instances-table th:nth-child(5),
+.instances-table td:nth-child(4),
+.instances-table td:nth-child(5) {
     text-align: center;
 }
 
@@ -178,7 +196,8 @@ html, body {
     border-radius: 6px;
     box-sizing: border-box;
     font-size: 14px;
-    user-select: text; /* Allow text selection inside inputs */
+    user-select: text;
+    /* Allow text selection inside inputs */
 }
 
 .instances-table input[type="checkbox"] {
@@ -196,10 +215,36 @@ html, body {
     text-transform: capitalize;
 }
 
-.status-running { background-color: #28a745; color: white; }
-.status-stopped { background-color: #dc3545; color: white; }
-.status-starting { background-color: #ffc107; color: #333; }
-.status-error { background-color: #ff4d4d; color: white; }
+.status-stopped {
+    background-color: #6c757d;
+    color: white;
+}
+
+/* Bootstrap Secondary Grey */
+.status-starting {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+/* Bootstrap Warning Yellow */
+.status-stalled {
+    background-color: #fd7e14;
+    color: white;
+}
+
+/* Bootstrap Orange */
+.status-started {
+    background-color: #28a745;
+    color: white;
+}
+
+/* Bootstrap Success Green */
+.status-error {
+    background-color: #dc3545;
+    color: white;
+}
+
+/* Bootstrap Danger Red */
 
 /* ACTION BUTTONS STYLING */
 .action-btn {
@@ -211,16 +256,25 @@ html, body {
     white-space: nowrap;
     transition: filter 0.2s ease, opacity 0.2s ease;
     font-weight: 500;
-    font-size: 13px; /* Slightly smaller for more buttons */
+    font-size: 13px;
+    /* Slightly smaller for more buttons */
+    text-decoration: none;
+    /* For <a> tags */
+    display: inline-block;
+    /* For <a> tags */
 }
 
-.action-btn:hover:not(:disabled) {
+.action-btn:hover:not(:disabled):not(.disabled) {
     filter: brightness(1.15);
 }
 
-.action-btn:disabled {
+/* Unified disabled style for both <button disabled> and <a class="disabled"> */
+.action-btn:disabled,
+.action-btn.disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    pointer-events: none;
+    /* Important for <a> tags */
 }
 
 .instances-table td.actions-column {
@@ -228,22 +282,49 @@ html, body {
     justify-content: flex-end;
     align-items: center;
     gap: 5px;
-    padding: 8px 5px; /* Add some vertical padding to the cell */
+    padding: 8px 5px;
+    /* Add some vertical padding to the cell */
 }
 
 /* BUTTON COLORS */
-[data-action="start"], [data-action="save"], [data-action="update"] { background-color: #28a745; }
-[data-action="stop"] { background-color: #ffc107; color: #333; }
-[data-action="delete"] { background-color: #dc3545; }
-[data-action="logs"] { background-color: #17a2b8; }
-[data-action="script"], [data-action="parameters"] { background-color: #6f42c1; } /* New color for edit buttons */
-[data-action="open"] { background-color: #4a4a70; }
-.action-btn:not([data-action]) { background-color: #4a4a70; }
+[data-action="start"],
+[data-action="save"],
+[data-action="update"] {
+    background-color: #28a745;
+}
+
+[data-action="stop"] {
+    background-color: #ffc107;
+    color: #333;
+}
+
+[data-action="delete"] {
+    background-color: #dc3545;
+}
+
+[data-action="logs"] {
+    background-color: #17a2b8;
+}
+
+[data-action="script"],
+[data-action="parameters"] {
+    background-color: #6f42c1;
+}
+
+/* New color for edit buttons */
+[data-action="open"] {
+    background-color: #4a4a70;
+}
+
+.action-btn:not([data-action]) {
+    background-color: #4a4a70;
+}
 
 
 /* --- TOOLS / LOGS PANE --- */
 #log-viewer-container {
-    flex-grow: 1; /* Take up available space */
+    flex-grow: 1;
+    /* Take up available space */
 }
 
 .terminal-style {
@@ -253,11 +334,14 @@ html, body {
     padding: 1rem;
     height: 100%;
     box-sizing: border-box;
-    overflow: auto; /* Add scroll to the log viewer itself */
+    overflow: auto;
+    /* Add scroll to the log viewer itself */
 }
 
-.terminal-style pre, .terminal-style code {
-    user-select: text; /* Allow text selection specifically in the log view */
+.terminal-style pre,
+.terminal-style code {
+    user-select: text;
+    /* Allow text selection specifically in the log view */
 }
 
 .terminal-style pre {
@@ -267,7 +351,8 @@ html, body {
 }
 
 .log-error {
-    color: #ff6b6b; /* A bright red/pink for errors */
+    color: #ff6b6b;
+    /* A bright red/pink for errors */
 }
 
 /* --- FILE EDITOR --- */
@@ -276,7 +361,8 @@ html, body {
     flex-direction: column;
     height: 100%;
     flex-grow: 1;
-    background-color: #111; /* Match terminal background */
+    background-color: #111;
+    /* Match terminal background */
 }
 
 #file-editor-textarea {
@@ -284,9 +370,11 @@ html, body {
     width: 100%;
     padding: 1rem;
     box-sizing: border-box;
-    background-color: #111; /* Match terminal background */
+    background-color: #111;
+    /* Match terminal background */
     border: none;
-    color: #00ff41; /* Match terminal text color */
+    color: #00ff41;
+    /* Match terminal text color */
     font-family: 'Courier New', Courier, monospace;
     font-size: 14px;
     resize: none;
@@ -301,18 +389,25 @@ html, body {
     padding: 1rem;
     border-top: 1px solid #3b3b6b;
     flex-shrink: 0;
-    background-color: #2c2c54; /* Match pane background */
+    background-color: #2c2c54;
+    /* Match pane background */
 }
 
-#editor-save-btn { background-color: #28a745; }
-#editor-exit-btn { background-color: #4a4a70; }
+#editor-save-btn {
+    background-color: #28a745;
+}
+
+#editor-exit-btn {
+    background-color: #4a4a70;
+}
 
 /* --- MONITORING PANE --- */
 #system-stats-container {
     padding-top: 1.5rem;
     display: flex;
     flex-direction: column;
-    gap: 20px; /* Space between CPU/RAM and GPU sections */
+    gap: 20px;
+    /* Space between CPU/RAM and GPU sections */
 }
 
 .system-stat-row {
@@ -322,7 +417,8 @@ html, body {
 }
 
 .stat-label {
-    flex-basis: 40px; /* Fixed width for labels like CPU, RAM */
+    flex-basis: 40px;
+    /* Fixed width for labels like CPU, RAM */
     font-weight: 500;
     color: #c0c0c0;
 }
@@ -337,14 +433,16 @@ html, body {
 
 .progress-bar {
     height: 100%;
-    width: 0%; /* Start at 0, updated by JS */
+    width: 0%;
+    /* Start at 0, updated by JS */
     background-color: #007bff;
     border-radius: 6px;
     transition: width 0.5s ease-in-out;
 }
 
 .stat-value {
-    flex-basis: 120px; /* Fixed width for value text */
+    flex-basis: 120px;
+    /* Fixed width for value text */
     text-align: right;
     font-family: monospace;
     font-size: 14px;
@@ -354,7 +452,8 @@ html, body {
 #gpu-stats-container {
     display: flex;
     flex-direction: column;
-    gap: 15px; /* Space between each GPU block */
+    gap: 15px;
+    /* Space between each GPU block */
 }
 
 .gpu-stat {

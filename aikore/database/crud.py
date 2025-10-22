@@ -14,11 +14,23 @@ def get_instances(db: Session, skip: int = 0, limit: int = 100):
     """
     return db.query(models.Instance).offset(skip).limit(limit).all()
 
-def create_instance(db: Session, instance: schemas.InstanceCreate):
+def create_instance(
+    db: Session, 
+    instance: schemas.InstanceCreate,
+    port: int,
+    vnc_port: int | None,
+    vnc_display: int | None
+):
     """
-    Create a new instance record in the database.
+    Create a new instance record in the database, including pre-allocated ports.
     """
-    db_instance = models.Instance(**instance.model_dump())
+    instance_data = instance.model_dump()
+    db_instance = models.Instance(
+        **instance_data,
+        port=port,
+        vnc_port=vnc_port,
+        vnc_display=vnc_display
+    )
     db.add(db_instance)
     db.commit()
     db.refresh(db_instance)
@@ -35,14 +47,15 @@ def update_instance_status(
 ):
     """
     Update the status, PID, port, and VNC details of an instance.
+    NOTE: This is legacy and no longer used by the primary start/stop flow.
     """
     db_instance = db.query(models.Instance).filter(models.Instance.id == instance_id).first()
     if db_instance:
         db_instance.status = status
         db_instance.pid = pid
         db_instance.port = port
-        db_instance.vnc_port = vnc_port       # <-- ADD THIS LINE
-        db_instance.vnc_display = vnc_display # <-- ADD THIS LINE
+        db_instance.vnc_port = vnc_port
+        db_instance.vnc_display = vnc_display
         db.commit()
         db.refresh(db_instance)
     return db_instance

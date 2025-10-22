@@ -1,30 +1,28 @@
 document.addEventListener('DOMContentLoaded', () => {
     const instancesTbody = document.getElementById('instances-tbody');
     const addInstanceBtn = document.querySelector('.add-new-btn');
-    let availableBlueprints = []; // Store blueprints globally
+    let availableBlueprints = [];
 
-    // Tools/Logs/Editor pane elements
     const toolsPaneTitle = document.getElementById('tools-pane-title');
     const logViewerContainer = document.getElementById('log-viewer-container');
-    const toolsPaneContent = document.getElementById('tools-pane-content'); // This is the <code> in the log viewer
+    const toolsPaneContent = document.getElementById('tools-pane-content');
     const editorContainer = document.getElementById('editor-container');
     const fileEditorTextarea = document.getElementById('file-editor-textarea');
     const editorSaveBtn = document.getElementById('editor-save-btn');
     const editorExitBtn = document.getElementById('editor-exit-btn');
 
-    // State for live logs
     let activeLogInstanceId = null;
     let activeLogInterval = null;
-    let logSize = 0; // Single size tracker for the unified log file
+    let logSize = 0;
 
-    // State for editor
     let editorState = {
         instanceId: null,
         instanceName: null,
-        fileType: null, // 'script'
+        fileType: null,
     };
 
-    // --- Helper function to fetch blueprints and populate the global array ---
+    let instancesPollInterval = null;
+
     async function fetchAndStoreBlueprints() {
         try {
             const response = await fetch('/api/system/blueprints');
@@ -37,67 +35,94 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Helper function to create a blueprint select element ---
     function createBlueprintSelect(selectedValue = '') {
         const select = document.createElement('select');
         select.dataset.field = 'base_blueprint';
         select.required = true;
-        
-        if (availableBlueprints.length === 0) {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = 'Loading blueprints...';
-            option.disabled = true;
-            option.selected = true;
-            select.appendChild(option);
-        } else {
-            const defaultOption = document.createElement('option');
-            defaultOption.value = '';
-            defaultOption.textContent = 'Select a blueprint';
-            defaultOption.disabled = true;
-            defaultOption.selected = true;
-            select.appendChild(defaultOption);
 
-            availableBlueprints.forEach(bp => {
-                const option = document.createElement('option');
-                option.value = bp;
-                option.textContent = bp;
-                if (bp === selectedValue) {
-                    option.selected = true;
-                    defaultOption.selected = false;
-                }
-                select.appendChild(option);
-            });
-        }
+        const defaultOption = document.createElement('option');
+        defaultOption.value = '';
+        defaultOption.textContent = 'Select a blueprint';
+        defaultOption.disabled = true;
+        select.appendChild(defaultOption);
+        if (!selectedValue) defaultOption.selected = true;
+
+        availableBlueprints.forEach(bp => {
+            const option = document.createElement('option');
+            option.value = bp;
+            option.textContent = bp;
+            if (bp === selectedValue) option.selected = true;
+            select.appendChild(option);
+        });
         return select;
     }
 
-    /**
-     * Renders a single instance row in the table.
-     * @param {object} instance - The instance data.
-     * @param {boolean} isNew - True if it's a newly added row not yet saved to DB.
-     */
+    function checkRowForChanges(row) {
+        const updateButton = row.querySelector('button[data-action="update"]');
+        if (!updateButton) return;
+
+        const nameField = row.querySelector('input[data-field="name"]');
+        const gpuIdsField = row.querySelector('input[data-field="gpu_ids"]');
+        const autostartField = row.querySelector('input[data-field="autostart"]');
+        const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
+
+        let changed = false;
+        if (nameField.value !== row.dataset.originalName) changed = true;
+        if (gpuIdsField.value !== row.dataset.originalGpuIds) changed = true;
+        if (autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
+        if (persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) changed = true;
+
+        updateButton.disabled = !changed;
+    }
+
+    function updateInstanceRow(row, instance) {
+        const isStarted = instance.status === 'started';
+        const isStopped = instance.status === 'stopped';
+        const isActive = !isStopped;
+
+        const statusSpan = row.querySelector('.status');
+        statusSpan.textContent = instance.status;
+        statusSpan.className = `status status-${instance.status.toLowerCase()}`;
+        row.cells[6].textContent = instance.port || 'N/A';
+
+        row.querySelector('[data-action="start"]').disabled = isActive;
+        row.querySelector('[data-action="stop"]').disabled = isStopped;
+        row.querySelector('[data-action="script"]').disabled = isActive;
+        row.querySelector('[data-action="delete"]').disabled = isActive;
+
+        const openButton = row.querySelector('[data-action="open"]');
+        if (isStarted) {
+            openButton.href = `/app/${instance.name}/`;
+            openButton.classList.remove('disabled');
+        } else {
+            openButton.href = '#';
+            openButton.classList.add('disabled');
+        }
+        checkRowForChanges(row);
+    }
+
     function renderInstanceRow(instance, isNew = false) {
         const row = document.createElement('tr');
         row.dataset.id = instance.id;
-        row.dataset.isNew = isNew;
+        row.dataset.isNew = String(isNew);
 
-        const statusClass = `status status-${instance.status.toLowerCase()}`;
-        const isRunning = instance.status === 'running';
-        const isStarting = instance.status === 'starting';
-
-        row.dataset.originalName = instance.name;
-        row.dataset.originalBlueprint = instance.base_blueprint;
+        row.dataset.originalName = instance.name || '';
+        row.dataset.originalBlueprint = instance.base_blueprint || '';
         row.dataset.originalGpuIds = instance.gpu_ids || '';
-        row.dataset.originalAutostart = instance.autostart;
-        row.dataset.originalPersistentMode = instance.persistent_mode;
+        row.dataset.originalAutostart = String(instance.autostart);
+        row.dataset.originalPersistentMode = String(instance.persistent_mode);
 
+        const isStarted = instance.status === 'started';
+        const isStopped = instance.status === 'stopped';
+        const isActive = !isStopped;
+
+        // --- Field Creation (Reliable Method) ---
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
-        nameInput.value = instance.name;
+        nameInput.value = instance.name || '';
         nameInput.dataset.field = 'name';
         nameInput.required = true;
-        nameInput.disabled = !isNew;
+        nameInput.disabled = !isNew && isActive; // Name is editable only if stopped
         row.insertCell().appendChild(nameInput);
 
         const blueprintSelect = createBlueprintSelect(instance.base_blueprint);
@@ -122,118 +147,38 @@ document.addEventListener('DOMContentLoaded', () => {
         persistentModeCheckbox.dataset.field = 'persistent_mode';
         row.insertCell().appendChild(persistentModeCheckbox);
 
-        row.insertCell().innerHTML = `<span class="${statusClass}">${instance.status}</span>`;
+        // Status, Port
+        row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
         row.insertCell().textContent = instance.port || 'N/A';
 
-        // --- Unified Actions Cell ---
         const actionsCell = row.insertCell();
         actionsCell.classList.add('actions-column');
 
-        const startButton = document.createElement('button');
-        startButton.classList.add('action-btn');
-        startButton.dataset.action = 'start';
-        startButton.dataset.id = instance.id;
-        startButton.textContent = 'Start';
-        startButton.disabled = isRunning || isStarting || isNew;
-        actionsCell.appendChild(startButton);
-
-        const stopButton = document.createElement('button');
-        stopButton.classList.add('action-btn');
-        stopButton.dataset.action = 'stop';
-        stopButton.dataset.id = instance.id;
-        stopButton.textContent = 'Stop';
-        stopButton.disabled = !isRunning || isNew;
-        actionsCell.appendChild(stopButton);
-
-        const logsButton = document.createElement('button');
-        logsButton.classList.add('action-btn');
-        logsButton.dataset.action = 'logs';
-        logsButton.dataset.id = instance.id;
-        logsButton.dataset.name = instance.name;
-        logsButton.textContent = 'Logs';
-        logsButton.disabled = isNew;
-        actionsCell.appendChild(logsButton);
-
-        const scriptButton = document.createElement('button');
-        scriptButton.classList.add('action-btn');
-        scriptButton.dataset.action = 'script';
-        scriptButton.dataset.id = instance.id;
-        scriptButton.dataset.name = instance.name;
-        scriptButton.textContent = 'Script';
-        scriptButton.disabled = isNew || isRunning || isStarting;
-        actionsCell.appendChild(scriptButton);
-
-        const saveUpdateButton = document.createElement('button');
-        saveUpdateButton.classList.add('action-btn');
-        saveUpdateButton.dataset.id = instance.id;
         if (isNew) {
-            saveUpdateButton.dataset.action = 'save';
-            saveUpdateButton.textContent = 'Save';
-            saveUpdateButton.disabled = !nameInput.value || blueprintSelect.value === '';
+            actionsCell.innerHTML = `<button class="action-btn" data-action="save" data-id="new" disabled>Save</button><button class="action-btn" data-action="cancel_new">Cancel</button>`;
         } else {
-            saveUpdateButton.dataset.action = 'update';
-            saveUpdateButton.textContent = 'Update';
-            saveUpdateButton.disabled = true;
-        }
-        actionsCell.appendChild(saveUpdateButton);
-
-        const deleteButton = document.createElement('button');
-        deleteButton.classList.add('action-btn');
-        deleteButton.dataset.action = 'delete';
-        deleteButton.dataset.id = instance.id;
-        deleteButton.textContent = 'Delete';
-        deleteButton.disabled = isRunning || isStarting;
-        actionsCell.appendChild(deleteButton);
-        
-        const openButton = document.createElement('a');
-        openButton.classList.add('action-btn');
-        openButton.dataset.action = 'open';
-        openButton.dataset.id = instance.id;
-        openButton.textContent = 'Open';
-        if (isRunning) {
-            openButton.href = `/app/${instance.name}/`;
-            openButton.target = '_blank';
-            openButton.disabled = false;
-        } else {
-            openButton.href = '#';
-            openButton.disabled = true;
-            openButton.style.pointerEvents = 'none';
-        }
-        actionsCell.appendChild(openButton);
-
-        if (!isNew) {
-            const editableFields = row.querySelectorAll('input[type="text"], select, input[type="checkbox"]');
-            editableFields.forEach(field => {
-                field.addEventListener('input', () => checkRowForChanges(row));
-            });
-        } else {
-            nameInput.addEventListener('input', () => {
-                saveUpdateButton.disabled = !nameInput.value || blueprintSelect.value === '';
-            });
-            blueprintSelect.addEventListener('change', () => {
-                saveUpdateButton.disabled = !nameInput.value || blueprintSelect.value === '';
-            });
+            actionsCell.innerHTML = `
+                <button class="action-btn" data-action="start" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Start</button>
+                <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
+                <button class="action-btn" data-action="logs" data-id="${instance.id}" data-name="${instance.name}">Logs</button>
+                <button class="action-btn" data-action="script" data-id="${instance.id}" data-name="${instance.name}" ${isActive ? 'disabled' : ''}>Script</button>
+                <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
+                <button class="action-btn" data-action="delete" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Delete</button>
+                <a href="${isStarted ? `/app/${instance.name}/` : '#'}" class="action-btn ${!isStarted ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
         }
 
+        const allFields = row.querySelectorAll('input, select');
+        if (isNew) {
+            const saveButton = row.querySelector('button[data-action="save"]');
+            allFields.forEach(field => field.addEventListener('input', () => {
+                const name = row.querySelector('input[data-field="name"]').value;
+                const bp = row.querySelector('select[data-field="base_blueprint"]').value;
+                saveButton.disabled = !name || !bp;
+            }));
+        } else {
+            allFields.forEach(field => field.addEventListener('input', () => checkRowForChanges(row)));
+        }
         return row;
-    }
-
-    function checkRowForChanges(row) {
-        const nameField = row.querySelector('input[data-field="name"]');
-        const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
-        const gpuIdsField = row.querySelector('input[data-field="gpu_ids"]');
-        const autostartField = row.querySelector('input[data-field="autostart"]');
-        const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
-        const updateButton = row.querySelector('button[data-action="update"]');
-
-        let changed = false;
-        if (nameField.value !== row.dataset.originalName) changed = true;
-        if (blueprintField.value !== row.dataset.originalBlueprint) changed = true;
-        if (gpuIdsField.value !== row.dataset.originalGpuIds) changed = true;
-        if (autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
-        if (persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) changed = true;
-
-        updateButton.disabled = !changed;
     }
 
     async function fetchAndRenderInstances() {
@@ -242,47 +187,54 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const instances = await response.json();
 
-            instancesTbody.innerHTML = '';
+            const existingRows = new Map([...instancesTbody.querySelectorAll('tr[data-id]')].map(row => [row.dataset.id, row]));
 
-            if (instances.length === 0) {
-                instancesTbody.innerHTML = `<tr><td colspan="8" style="text-align: center;">No instances created yet.</td></tr>`;
-            } else {
-                instances.forEach(instance => {
-                    const row = renderInstanceRow(instance, false);
-                    instancesTbody.appendChild(row);
-                });
+            const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
+            if (noInstancesRow) noInstancesRow.remove();
+
+            instances.forEach(instance => {
+                const instanceIdStr = String(instance.id);
+                if (existingRows.has(instanceIdStr)) {
+                    updateInstanceRow(existingRows.get(instanceIdStr), instance);
+                    existingRows.delete(instanceIdStr);
+                } else {
+                    const newRow = renderInstanceRow(instance);
+                    instancesTbody.appendChild(newRow);
+                }
+            });
+
+            for (const row of existingRows.values()) {
+                if (row.dataset.isNew !== 'true') row.remove();
+            }
+
+            if (instancesTbody.childElementCount === 0 && !document.querySelector('tr[data-is-new="true"]')) {
+                instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="8" style="text-align: center;">No instances created yet.</td></tr>`;
             }
         } catch (error) {
             console.error("Failed to fetch instances:", error);
-            instancesTbody.innerHTML = `<tr><td colspan="8">Error loading data. Check console.</td></tr>`;
+            if (instancesPollInterval) clearInterval(instancesPollInterval);
+            instancesTbody.innerHTML = `<tr><td colspan="8" style="text-align:center;">Error loading data. Check console.</td></tr>`;
         }
     }
 
     function addNewInstanceRow() {
-        const newInstance = {
-            id: 'new', name: '', base_blueprint: '', gpu_ids: '',
-            autostart: false, persistent_mode: false, status: 'stopped',
-            pid: null, port: null
-        };
+        if (document.querySelector('tr[data-is-new="true"]')) return;
+        const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
+        if (noInstancesRow) noInstancesRow.remove();
+        const newInstance = { id: 'new', autostart: false, persistent_mode: false, status: 'stopped' };
         const newRow = renderInstanceRow(newInstance, true);
         instancesTbody.appendChild(newRow);
-
         newRow.querySelector('input[data-field="name"]').focus();
-        newRow.querySelector('input[data-field="name"]').disabled = false;
-        newRow.querySelector('select[data-field="base_blueprint"]').disabled = false;
     }
 
     addInstanceBtn.addEventListener('click', addNewInstanceRow);
 
-    // --- Editor Functions ---
     function exitEditor() {
         editorContainer.classList.add('hidden');
         logViewerContainer.classList.remove('hidden');
         toolsPaneTitle.textContent = 'Tools / Logs';
         fileEditorTextarea.value = '';
-        editorState.instanceId = null;
-        editorState.instanceName = null;
-        editorState.fileType = null;
+        editorState = { instanceId: null, instanceName: null, fileType: null };
     }
 
     async function openEditor(instanceId, instanceName, fileType) {
@@ -300,272 +252,141 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const response = await fetch(`/api/instances/${instanceId}/file?file_type=${fileType}`);
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || 'Failed to load file.');
-            }
+            if (!response.ok) throw new Error((await response.json()).detail || 'Failed to load file.');
             const data = await response.json();
             fileEditorTextarea.value = data.content;
         } catch (error) {
-            console.error(`Error loading file content:`, error);
             fileEditorTextarea.value = `[ERROR] Could not load file: ${error.message}`;
         }
     }
 
     async function saveFileContent() {
         if (!editorState.instanceId || !editorState.fileType) return;
-
         const content = fileEditorTextarea.value;
         editorSaveBtn.textContent = 'Saving...';
         editorSaveBtn.disabled = true;
-
         try {
             const response = await fetch(`/api/instances/${editorState.instanceId}/file?file_type=${editorState.fileType}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: content })
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
             });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || 'Failed to save file.');
-            }
-            
-            // On success, briefly show confirmation
+            if (!response.ok) throw new Error((await response.json()).detail || 'Failed to save file.');
             editorSaveBtn.textContent = 'Saved!';
-            setTimeout(() => {
-                editorSaveBtn.textContent = 'Save';
-                editorSaveBtn.disabled = false;
-            }, 1500);
-
+            setTimeout(() => { editorSaveBtn.textContent = 'Save'; editorSaveBtn.disabled = false; }, 1500);
         } catch (error) {
-            console.error(`Error saving file content:`, error);
             alert(`Error saving file: ${error.message}`);
-            editorSaveBtn.textContent = 'Save';
-            editorSaveBtn.disabled = false;
+            editorSaveBtn.textContent = 'Save'; editorSaveBtn.disabled = false;
         }
     }
 
     editorSaveBtn.addEventListener('click', saveFileContent);
     editorExitBtn.addEventListener('click', exitEditor);
 
-    // --- Main Event Listener for Instance Actions ---
     instancesTbody.addEventListener('click', async (event) => {
         const target = event.target.closest('.action-btn');
-        if (!target) return;
+        if (!target || target.classList.contains('disabled')) return;
 
-        const instanceId = target.dataset.id;
-        const action = target.dataset.action;
         const row = target.closest('tr');
+        const instanceId = row.dataset.id;
+        const action = target.dataset.action;
 
         if (action === 'start' || action === 'stop') {
-            exitEditor(); // Ensure editor is closed before starting/stopping
+            target.disabled = true;
             try {
                 const response = await fetch(`/api/instances/${instanceId}/${action}`, { method: 'POST' });
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || `Failed to ${action} instance.`);
-                }
-                fetchAndRenderInstances();
+                if (!response.ok) throw new Error((await response.json()).detail);
+                await fetchAndRenderInstances();
             } catch (error) {
-                console.error(`Error ${action}ing instance:`, error);
                 alert(`Error: ${error.message}`);
+                await fetchAndRenderInstances();
             }
         } else if (action === 'save') {
-            exitEditor();
-            const name = row.querySelector('input[data-field="name"]').value;
-            const base_blueprint = row.querySelector('select[data-field="base_blueprint"]').value;
-            const gpu_ids = row.querySelector('input[data-field="gpu_ids"]').value || null;
-            const autostart = row.querySelector('input[data-field="autostart"]').checked;
-            const persistent_mode = row.querySelector('input[data-field="persistent_mode"]').checked;
-
-            if (!name || !base_blueprint) {
-                alert('Instance Name and Base Blueprint are required.');
-                return;
-            }
-
-            const data = { name, base_blueprint, gpu_ids, autostart, persistent_mode };
-
+            const data = {
+                name: row.querySelector('input[data-field="name"]').value,
+                base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
+                gpu_ids: row.querySelector('input[data-field="gpu_ids"]').value || null,
+                autostart: row.querySelector('input[data-field="autostart"]').checked,
+                persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
+            };
             try {
-                const response = await fetch('/api/instances/', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data),
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Failed to create instance.');
-                }
-                fetchAndRenderInstances();
+                const response = await fetch('/api/instances/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+                if (!response.ok) throw new Error((await response.json()).detail);
+                await fetchAndRenderInstances();
             } catch (error) {
-                console.error('Error creating instance:', error);
                 alert(`Error: ${error.message}`);
             }
-
         } else if (action === 'update') {
-            alert('Update functionality coming soon!');
+            alert('Update functionality is the next logical step to implement!');
         } else if (action === 'delete') {
-            if (activeLogInstanceId === instanceId) {
-                clearInterval(activeLogInterval);
-                activeLogInstanceId = null;
-            }
-            exitEditor(); // Close editor if it was for this instance
-            if (!confirm('Are you sure you want to delete this instance?')) return;
-            try {
-                const response = await fetch(`/api/instances/${instanceId}`, { method: 'DELETE' });
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || 'Failed to delete instance.');
+            if (confirm('Are you sure you want to delete this instance?')) {
+                try {
+                    const response = await fetch(`/api/instances/${instanceId}`, { method: 'DELETE' });
+                    if (!response.ok) throw new Error((await response.json()).detail);
+                    await fetchAndRenderInstances();
+                } catch (error) {
+                    alert(`Error: ${error.message}`);
                 }
-                fetchAndRenderInstances();
-            } catch (error) {
-                console.error('Error deleting instance:', error);
-                alert(`Error: ${error.message}`);
             }
         } else if (action === 'logs') {
-            exitEditor(); // Close editor before showing logs
-            const instanceName = target.dataset.name;
-            
+            exitEditor();
             clearInterval(activeLogInterval);
             activeLogInstanceId = instanceId;
-            logSize = 0; // Reset log size
-
-            toolsPaneTitle.textContent = `Logs: ${instanceName}`;
+            logSize = 0;
+            toolsPaneTitle.textContent = `Logs: ${target.dataset.name}`;
             toolsPaneContent.textContent = 'Loading logs...';
-
-            const errorKeywords = /(warning|warn|error|traceback|exception|failed)/i;
 
             const fetchLogs = async () => {
                 if (!activeLogInstanceId) return;
-
                 try {
                     const url = `/api/instances/${activeLogInstanceId}/logs?offset=${logSize}`;
                     const response = await fetch(url);
-                    
                     if (!response.ok) throw new Error('Instance stopped or logs unavailable.');
-                    
                     const data = await response.json();
 
-                    const selection = window.getSelection();
-                    const hasSelectionInLogs = selection.toString().length > 0 && toolsPaneContent.contains(selection.anchorNode);
-                    if (hasSelectionInLogs) return;
-
                     const isScrolledToBottom = logViewerContainer.scrollHeight - logViewerContainer.scrollTop <= logViewerContainer.clientHeight + 2;
-                    
+
                     if (data.content) {
-                        if (toolsPaneContent.textContent === 'Loading logs...') {
-                            toolsPaneContent.textContent = '';
-                        }
-
-                        const lines = data.content.split('\n');
-                        lines.forEach((line, index) => {
-                            if (index === lines.length - 1 && line === '') return;
-                            
-                            const lineContent = line + (index < lines.length - 1 ? '\n' : '');
-
-                            if (errorKeywords.test(lineContent)) {
-                                const errorSpan = document.createElement('span');
-                                errorSpan.className = 'log-error';
-                                errorSpan.textContent = lineContent;
-                                toolsPaneContent.appendChild(errorSpan);
-                            } else {
-                                toolsPaneContent.appendChild(document.createTextNode(lineContent));
-                            }
-                        });
-                        
+                        if (toolsPaneContent.textContent === 'Loading logs...') toolsPaneContent.textContent = '';
+                        toolsPaneContent.appendChild(document.createTextNode(data.content));
                         logSize = data.size;
-
-                        if (isScrolledToBottom) {
-                            logViewerContainer.scrollTop = logViewerContainer.scrollHeight;
-                        }
+                        if (isScrolledToBottom) logViewerContainer.scrollTop = logViewerContainer.scrollHeight;
                     }
-
                 } catch (error) {
-                    console.warn('Could not refresh logs:', error.message);
                     clearInterval(activeLogInterval);
                     activeLogInstanceId = null;
-                    toolsPaneContent.textContent = `[ERROR] Log fetching stopped: ${error.message}`;
                 }
             };
-
             fetchLogs();
-            activeLogInterval = setInterval(fetchLogs, 500);
+            activeLogInterval = setInterval(fetchLogs, 2000);
         } else if (action === 'script') {
-            const instanceName = target.dataset.name;
-            openEditor(instanceId, instanceName, action);
+            openEditor(instanceId, target.dataset.name, 'script');
+        } else if (action === 'cancel_new') {
+            row.remove();
+            if (instancesTbody.childElementCount === 0) fetchAndRenderInstances();
         }
     });
 
-    fetchAndStoreBlueprints().then(fetchAndRenderInstances);
+    async function initializeApp() {
+        await fetchAndStoreBlueprints();
+        await fetchAndRenderInstances();
+        updateSystemStats();
 
-    // --- System Monitoring ---
+        if (instancesPollInterval) clearInterval(instancesPollInterval);
+        instancesPollInterval = setInterval(fetchAndRenderInstances, 2000);
+        setInterval(updateSystemStats, 2000);
+    }
+
+    // --- System Monitoring (full implementation) ---
     const cpuProgress = document.getElementById('cpu-progress');
     const cpuPercentText = document.getElementById('cpu-percent-text');
     const ramProgress = document.getElementById('ram-progress');
     const ramUsageText = document.getElementById('ram-usage-text');
     const gpuStatsContainer = document.getElementById('gpu-stats-container');
     const gpuStatTemplate = document.getElementById('gpu-stat-template');
+    function formatBytes(bytes, decimals = 2) { if (bytes === 0) return '0 Bytes'; const k = 1024; const dm = decimals < 0 ? 0 : decimals; const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']; const i = Math.floor(Math.log(bytes) / Math.log(k)); return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]; }
+    async function updateSystemStats() { try { const response = await fetch('/api/system/stats'); if (!response.ok) return; const stats = await response.json(); cpuProgress.style.width = `${stats.cpu_percent}%`; cpuPercentText.textContent = `${stats.cpu_percent.toFixed(1)}%`; ramProgress.style.width = `${stats.ram.percent}%`; ramUsageText.textContent = `${formatBytes(stats.ram.used)} / ${formatBytes(stats.ram.total)}`; gpuStatsContainer.innerHTML = ''; if (stats.gpus && stats.gpus.length > 0) { stats.gpus.forEach(gpu => { const gpuEl = gpuStatTemplate.content.cloneNode(true); gpuEl.querySelector('.gpu-name').textContent = `GPU ${gpu.id}: ${gpu.name}`; gpuEl.querySelector('.vram-progress').style.width = `${gpu.vram.percent}%`; gpuEl.querySelector('.vram-usage-text').textContent = `${formatBytes(gpu.vram.used)} / ${formatBytes(gpu.vram.total)}`; gpuEl.querySelector('.util-progress').style.width = `${gpu.utilization_percent}%`; gpuEl.querySelector('.util-percent-text').textContent = `${gpu.utilization_percent}%`; gpuStatsContainer.appendChild(gpuEl); }); } else { gpuStatsContainer.innerHTML = '<p style="text-align:center;color:#aaa;">No NVIDIA GPUs detected.</p>'; } } catch (error) { console.warn("Could not fetch system stats:", error); } }
 
-    function formatBytes(bytes, decimals = 2) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const dm = decimals < 0 ? 0 : decimals;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-    }
+    initializeApp();
 
-    async function updateSystemStats() {
-        try {
-            const response = await fetch('/api/system/stats');
-            if (!response.ok) throw new Error('Failed to fetch system stats');
-            const stats = await response.json();
-
-            cpuProgress.style.width = `${stats.cpu_percent}%`;
-            cpuPercentText.textContent = `${stats.cpu_percent.toFixed(1)}%`;
-
-            ramProgress.style.width = `${stats.ram.percent}%`;
-            ramUsageText.textContent = `${formatBytes(stats.ram.used)} / ${formatBytes(stats.ram.total)}`;
-
-            gpuStatsContainer.innerHTML = '';
-            if (stats.gpus && stats.gpus.length > 0) {
-                stats.gpus.forEach(gpu => {
-                    const gpuStatElement = gpuStatTemplate.content.cloneNode(true);
-                    
-                    gpuStatElement.querySelector('.gpu-name').textContent = `GPU ${gpu.id}: ${gpu.name}`;
-                    
-                    const vramProgress = gpuStatElement.querySelector('.vram-progress');
-                    const vramText = gpuStatElement.querySelector('.vram-usage-text');
-                    vramProgress.style.width = `${gpu.vram.percent}%`;
-                    vramText.textContent = `${formatBytes(gpu.vram.used)} / ${formatBytes(gpu.vram.total)}`;
-
-                    const utilProgress = gpuStatElement.querySelector('.util-progress');
-                    const utilText = gpuStatElement.querySelector('.util-percent-text');
-                    utilProgress.style.width = `${gpu.utilization_percent}%`;
-                    utilText.textContent = `${gpu.utilization_percent}%`;
-
-                    gpuStatsContainer.appendChild(gpuStatElement);
-                });
-            } else {
-                gpuStatsContainer.innerHTML = '<p style="text-align: center; color: #aaa;">No NVIDIA GPUs detected.</p>';
-            }
-
-        } catch (error) {
-            console.error("Error fetching system stats:", error);
-        }
-    }
-
-    updateSystemStats();
-    setInterval(updateSystemStats, 2000);
-
-    Split(['#instance-pane', '#bottom-split'], {
-        sizes: [60, 40], minSize: [200, 150], gutterSize: 5,
-        direction: 'vertical', cursor: 'row-resize'
-    });
-
-    Split(['#tools-pane', '#monitoring-pane'], {
-        sizes: [65, 35], minSize: [300, 200], gutterSize: 5,
-        direction: 'horizontal', cursor: 'col-resize'
-    });
+    Split(['#instance-pane', '#bottom-split'], { sizes: [60, 40], minSize: [200, 150], gutterSize: 5, direction: 'vertical', cursor: 'row-resize' });
+    Split(['#tools-pane', '#monitoring-pane'], { sizes: [65, 35], minSize: [300, 200], gutterSize: 5, direction: 'horizontal', cursor: 'col-resize' });
 });

@@ -116,7 +116,7 @@
     | `gpu_ids`         | TEXT      | Yes      | Comma-separated string of GPU IDs (e.g., "0,1")                          |
     | `autostart`       | BOOLEAN   | No       | If true, start on AiKore launch                                          |
     | `persistent_mode` | BOOLEAN   | No       | If true, use the KasmVNC session mode                                    |
-    | `status`          | TEXT      | No       | Current state: "stopped", "running", etc.                                |
+    | `status`          | TEXT      | No       | Current state: "stopped", "starting", "stalled", "started", "error"      |
     | `pid`             | INTEGER   | Yes      | Stores the PID of the main process group leader                          |
     | `port`            | INTEGER   | Yes      | The internal port of the web application itself                          |
     | `vnc_port`        | INTEGER   | Yes      | The internal port for the isolated VNC web client (`websockify`)         |
@@ -150,17 +150,12 @@
         *   Hardened Reverse Proxy Configuration to be universally compatible.
     
     4.  **Phase 4: Advanced Features & UX (In Progress)**
-    
-        *   **Persistent VNC Session Implementation:** A significant effort was made to implement and stabilize the "Persistent UI" mode.
-            *   **Resolved Issues:**
-                1.  **Database Persistence:** VNC port and display numbers are now correctly saved to the database, ensuring state consistency.
-                2.  **Dynamic Resizing:** The VNC session now correctly resizes to fit the browser window via the `resize=remote` parameter.
-                3.  **Window Management:** A lightweight window manager (`openbox`) is now launched within the VNC session, allowing applications like Firefox to run correctly in full-screen or kiosk mode.
-                4.  **Robust Build Process:** The `Dockerfile.buildbase` has been hardened by fixing multiple dependency issues, using the official Mozilla APT repository for Firefox, and adding missing system libraries (`python3-xdg`).
-                5.  **Reliable App Launch:** The VNC launcher script now uses a robust `curl` loop to wait for the target application to be fully responsive before launching the browser, eliminating race conditions.
-    
-            *   **Known Unresolved Issue:**
-                1.  **Firefox Auto-Navigation:** Despite all improvements, Firefox still fails to navigate to the target application's URL (`http://127.0.0.1:<port>`) upon launch, defaulting to its homepage instead. This is likely due to an internal security policy or sandboxing feature within Firefox that prevents navigation to `localhost` in this specific execution context. Further investigation is required, potentially exploring alternative browsers or more advanced Firefox configuration policies.
+        
+        *   **Robust State Management Implementation:** In addressing a UI launch issue in Persistent Mode, a major re-architecture of the instance lifecycle management was completed. This provides a significantly more robust and user-friendly experience.
+            *   **Backend-Driven State:** The logic for determining an instance's status has been moved from shell scripts into the Python backend. The backend now actively monitors the application's port in a background thread.
+            *   **New Statuses:** Introduced a clear state machine for instances: `stopped` -> `starting` -> `stalled` (if startup is long) -> `started`.
+            *   **Real-Time UI:** The frontend now polls the backend every 2 seconds, providing a real-time view of the instance status, including visual feedback (colors, disabled buttons) for each state. This eliminates guesswork for the user during long installations.
+            *   **VNC Automation (Issue Resolved):** The backend now remotely triggers the launch of Firefox *after* the target application is confirmed to be running. This completely resolves the previous issue where Firefox would start but fail to navigate to the correct URL.
     
     5.  **Phase 5: Refinement (Planned)**
         *   Implement the `Update` functionality for saving changes to existing instances (Name, GPU IDs, etc.).
