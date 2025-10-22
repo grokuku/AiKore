@@ -36,6 +36,10 @@ This document tracks the progress of feature implementation based on the roadmap
 - [x] Implement real-time UI status polling for instant user feedback.
 - [x] Resolve VNC launch race condition by automating browser start after app is ready.
 - [x] Implement system hardening (state reset and log clearing on startup).
+- [x] Implement "Trash Can" feature for safe instance deletion.
+- [x] Implement persistent UI layout (pane sizes saved in localStorage).
+- [x] Implement comprehensive UI polishing and consistent vertical spacing.
+- [x] Fix "Add New Instance" UI bugs and add action button placeholders.
 
 ## Phase 5: Refinement
 

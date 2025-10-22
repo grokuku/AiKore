@@ -106,9 +106,12 @@ body {
     /* Padding is now applied more specifically below */
 }
 
-#instance-pane .pane-content,
-#monitoring-pane .pane-content {
+#instance-pane .pane-content {
     padding: 0 1.5rem 1.5rem 1.5rem;
+}
+
+#monitoring-pane .pane-content {
+    padding: var(--global-gutter-size) 1.5rem 1.5rem 1.5rem;
 }
 
 #tools-pane .pane-content {
@@ -151,6 +154,8 @@ body {
     z-index: 10;
     background-color: #2a2a4a;
     /* Match pane background for solid effect */
+    border-bottom: var(--global-gutter-size) solid #2a2a4a;
+    /* Creates space between header and first row */
 }
 
 .instances-table th {
@@ -213,11 +218,14 @@ body {
 
 .status {
     font-weight: bold;
-    padding: 10px 12px;
+    padding: 11px 12px;
+    /* Adjusted vertical padding to match input height */
     border-radius: 6px;
     display: block;
     text-align: center;
     text-transform: capitalize;
+    box-sizing: border-box;
+    /* Ensures padding is calculated consistently */
 }
 
 .status-stopped {
@@ -418,7 +426,6 @@ body {
 
 /* --- MONITORING PANE --- */
 #system-stats-container {
-    padding-top: var(--global-gutter-size);
     display: flex;
     flex-direction: column;
     gap: var(--global-gutter-size);

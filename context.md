@@ -160,6 +160,11 @@ A single table `instances` will be created in the `aikore.db` SQLite database.
         *   **State Integrity:** Instance statuses are now correctly reset to "stopped" on application startup, ensuring the UI always reflects the true state.
         *   **Log Lifecycle:** All instance logs are automatically cleared on application startup to provide a clean slate for each session.
         *   **VNC Reliability:** The VNC launcher script was made more robust to prevent race conditions during startup.
+    *   **UI/UX Refinement & Feature Hardening:** Further enhancements have been made to improve usability and add features.
+        *   **Trash Can Feature:** Implemented a safe-delete mechanism. When an instance is deleted, its configuration directory is now moved to a `/config/trashcan` folder instead of being permanently removed, allowing for data recovery.
+        *   **Persistent Layout:** The dashboard's pane sizes are now saved to the browser's `localStorage`, so the user's layout preferences persist across page reloads.
+        *   **Polished UI:** The entire user interface has been refined with consistent vertical spacing for a cleaner, more professional aesthetic. This includes the instance table rows and all components of the System Monitoring panel.
+        *   **Enhanced UI Consistency:** The "Add New Instance" flow was improved to be visually identical to existing rows, and several minor bugs were fixed. Placeholders for future "Tool" and "View" actions were added.
 
 5.  **Phase 5: Refinement (Planned)**
     *   Implement the `Update` functionality for saving changes to existing instances (Name, GPU IDs, etc.).
