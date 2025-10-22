@@ -26,16 +26,20 @@ This document tracks the progress of feature implementation based on the roadmap
 - [x] Harden blueprints (`ComfyUI.sh`) and shared functions (`functions.sh`).
 - [x] Harden `Dockerfile` to handle permissions and line endings.
 - [x] Implement instance script editing from the web UI (`launch.sh` convention).
-- [ ] Implement the `Update` functionality for saving changes to existing instances.
 
 ## Phase 4: Advanced Features & UX
 
 - [x] Integrate NGINX reverse proxy for unique instance URLs (`/app/<instance_name>`).
 - [x] Harden NGINX configuration to support both standard and path-aware (Gradio) applications.
 - [x] Implement Persistent Session (VNC) launch mode with isolated per-instance servers.
-- [ ] Resolve "502 Bad Gateway" error on persistent VNC sessions.
+- [x] Implement robust backend-driven state management (`stopped`, `starting`, `stalled`, `started`).
+- [x] Implement real-time UI status polling for instant user feedback.
+- [x] Resolve VNC launch race condition by automating browser start after app is ready.
+- [x] Implement system hardening (state reset and log clearing on startup).
 
 ## Phase 5: Refinement
 
+- [ ] Implement the `Update` functionality for saving changes to existing instances.
+- [ ] Implement an "Embedded View" feature to display an instance's UI directly within the AiKore dashboard.
 - [ ] Improve global error handling and status reporting.
 - [ ] Write comprehensive user and system documentation.

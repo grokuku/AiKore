@@ -322,6 +322,7 @@ body {
 
 
 /* --- TOOLS / LOGS PANE --- */
+#welcome-screen-container,
 #log-viewer-container {
     flex-grow: 1;
     /* Take up available space */
@@ -348,6 +349,13 @@ body {
     margin: 0;
     white-space: pre-wrap;
     word-wrap: break-word;
+}
+
+#welcome-screen-container pre {
+    color: #17a2b8;
+    /* A nice cyan for the logo */
+    text-align: center;
+    padding-top: 2rem;
 }
 
 .log-error {

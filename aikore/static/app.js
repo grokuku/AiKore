@@ -4,12 +4,26 @@ document.addEventListener('DOMContentLoaded', () => {
     let availableBlueprints = [];
 
     const toolsPaneTitle = document.getElementById('tools-pane-title');
+    const welcomeScreenContainer = document.getElementById('welcome-screen-container');
     const logViewerContainer = document.getElementById('log-viewer-container');
-    const toolsPaneContent = document.getElementById('tools-pane-content');
+    const logContentArea = document.getElementById('log-content-area'); // <-- ID Renamed
     const editorContainer = document.getElementById('editor-container');
     const fileEditorTextarea = document.getElementById('file-editor-textarea');
     const editorSaveBtn = document.getElementById('editor-save-btn');
     const editorExitBtn = document.getElementById('editor-exit-btn');
+
+    const ASCII_LOGO = `                                                       
+    @@@@@@   @@@  @@@  @@@   @@@@@@   @@@@@@@   @@@@@@@@  
+@@@@@@@@  @@@  @@@  @@@  @@@@@@@@  @@@@@@@@  @@@@@@@@  
+@@!  @@@  @@!  @@!  !@@  @@!  @@@  @@!  @@@  @@!       
+!@!  @!@  !@!  !@!  @!!  !@!  @!@  !@!  @!@  !@!       
+@!@!@!@!  !!@  @!@@!@!   @!@  !@!  @!@!!@!   @!!!:!    
+!!!@!!!!  !!!  !!@!!!    !@!  !!!  !!@!@!    !!!!!:    
+!!:  !!!  !!:  !!: :!!   !!:  !!!  !!: :!!   !!:       
+:!:  !:!  :!:  :!:  !:!  :!:  !:!  :!:  !:!  :!:       
+::   :::   ::   ::  :::  ::::: ::  ::   :::   :: ::::  
+    :   : :  :     :   :::   : :  :    :   : :  : :: ::   
+                                                        `;
 
     let activeLogInstanceId = null;
     let activeLogInterval = null;
@@ -22,6 +36,22 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     let instancesPollInterval = null;
+
+    function showWelcomeScreen() {
+        // Hide other views
+        logViewerContainer.classList.add('hidden');
+        editorContainer.classList.add('hidden');
+        // Show welcome screen
+        welcomeScreenContainer.classList.remove('hidden');
+
+        // Set content
+        welcomeScreenContainer.innerHTML = `<pre>${ASCII_LOGO}</pre>`;
+        toolsPaneTitle.textContent = 'Tools / Welcome';
+
+        // Clean up any active polling
+        clearInterval(activeLogInterval);
+        activeLogInstanceId = null;
+    }
 
     async function fetchAndStoreBlueprints() {
         try {
@@ -231,16 +261,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function exitEditor() {
         editorContainer.classList.add('hidden');
-        logViewerContainer.classList.remove('hidden');
-        toolsPaneTitle.textContent = 'Tools / Logs';
         fileEditorTextarea.value = '';
         editorState = { instanceId: null, instanceName: null, fileType: null };
+        showWelcomeScreen(); // Return to welcome screen
     }
 
     async function openEditor(instanceId, instanceName, fileType) {
         clearInterval(activeLogInterval);
         activeLogInstanceId = null;
 
+        welcomeScreenContainer.classList.add('hidden');
         logViewerContainer.classList.add('hidden');
         editorContainer.classList.remove('hidden');
 
@@ -327,12 +357,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } else if (action === 'logs') {
-            exitEditor();
+            welcomeScreenContainer.classList.add('hidden');
+            editorContainer.classList.add('hidden');
+            logViewerContainer.classList.remove('hidden');
+
             clearInterval(activeLogInterval);
             activeLogInstanceId = instanceId;
             logSize = 0;
             toolsPaneTitle.textContent = `Logs: ${target.dataset.name}`;
-            toolsPaneContent.textContent = 'Loading logs...';
+            logContentArea.textContent = 'Loading logs...'; // <-- Use renamed variable
 
             const fetchLogs = async () => {
                 if (!activeLogInstanceId) return;
@@ -345,8 +378,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const isScrolledToBottom = logViewerContainer.scrollHeight - logViewerContainer.scrollTop <= logViewerContainer.clientHeight + 2;
 
                     if (data.content) {
-                        if (toolsPaneContent.textContent === 'Loading logs...') toolsPaneContent.textContent = '';
-                        toolsPaneContent.appendChild(document.createTextNode(data.content));
+                        if (logContentArea.textContent === 'Loading logs...') logContentArea.textContent = ''; // <-- Use renamed variable
+                        logContentArea.appendChild(document.createTextNode(data.content)); // <-- Use renamed variable
                         logSize = data.size;
                         if (isScrolledToBottom) logViewerContainer.scrollTop = logViewerContainer.scrollHeight;
                     }
@@ -369,6 +402,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await fetchAndStoreBlueprints();
         await fetchAndRenderInstances();
         updateSystemStats();
+        showWelcomeScreen(); // Show the welcome screen on startup
 
         if (instancesPollInterval) clearInterval(instancesPollInterval);
         instancesPollInterval = setInterval(fetchAndRenderInstances, 2000);

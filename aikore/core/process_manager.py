@@ -98,16 +98,14 @@ def monitor_instance_thread(instance_id: int, pid: int, port: int, vnc_display: 
                     firefox_profile_dir = f"/tmp/firefox-profiles/{instance_slug}"
                     os.makedirs(firefox_profile_dir, exist_ok=True)
                     
-                    # Set homepage via user.js for reliability
-                    user_js_path = os.path.join(firefox_profile_dir, "user.js")
-                    with open(user_js_path, 'w') as f:
-                        f.write(f'user_pref("browser.startup.homepage", "http://127.0.0.1:{port}");\n')
-                        f.write('user_pref("browser.startup.page", 1);\n')
-
                     ff_env = os.environ.copy()
                     ff_env["DISPLAY"] = f":{vnc_display}"
+                    
+                    target_url = f'http://127.0.0.1:{port}'
+                    
+                    # Use the explicit '-url' argument for better reliability
                     subprocess.Popen(
-                        ['/usr/bin/firefox', '--no-sandbox', '--profile', firefox_profile_dir, '--kiosk'],
+                        ['/usr/bin/firefox', '--profile', firefox_profile_dir, '--kiosk', '-url', target_url],
                         env=ff_env
                     )
                 break # Exit the monitoring loop on success
@@ -186,11 +184,41 @@ def start_instance_process(db: Session, instance: models.Instance):
         cleanup() {{ kill 0; }}
         trap cleanup SIGTERM SIGINT
         
-        /usr/bin/Xvnc :{instance.vnc_display} -rfbport {5900 + instance.vnc_display} -SecurityTypes None &
-        /usr/bin/websockify -v --web /usr/share/novnc/ {instance.vnc_port} 127.0.0.1:{5900 + instance.vnc_display} &
+        # Start VNC server with the correct idle timeout parameter for TigerVNC
+        /usr/bin/Xvnc :{instance.vnc_display} -rfbport {5900 + instance.vnc_display} -SecurityTypes None -MaxIdleTime 0 &
+        XVNC_PID=$!
         
-        sleep 2
+        # --- Robustly wait for VNC server to be ready ---
+        VNC_PORT=$((5900 + {instance.vnc_display}))
+        echo "Waiting for VNC server on port $VNC_PORT..."
+        count=0
+        # Wait for a maximum of 10 seconds (50 * 0.2s)
+        while ! (exec 3<>/dev/tcp/127.0.0.1/$VNC_PORT) 2>/dev/null; do
+            # Check if the Xvnc process is still alive
+            if ! kill -0 $XVNC_PID 2>/dev/null; then
+                echo "[ERROR] Xvnc process terminated unexpectedly while starting."
+                exit 1
+            fi
+            sleep 0.2
+            ((count++))
+            if [ $count -ge 50 ]; then
+                echo "[ERROR] Timeout waiting for VNC server to start on port $VNC_PORT."
+                exit 1
+            fi
+        done
+        exec 3<&-
+        exec 3>&-
+        echo "VNC server is ready."
+        # --- End of wait logic ---
+        
+        # Now that we know Xvnc is running, start the other services
+        /usr/bin/websockify -v --web /usr/share/novnc/ --idle-timeout=0 {instance.vnc_port} 127.0.0.1:$VNC_PORT &
+        
         export DISPLAY=:{instance.vnc_display}
+        
+        # Disable screensaver and display power management
+        xset s off -dpms
+        xset s noblank
         
         /usr/bin/openbox-session &
         bash {dest_script_path} &

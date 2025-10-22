@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AiKore Dashboard</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body>
     <div class="main-container">
         <h1 class="main-title">AiKore</h1>
 
         <!-- This is the PARENT for the VERTICAL split -->
         <div id="main-split" class="split-container split-vertical">
-            
+
             <!-- PANNEAU SUPÉRIEUR : INSTANCE MANAGER -->
             <div id="instance-pane" class="pane">
                 <div class="pane-header">
@@ -45,13 +47,17 @@
                 <!-- Colonne de gauche : Outils -->
                 <div id="tools-pane" class="pane">
                     <div class="pane-header">
-                        <h2 id="tools-pane-title">Tools / Logs</h2>
+                        <h2 id="tools-pane-title">Tools / Welcome</h2>
                     </div>
                     <div class="pane-content">
-                        <!-- Container for the Log Viewer -->
-                        <div id="log-viewer-container" class="terminal-style">
-                            <pre><code id="tools-pane-content">&gt; Console output will be displayed here...</code></pre>
+                        <!-- Container for the Welcome Screen (visible by default) -->
+                        <div id="welcome-screen-container" class="terminal-style"></div>
+
+                        <!-- Container for the Log Viewer (hidden by default) -->
+                        <div id="log-viewer-container" class="terminal-style hidden">
+                            <pre><code id="log-content-area"></code></pre>
                         </div>
+
                         <!-- Container for the File Editor (hidden by default) -->
                         <div id="editor-container" class="hidden">
                             <textarea id="file-editor-textarea" spellcheck="false"></textarea>
@@ -120,4 +126,5 @@
     <!-- Our application script -->
     <script src="/static/app.js"></script>
 </body>
+
 </html>
