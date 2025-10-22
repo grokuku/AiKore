@@ -75,20 +75,26 @@
                     </div>
                     <div class="pane-content" id="system-stats-container">
                         <!-- System Stats will be dynamically inserted here -->
-                        <div class="system-stat-row">
-                            <span class="stat-label">CPU</span>
-                            <div class="progress-bar-container">
-                                <div id="cpu-progress" class="progress-bar"></div>
+                        <div class="system-stat-block">
+                            <span class="system-block-name">System</span>
+                            <div class="system-block-metrics">
+                                <div class="system-stat-row">
+                                    <span class="stat-label">CPU</span>
+                                    <div class="progress-bar-container">
+                                        <div id="cpu-progress" class="progress-bar"></div>
+                                    </div>
+                                    <span id="cpu-percent-text" class="stat-value">...</span>
+                                </div>
+                                <div class="system-stat-row">
+                                    <span class="stat-label">RAM</span>
+                                    <div class="progress-bar-container">
+                                        <div id="ram-progress" class="progress-bar"></div>
+                                    </div>
+                                    <span id="ram-usage-text" class="stat-value">...</span>
+                                </div>
                             </div>
-                            <span id="cpu-percent-text" class="stat-value">...</span>
                         </div>
-                        <div class="system-stat-row">
-                            <span class="stat-label">RAM</span>
-                            <div class="progress-bar-container">
-                                <div id="ram-progress" class="progress-bar"></div>
-                            </div>
-                            <span id="ram-usage-text" class="stat-value">...</span>
-                        </div>
+
                         <div id="gpu-stats-container">
                             <!-- GPU stats will be populated by JavaScript -->
                         </div>

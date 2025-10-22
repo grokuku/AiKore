@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from typing import List
 import os
+import shutil
 
 from ..database import crud
 from ..database.session import SessionLocal
@@ -96,12 +97,23 @@ def delete_instance(instance_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Instance not found")
     if db_instance.status != "stopped":
         raise HTTPException(status_code=400, detail="Cannot delete an active instance. Please stop it first.")
-    
-    # Cleanup is now part of stop, but we call it here just in case of leftover files
-    process_manager._cleanup_instance_files(process_manager._slugify(db_instance.name))
-    
+
+    # Move instance directory to trashcan instead of deleting
+    instance_dir = os.path.join(INSTANCES_DIR, db_instance.name)
+    # Assumes INSTANCES_DIR is /config/instances, so trashcan will be /config/trashcan
+    TRASH_DIR = os.path.join(os.path.dirname(INSTANCES_DIR), "trashcan")
+
+    if os.path.isdir(instance_dir):
+        os.makedirs(TRASH_DIR, exist_ok=True)
+        try:
+            # Move the directory into the trashcan
+            shutil.move(instance_dir, TRASH_DIR)
+        except shutil.Error as e:
+             # This can happen if a directory with the same name already exists in trash
+             raise HTTPException(status_code=500, detail=f"Could not move instance to trashcan: {e}")
+
     crud.delete_instance(db, instance_id=instance_id)
-    return {"ok": True, "detail": "Instance deleted successfully"}
+    return {"ok": True, "detail": "Instance deleted and moved to trashcan."}
 
 @router.get("/{instance_id}/logs", tags=["Instance Actions"])
 def get_instance_logs(

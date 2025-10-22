@@ -117,6 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         row.querySelector('[data-action="start"]').disabled = isActive;
         row.querySelector('[data-action="stop"]').disabled = isStopped;
+        row.querySelector('[data-action="tool"]').disabled = isActive;
         row.querySelector('[data-action="script"]').disabled = isActive;
         row.querySelector('[data-action="delete"]').disabled = isActive;
 
@@ -185,15 +186,26 @@ document.addEventListener('DOMContentLoaded', () => {
         actionsCell.classList.add('actions-column');
 
         if (isNew) {
-            actionsCell.innerHTML = `<button class="action-btn" data-action="save" data-id="new" disabled>Save</button><button class="action-btn" data-action="cancel_new">Cancel</button>`;
+            actionsCell.innerHTML = `
+                <button class="action-btn" data-action="save" data-id="new" disabled>Save</button>
+                <button class="action-btn" data-action="cancel_new">Cancel</button>
+                <button class="action-btn" data-action="logs" disabled>Logs</button>
+                <button class="action-btn" data-action="tool" disabled>Tool</button>
+                <button class="action-btn" data-action="script" disabled>Script</button>
+                <button class="action-btn" data-action="update" disabled>Update</button>
+                <button class="action-btn" data-action="delete" disabled>Delete</button>
+                <button class="action-btn" data-action="view" disabled>View</button>
+                <a href="#" class="action-btn disabled" data-action="open">Open</a>`;
         } else {
             actionsCell.innerHTML = `
                 <button class="action-btn" data-action="start" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Start</button>
                 <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
                 <button class="action-btn" data-action="logs" data-id="${instance.id}" data-name="${instance.name}">Logs</button>
+                <button class="action-btn" data-action="tool" data-id="${instance.id}" data-name="${instance.name}" ${isActive ? 'disabled' : ''}>Tool</button>
                 <button class="action-btn" data-action="script" data-id="${instance.id}" data-name="${instance.name}" ${isActive ? 'disabled' : ''}>Script</button>
                 <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
                 <button class="action-btn" data-action="delete" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Delete</button>
+                <button class="action-btn" data-action="view" data-id="${instance.id}" disabled>View</button>
                 <a href="${isStarted ? `/app/${instance.name}/` : '#'}" class="action-btn ${!isStarted ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
         }
 
@@ -340,7 +352,8 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const response = await fetch('/api/instances/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
                 if (!response.ok) throw new Error((await response.json()).detail);
-                await fetchAndRenderInstances();
+                row.remove(); // Remove the temporary row
+                await fetchAndRenderInstances(); // Refresh the list
             } catch (error) {
                 alert(`Error: ${error.message}`);
             }
@@ -421,6 +434,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initializeApp();
 
-    Split(['#instance-pane', '#bottom-split'], { sizes: [60, 40], minSize: [200, 150], gutterSize: 5, direction: 'vertical', cursor: 'row-resize' });
-    Split(['#tools-pane', '#monitoring-pane'], { sizes: [65, 35], minSize: [300, 200], gutterSize: 5, direction: 'horizontal', cursor: 'col-resize' });
+    // --- Split Pane Initialization & Persistence ---
+    const SPLIT_STORAGE_KEY = 'aikoreSplitSizes';
+
+    // 1. Load sizes from localStorage or use defaults
+    let savedSizes = {
+        vertical: [60, 40],
+        horizontal: [65, 35]
+    };
+    try {
+        const storedSizes = localStorage.getItem(SPLIT_STORAGE_KEY);
+        if (storedSizes) {
+            const parsedSizes = JSON.parse(storedSizes);
+            // Basic validation to ensure the stored data has the correct shape
+            if (parsedSizes.vertical && parsedSizes.horizontal) {
+                savedSizes = parsedSizes;
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load or parse split sizes from localStorage.", e);
+        // In case of error, we just proceed with the defaults
+    }
+
+    // 2. Initialize splits with loaded/default sizes and add save logic
+    Split(['#instance-pane', '#bottom-split'], {
+        sizes: savedSizes.vertical,
+        minSize: [200, 150],
+        gutterSize: 5,
+        direction: 'vertical',
+        cursor: 'row-resize',
+        onDragEnd: function (sizes) {
+            savedSizes.vertical = sizes;
+            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes));
+        }
+    });
+
+    Split(['#tools-pane', '#monitoring-pane'], {
+        sizes: savedSizes.horizontal,
+        minSize: [300, 200],
+        gutterSize: 5,
+        direction: 'horizontal',
+        cursor: 'col-resize',
+        onDragEnd: function (sizes) {
+            savedSizes.horizontal = sizes;
+            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes));
+        }
+    });
 });
