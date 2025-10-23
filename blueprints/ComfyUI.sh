@@ -1,3 +1,11 @@
+### AIKORE-METADATA-START ###
+# aikore.name = ComfyUI
+# aikore.category = Image Generation
+# aikore.description = A powerful and modular GUI for Stable Diffusion.
+# aikore.venv_type = conda
+# aikore.venv_path = ./env
+### AIKORE-METADATA-END ###
+
 #!/bin/bash
 source /opt/sd-install/functions.sh
 

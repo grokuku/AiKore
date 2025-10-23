@@ -70,6 +70,7 @@ body {
     border-radius: 8px;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
     overflow: hidden;
+    /* <-- Re-enabled for proper pane encapsulation */
 }
 
 /* --- PANE-SPECIFIC COLORS --- */
@@ -325,7 +326,7 @@ body {
 
 [data-action="script"],
 [data-action="parameters"],
-[data-action="tool"] {
+[data-action="tools_menu"] {
     background-color: #6f42c1;
 }
 
@@ -345,6 +346,45 @@ body {
     background-color: #4a4a70;
 }
 
+/* --- UNIVERSAL CONTEXT MENU --- */
+.context-menu {
+    display: none;
+    /* Hidden by default, shown by JS */
+    position: fixed;
+    /* Position relative to the viewport, above everything */
+    background-color: #3b3b6b;
+    min-width: 180px;
+    box-shadow: 0px 10px 20px rgba(0, 0, 0, 0.5);
+    /* Stronger shadow */
+    z-index: 1000;
+    /* High z-index to ensure it's on top */
+    border-radius: 6px;
+    overflow: hidden;
+    padding: 5px 0;
+}
+
+.context-item {
+    color: #e0e0e0;
+    padding: 10px 15px;
+    text-decoration: none;
+    display: block;
+    background-color: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.context-item:hover:not(:disabled) {
+    background-color: #4a4a70;
+}
+
+.context-item:disabled {
+    color: #888;
+    cursor: not-allowed;
+}
 
 /* --- TOOLS / LOGS PANE --- */
 #welcome-screen-container,
@@ -445,6 +485,27 @@ body {
     width: 100%;
     height: 100%;
     border: none;
+}
+
+/* --- NEW: TERMINAL VIEW --- */
+#terminal-view-container {
+    flex-grow: 1;
+    width: 100%;
+    min-height: 0;
+    background-color: #111;
+    /* Match xterm.js default bg */
+    padding: 0 1rem 1rem 1rem;
+    box-sizing: border-box;
+}
+
+#terminal-content {
+    width: 100%;
+    height: 100%;
+}
+
+/* Override xterm.js default focus outline */
+.xterm:focus {
+    outline: none;
 }
 
 /* --- MONITORING PANE --- */

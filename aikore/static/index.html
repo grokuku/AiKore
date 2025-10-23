@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AiKore Dashboard</title>
     <link rel="stylesheet" href="/static/style.css">
+    <!-- NEW: Xterm.js styles -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
 </head>
 
 <body>
@@ -67,9 +69,14 @@
                             </div>
                         </div>
 
-                        <!-- NOUVEAU: Container for the embedded Instance View (hidden by default) -->
+                        <!-- Container for the embedded Instance View (hidden by default) -->
                         <div id="instance-view-container" class="hidden">
                             <iframe id="instance-iframe" src="about:blank" frameborder="0"></iframe>
+                        </div>
+
+                        <!-- NEW: Container for the Terminal (hidden by default) -->
+                        <div id="terminal-view-container" class="hidden">
+                            <div id="terminal-content"></div>
                         </div>
                     </div>
                 </div>
@@ -132,8 +139,20 @@
         </div>
     </template>
 
+    <!-- Universal Context Menu for Tools -->
+    <div id="tools-context-menu" class="context-menu">
+        <button class="context-item" data-action="terminal">Terminal</button>
+        <button class="context-item" data-action="script">Edit Script</button>
+        <button class="context-item" data-action="clone" disabled>Clone</button>
+        <button class="context-item" data-action="instantiate" disabled>Instantiate</button>
+        <button class="context-item" data-action="output_viewer" disabled>Output Viewer</button>
+    </div>
+
     <!-- Split.js library -->
     <script src="https://unpkg.com/split.js/dist/split.min.js"></script>
+    <!-- NEW: Xterm.js library and Fit Addon -->
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <!-- Our application script -->
     <script src="/static/app.js"></script>
 </body>

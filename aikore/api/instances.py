@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from typing import List
 import os
 import shutil
+import asyncio
+import psutil
 
 from ..database import crud
 from ..database.session import SessionLocal
@@ -109,8 +111,8 @@ def delete_instance(instance_id: int, db: Session = Depends(get_db)):
             # Move the directory into the trashcan
             shutil.move(instance_dir, TRASH_DIR)
         except shutil.Error as e:
-             # This can happen if a directory with the same name already exists in trash
-             raise HTTPException(status_code=500, detail=f"Could not move instance to trashcan: {e}")
+                # This can happen if a directory with the same name already exists in trash
+                raise HTTPException(status_code=500, detail=f"Could not move instance to trashcan: {e}")
 
     crud.delete_instance(db, instance_id=instance_id)
     return {"ok": True, "detail": "Instance deleted and moved to trashcan."}
@@ -184,3 +186,67 @@ def update_instance_file(instance_id: int, file_type: str, file_content: FileCon
         return {"ok": True, "detail": "File updated successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error writing file: {str(e)}")
+
+@router.websocket("/{instance_id}/terminal", name="Instance Terminal")
+async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db: Session = Depends(get_db)):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        await websocket.close(code=4004, reason="Instance not found")
+        return
+    
+    await websocket.accept()
+
+    try:
+        pid, master_fd = process_manager.start_terminal_process(db_instance)
+    except Exception as e:
+        error_message = f"Failed to start terminal: {e}"
+        print(f"[ERROR] {error_message}")
+        await websocket.send_text(f"\x1b[31m[ERROR] {error_message}\x1b[0m\r\n")
+        await websocket.close(code=1011)
+        return
+
+    os.set_blocking(master_fd, False)
+
+    async def read_from_pty():
+        while True:
+            try:
+                await asyncio.sleep(0.01)
+                data = os.read(master_fd, 1024)
+                if data:
+                    await websocket.send_bytes(data)
+                else: break
+            except (WebSocketDisconnect, asyncio.CancelledError, BrokenPipeError):
+                break
+
+    async def write_to_pty():
+        while True:
+            try:
+                data = await websocket.receive_bytes()
+                os.write(master_fd, data)
+            except (WebSocketDisconnect, asyncio.CancelledError, BrokenPipeError):
+                break
+
+    read_task = asyncio.create_task(read_from_pty())
+    write_task = asyncio.create_task(write_to_pty())
+
+    try:
+        done, pending = await asyncio.wait([read_task, write_task], return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+    finally:
+        print(f"[Terminal-{pid}] Connection closed. Cleaning up PTY process.")
+        read_task.cancel()
+        write_task.cancel()
+        await asyncio.gather(read_task, write_task, return_exceptions=True)
+        os.close(master_fd)
+        try:
+            parent = psutil.Process(pid)
+            for child in parent.children(recursive=True):
+                child.terminate()
+            parent.terminate()
+            _, alive = psutil.wait_procs([parent] + parent.children(recursive=True), timeout=3)
+            for p in alive:
+                p.kill()
+        except psutil.NoSuchProcess:
+            pass # Process already terminated
+        await websocket.close()

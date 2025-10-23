@@ -160,11 +160,13 @@ A single table `instances` will be created in the `aikore.db` SQLite database.
         *   **State Integrity:** Instance statuses are now correctly reset to "stopped" on application startup, ensuring the UI always reflects the true state.
         *   **Log Lifecycle:** All instance logs are automatically cleared on application startup to provide a clean slate for each session.
         *   **VNC Reliability:** The VNC launcher script was made more robust to prevent race conditions during startup.
+        *   **Autostart Functionality Implemented:** The application's startup event was modified to query the database for instances flagged with `autostart=True`. It now correctly launches these instances upon system initialization, ensuring user-defined services are automatically restored.
     *   **UI/UX Refinement & Feature Hardening:** Further enhancements have been made to improve usability and add features.
         *   **Trash Can Feature:** Implemented a safe-delete mechanism. When an instance is deleted, its configuration directory is now moved to a `/config/trashcan` folder instead of being permanently removed, allowing for data recovery.
         *   **Persistent Layout:** The dashboard's pane sizes are now saved to the browser's `localStorage`, so the user's layout preferences persist across page reloads.
         *   **Polished UI:** The entire user interface has been refined with consistent vertical spacing for a cleaner, more professional aesthetic. This includes the instance table rows and all components of the System Monitoring panel.
         *   **Enhanced UI Consistency:** The "Add New Instance" flow was improved to be visually identical to existing rows, and several minor bugs were fixed. Placeholders for future "Tool" and "View" actions were added.
+        *   **Robust Context Menu for Tools:** Re-architected the instance actions by converting the 'Tool' and 'Script' buttons into a unified 'Tools' dropdown menu. This was implemented using a global context menu (`position: fixed`) that is dynamically positioned relative to the clicked button. This approach overcomes all container `overflow` limitations, ensuring the menu is always visible and never clipped by other UI panes. The new menu provides organized access to actions like 'Edit Script' and includes placeholders for future tools.
     *   **Embedded Instance View:** Implemented the "View" button functionality, allowing a running instance's user interface to be embedded directly into the main dashboard via an iframe. This included several CSS hardening steps to ensure the embedded view correctly fills the available space without layout issues, providing a seamless user experience.
 
 5.  **Phase 5: Refinement (Planned)**

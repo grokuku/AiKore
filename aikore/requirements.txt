@@ -3,6 +3,7 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 pydantic
+websockets
 
 # System monitoring dependencies
 psutil

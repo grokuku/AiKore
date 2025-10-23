@@ -9,6 +9,7 @@ import time
 import requests
 import signal
 import psutil
+import pty  # NEW: Import for pseudo-terminal functionality
 from pathlib import Path
 from subprocess import PIPE, STDOUT
 from sqlalchemy.orm import Session
@@ -71,6 +72,72 @@ def _cleanup_instance_files(instance_slug: str):
     if os.path.isdir(firefox_profile_dir):
         import shutil
         shutil.rmtree(firefox_profile_dir, ignore_errors=True)
+
+# --- NEW: TERMINAL MANAGEMENT ---
+
+def parse_blueprint_metadata(blueprint_filename: str) -> dict:
+    """
+    Parses the metadata block from a blueprint shell script.
+    """
+    metadata = {}
+    blueprint_path = os.path.join(BLUEPRINTS_DIR, blueprint_filename)
+    if not os.path.exists(blueprint_path):
+        return metadata
+
+    with open(blueprint_path, 'r') as f:
+        in_metadata_block = False
+        for line in f:
+            if "### AIKORE-METADATA-START ###" in line:
+                in_metadata_block = True
+                continue
+            if "### AIKORE-METADATA-END ###" in line:
+                break
+            if in_metadata_block:
+                line = line.strip()
+                if line.startswith('#') and '=' in line:
+                    # Format is '# aikore.key = value'
+                    parts = line[1:].strip().split('=', 1)
+                    if len(parts) == 2 and parts[0].strip().startswith('aikore.'):
+                        key = parts[0].strip().replace('aikore.', '', 1)
+                        value = parts[1].strip()
+                        metadata[key] = value
+    return metadata
+
+
+def start_terminal_process(instance: models.Instance):
+    """
+    Spawns a shell process inside a pseudo-terminal (PTY) for a given instance.
+    """
+    instance_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
+    metadata = parse_blueprint_metadata(instance.base_blueprint)
+    
+    venv_type = metadata.get('venv_type')
+    venv_path = metadata.get('venv_path')
+
+    command = ['/bin/bash']
+    env = os.environ.copy()
+
+    if venv_type and venv_path:
+        full_venv_path = os.path.join(instance_conf_dir, venv_path)
+        if venv_type == 'conda':
+            # For conda, using 'conda run' is the most robust way to activate an env
+            # and execute a command within it, especially for non-interactive shells.
+            command = ['/home/abc/miniconda3/bin/conda', 'run', '-p', full_venv_path, '/bin/bash']
+        elif venv_type == 'python':
+            # For standard python venv
+            activate_script = os.path.join(full_venv_path, 'bin', 'activate')
+            command = ['/bin/bash', '--rcfile', activate_script]
+
+    # Fork a process and connect the child's controlling terminal to a new PTY
+    pid, master_fd = pty.fork()
+
+    if pid == 0:  # Child process
+        # Set the working directory for the new shell
+        os.chdir(instance_conf_dir)
+        # Execute the shell command
+        os.execve(command[0], command, env)
+    else:  # Parent process
+        return pid, master_fd
 
 # --- CORE MONITORING LOGIC ---
 
