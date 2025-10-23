@@ -165,9 +165,9 @@ A single table `instances` will be created in the `aikore.db` SQLite database.
         *   **Persistent Layout:** The dashboard's pane sizes are now saved to the browser's `localStorage`, so the user's layout preferences persist across page reloads.
         *   **Polished UI:** The entire user interface has been refined with consistent vertical spacing for a cleaner, more professional aesthetic. This includes the instance table rows and all components of the System Monitoring panel.
         *   **Enhanced UI Consistency:** The "Add New Instance" flow was improved to be visually identical to existing rows, and several minor bugs were fixed. Placeholders for future "Tool" and "View" actions were added.
+    *   **Embedded Instance View:** Implemented the "View" button functionality, allowing a running instance's user interface to be embedded directly into the main dashboard via an iframe. This included several CSS hardening steps to ensure the embedded view correctly fills the available space without layout issues, providing a seamless user experience.
 
 5.  **Phase 5: Refinement (Planned)**
     *   Implement the `Update` functionality for saving changes to existing instances (Name, GPU IDs, etc.).
-    *   Implement an "Embedded View" feature to display an instance's UI directly within the AiKore dashboard.
     *   Improve error handling and status reporting.
     *   Write comprehensive documentation for the new `AiKore` system.

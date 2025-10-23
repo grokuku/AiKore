@@ -101,24 +101,28 @@ body {
 }
 
 .pane-content {
-    overflow: auto;
+    /* MODIFICATION : overflow: auto a été retiré d'ici */
     flex-grow: 1;
     min-height: 0;
-    /* <-- CORRECTIF FINAL POUR LA BARRE DE DÉFILEMENT */
 }
 
 #instance-pane .pane-content {
     padding: 0 1.5rem 1.5rem 1.5rem;
+    overflow: auto;
+    /* AJOUT : Le défilement est maintenant spécifique à ce panneau */
 }
 
 #monitoring-pane .pane-content {
     padding: var(--global-gutter-size) 1.5rem 1.5rem 1.5rem;
+    overflow: auto;
+    /* AJOUT : Le défilement est maintenant spécifique à ce panneau */
 }
 
 #tools-pane .pane-content {
     padding: 0;
     display: flex;
     flex-direction: column;
+    /* Pas de 'overflow' ici, les enfants gèrent leur propre contenu */
 }
 
 .hidden {
@@ -330,7 +334,6 @@ body {
     background-color: #4a4a70;
 }
 
-/* CORRECTIF POUR LE BOUTON CANCEL */
 [data-action="cancel_new"] {
     background-color: #f8f9fa;
     /* Light grey */
