@@ -5,6 +5,7 @@ import os
 import shutil
 import asyncio
 import psutil
+import json # NEW: To handle resize messages
 
 from ..database import crud
 from ..database.session import SessionLocal
@@ -224,10 +225,15 @@ async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db:
     async def write_to_pty():
         while True:
             try:
-                # CORRECTED: Receive text from browser
-                data = await websocket.receive_text()
-                # CORRECTED: Encode text to bytes for the PTY
-                os.write(master_fd, data.encode('utf-8'))
+                message = await websocket.receive_text()
+                try:
+                    # Attempt to decode as JSON for control messages
+                    data = json.loads(message)
+                    if data.get("type") == "resize" and "rows" in data and "cols" in data:
+                        process_manager.resize_terminal_process(master_fd, data['rows'], data['cols'])
+                except (json.JSONDecodeError, TypeError):
+                    # If not valid JSON, treat as user input
+                    os.write(master_fd, message.encode('utf-8'))
             except Exception:
                 break
 

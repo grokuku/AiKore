@@ -359,15 +359,35 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTerminalSocket.binaryType = 'arraybuffer';
 
         currentTerminalSocket.onopen = () => {
+            // Send initial size on connect
+            const initialSize = {
+                type: 'resize',
+                cols: currentTerminal.cols,
+                rows: currentTerminal.rows
+            };
+            currentTerminalSocket.send(JSON.stringify(initialSize));
+
+            // Handle user input
             currentTerminal.onData(data => {
                 if (currentTerminalSocket && currentTerminalSocket.readyState === WebSocket.OPEN) {
                     currentTerminalSocket.send(data);
                 }
             });
+
+            // Handle terminal resize events
+            currentTerminal.onResize(size => {
+                if (currentTerminalSocket && currentTerminalSocket.readyState === WebSocket.OPEN) {
+                    const resizeMsg = {
+                        type: 'resize',
+                        cols: size.cols,
+                        rows: size.rows
+                    };
+                    currentTerminalSocket.send(JSON.stringify(resizeMsg));
+                }
+            });
         };
 
         currentTerminalSocket.onmessage = (event) => {
-            // CORRECTED: The typo Uint8_Array is now Uint8Array
             currentTerminal.write(new Uint8Array(event.data));
         };
 

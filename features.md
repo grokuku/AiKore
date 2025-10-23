@@ -40,10 +40,12 @@ This document tracks the progress of feature implementation based on the roadmap
 - [x] Implement persistent UI layout (pane sizes saved in localStorage).
 - [x] Implement comprehensive UI polishing and consistent vertical spacing.
 - [x] Fix "Add New Instance" UI bugs and add action button placeholders.
+- [x] Re-architect instance actions into a robust, non-clipping 'Tools' context menu.
+- [x] Implement an "Embedded View" feature to display an instance's UI directly within the AiKore dashboard.
+- [x] Implement synchronized terminal resizing between frontend and backend PTY.
 
 ## Phase 5: Refinement
 
 - [ ] Implement the `Update` functionality for saving changes to existing instances.
-- [ ] Implement an "Embedded View" feature to display an instance's UI directly within the AiKore dashboard.
 - [ ] Improve global error handling and status reporting.
 - [ ] Write comprehensive user and system documentation.

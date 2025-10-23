@@ -10,6 +10,9 @@ import requests
 import signal
 import psutil
 import pty
+import fcntl  # NEW: For terminal resizing
+import termios # NEW: For terminal resizing
+import struct  # NEW: For terminal resizing
 from pathlib import Path
 from subprocess import PIPE, STDOUT
 from sqlalchemy.orm import Session
@@ -139,6 +142,20 @@ def start_terminal_process(instance: models.Instance):
         os.execve(command[0], command, env)
     else:  # Parent process
         return pid, master_fd
+
+# NEW: Function to handle resizing the PTY
+def resize_terminal_process(master_fd: int, rows: int, cols: int):
+    """
+    Resizes the pseudo-terminal window size.
+    """
+    try:
+        # Pack the new window size into a struct
+        winsize = struct.pack('HHHH', rows, cols, 0, 0)
+        # Set the new window size using a system call
+        fcntl.ioctl(master_fd, termios.TIOCSWINSZ, winsize)
+    except Exception as e:
+        print(f"[ERROR] Failed to resize terminal: {e}")
+
 
 # --- CORE MONITORING LOGIC ---
 
