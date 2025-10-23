@@ -214,16 +214,21 @@ async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db:
                 data = os.read(master_fd, 1024)
                 if data:
                     await websocket.send_bytes(data)
-                else: break
-            except (WebSocketDisconnect, asyncio.CancelledError, BrokenPipeError):
+                else:
+                    break # EOF
+            except BlockingIOError:
+                pass
+            except Exception:
                 break
 
     async def write_to_pty():
         while True:
             try:
-                data = await websocket.receive_bytes()
-                os.write(master_fd, data)
-            except (WebSocketDisconnect, asyncio.CancelledError, BrokenPipeError):
+                # CORRECTED: Receive text from browser
+                data = await websocket.receive_text()
+                # CORRECTED: Encode text to bytes for the PTY
+                os.write(master_fd, data.encode('utf-8'))
+            except Exception:
                 break
 
     read_task = asyncio.create_task(read_from_pty())
@@ -235,18 +240,23 @@ async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db:
             task.cancel()
     finally:
         print(f"[Terminal-{pid}] Connection closed. Cleaning up PTY process.")
-        read_task.cancel()
-        write_task.cancel()
+        if not read_task.done(): read_task.cancel()
+        if not write_task.done(): write_task.cancel()
         await asyncio.gather(read_task, write_task, return_exceptions=True)
+        
         os.close(master_fd)
+        
         try:
             parent = psutil.Process(pid)
-            for child in parent.children(recursive=True):
+            children = parent.children(recursive=True)
+            for child in children:
                 child.terminate()
             parent.terminate()
-            _, alive = psutil.wait_procs([parent] + parent.children(recursive=True), timeout=3)
+            _, alive = psutil.wait_procs([parent] + children, timeout=3)
             for p in alive:
                 p.kill()
         except psutil.NoSuchProcess:
-            pass # Process already terminated
-        await websocket.close()
+            pass
+        
+        if websocket.client_state != "DISCONNECTED":
+            await websocket.close()

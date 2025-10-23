@@ -9,7 +9,7 @@ import time
 import requests
 import signal
 import psutil
-import pty  # NEW: Import for pseudo-terminal functionality
+import pty
 from pathlib import Path
 from subprocess import PIPE, STDOUT
 from sqlalchemy.orm import Session
@@ -120,11 +120,12 @@ def start_terminal_process(instance: models.Instance):
     if venv_type and venv_path:
         full_venv_path = os.path.join(instance_conf_dir, venv_path)
         if venv_type == 'conda':
-            # For conda, using 'conda run' is the most robust way to activate an env
-            # and execute a command within it, especially for non-interactive shells.
-            command = ['/home/abc/miniconda3/bin/conda', 'run', '-p', full_venv_path, '/bin/bash']
+            # This launches a shell, sources the activate script for the specific env,
+            # then 'exec' replaces that shell with a new one that inherits the environment.
+            conda_activate_cmd = f"source /home/abc/miniconda3/bin/activate {full_venv_path} && exec /bin/bash"
+            command = ['/bin/bash', '-c', conda_activate_cmd]
         elif venv_type == 'python':
-            # For standard python venv
+            # For standard python venv, --rcfile is the correct approach
             activate_script = os.path.join(full_venv_path, 'bin', 'activate')
             command = ['/bin/bash', '--rcfile', activate_script]
 

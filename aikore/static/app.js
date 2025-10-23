@@ -367,6 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         currentTerminalSocket.onmessage = (event) => {
+            // CORRECTED: The typo Uint8_Array is now Uint8Array
             currentTerminal.write(new Uint8Array(event.data));
         };
 
@@ -390,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isStopped = status === 'stopped';
 
         // Set disabled state of menu items based on instance status
-        toolsContextMenu.querySelector('[data-action="terminal"]').disabled = !isStopped;
+        toolsContextMenu.querySelector('[data-action="terminal"]').disabled = false;
         toolsContextMenu.querySelector('[data-action="script"]').disabled = !isStopped;
 
         const rect = buttonEl.getBoundingClientRect();
