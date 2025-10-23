@@ -14,6 +14,12 @@ def get_instances(db: Session, skip: int = 0, limit: int = 100):
     """
     return db.query(models.Instance).offset(skip).limit(limit).all()
 
+def get_autostart_instances(db: Session):
+    """
+    Retrieve all instances that are marked for autostart.
+    """
+    return db.query(models.Instance).filter(models.Instance.autostart == True).all()
+
 def create_instance(
     db: Session, 
     instance: schemas.InstanceCreate,
