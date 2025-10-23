@@ -103,7 +103,8 @@ body {
 .pane-content {
     overflow: auto;
     flex-grow: 1;
-    /* Padding is now applied more specifically below */
+    min-height: 0;
+    /* <-- CORRECTIF FINAL POUR LA BARRE DE DÉFILEMENT */
 }
 
 #instance-pane .pane-content {
@@ -115,7 +116,6 @@ body {
 }
 
 #tools-pane .pane-content {
-    /* MODIFICATION: Padding removed from here to allow children to control it */
     padding: 0;
     display: flex;
     flex-direction: column;
@@ -325,10 +325,17 @@ body {
     background-color: #6f42c1;
 }
 
-/* New color for edit buttons */
 [data-action="open"],
 [data-action="view"] {
     background-color: #4a4a70;
+}
+
+/* CORRECTIF POUR LE BOUTON CANCEL */
+[data-action="cancel_new"] {
+    background-color: #f8f9fa;
+    /* Light grey */
+    color: #212529;
+    /* Dark text */
 }
 
 .action-btn:not([data-action]) {
@@ -424,20 +431,17 @@ body {
     background-color: #4a4a70;
 }
 
-/* --- NOUVEAU: Instance View (iframe) --- */
+/* --- Instance View (iframe) --- */
 #instance-view-container {
-    min-height: 0;
     flex-grow: 1;
-    height: 100%;
     width: 100%;
-    /* Ensure it takes all available flex space */
+    min-height: 0;
 }
 
 #instance-iframe {
     width: 100%;
     height: 100%;
     border: none;
-    /* Redundant with frameborder=0 but good practice */
 }
 
 /* --- MONITORING PANE --- */
