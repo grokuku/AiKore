@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileEditorTextarea = document.getElementById('file-editor-textarea');
     const editorSaveBtn = document.getElementById('editor-save-btn');
     const editorExitBtn = document.getElementById('editor-exit-btn');
+    const instanceViewContainer = document.getElementById('instance-view-container');
+    const instanceIframe = document.getElementById('instance-iframe');
 
     const ASCII_LOGO = `                                                       
     @@@@@@   @@@  @@@  @@@   @@@@@@   @@@@@@@   @@@@@@@@  
@@ -41,6 +43,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Hide other views
         logViewerContainer.classList.add('hidden');
         editorContainer.classList.add('hidden');
+        instanceViewContainer.classList.add('hidden');
+        instanceIframe.src = 'about:blank';
         // Show welcome screen
         welcomeScreenContainer.classList.remove('hidden');
 
@@ -129,6 +133,10 @@ document.addEventListener('DOMContentLoaded', () => {
             openButton.href = '#';
             openButton.classList.add('disabled');
         }
+
+        const viewButton = row.querySelector('[data-action="view"]');
+        viewButton.disabled = !isStarted;
+
         checkRowForChanges(row);
     }
 
@@ -205,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="action-btn" data-action="script" data-id="${instance.id}" data-name="${instance.name}" ${isActive ? 'disabled' : ''}>Script</button>
                 <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
                 <button class="action-btn" data-action="delete" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Delete</button>
-                <button class="action-btn" data-action="view" data-id="${instance.id}" disabled>View</button>
+                <button class="action-btn" data-action="view" data-id="${instance.id}" data-name="${instance.name}" ${!isStarted ? 'disabled' : ''}>View</button>
                 <a href="${isStarted ? `/app/${instance.name}/` : '#'}" class="action-btn ${!isStarted ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
         }
 
@@ -284,6 +292,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         welcomeScreenContainer.classList.add('hidden');
         logViewerContainer.classList.add('hidden');
+        instanceViewContainer.classList.add('hidden');
+        instanceIframe.src = 'about:blank';
         editorContainer.classList.remove('hidden');
 
         const fileTypeName = fileType.charAt(0).toUpperCase() + fileType.slice(1);
@@ -318,6 +328,22 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`Error saving file: ${error.message}`);
             editorSaveBtn.textContent = 'Save'; editorSaveBtn.disabled = false;
         }
+    }
+
+    function openInstanceView(instanceName) {
+        // Cleanup other views and polls
+        clearInterval(activeLogInterval);
+        activeLogInstanceId = null;
+        editorContainer.classList.add('hidden');
+        logViewerContainer.classList.add('hidden');
+        welcomeScreenContainer.classList.add('hidden');
+
+        // Show the instance view
+        instanceViewContainer.classList.remove('hidden');
+        toolsPaneTitle.textContent = `View: ${instanceName}`;
+
+        // Set the iframe source
+        instanceIframe.src = `/app/${instanceName}/`;
     }
 
     editorSaveBtn.addEventListener('click', saveFileContent);
@@ -372,6 +398,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (action === 'logs') {
             welcomeScreenContainer.classList.add('hidden');
             editorContainer.classList.add('hidden');
+            instanceViewContainer.classList.add('hidden');
+            instanceIframe.src = 'about:blank';
             logViewerContainer.classList.remove('hidden');
 
             clearInterval(activeLogInterval);
@@ -405,6 +433,8 @@ document.addEventListener('DOMContentLoaded', () => {
             activeLogInterval = setInterval(fetchLogs, 2000);
         } else if (action === 'script') {
             openEditor(instanceId, target.dataset.name, 'script');
+        } else if (action === 'view') {
+            openInstanceView(target.dataset.name);
         } else if (action === 'cancel_new') {
             row.remove();
             if (instancesTbody.childElementCount === 0) fetchAndRenderInstances();
