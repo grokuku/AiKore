@@ -2,20 +2,19 @@
 name: Build and Push Base Image
 
 on:
-  # Se déclenche quand on pousse des changements sur la branche 'main'
+  # Permet de lancer le workflow manuellement depuis l'onglet "Actions" de GitHub
+  workflow_dispatch:
+  # Se déclenche automatiquement quand on pousse des changements sur la branche 'main'
   push:
     branches:
       - main
     # MAIS UNIQUEMENT si le fichier Dockerfile.buildbase a été modifié
     paths:
       - 'Dockerfile.buildbase'
-  # Permet aussi de le lancer manuellement depuis l'interface GitHub Actions
-  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  # Assurez-vous que le nom de l'image correspond à celui dans votre Dockerfile
-  # ${{ github.repository_owner }} sera remplacé par votre nom d'utilisateur (ex: grokuku)
+  # Le nom de l'image de base. `${{ github.repository_owner }}` sera votre nom d'utilisateur (ex: grokuku)
   IMAGE_NAME: ${{ github.repository_owner }}/stable-diffusion-buildbase
 
 jobs:
@@ -26,9 +25,24 @@ jobs:
       packages: write
 
     steps:
+      # ÉTAPE 1 : Libérer de l'espace disque AVANT TOUTE CHOSE.
+      # C'est la correction principale pour l'erreur "No space left on device".
+      - name: Free Disk Space (Cleanup runner)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          # On supprime les caches d'outils, les SDK Android et .NET, etc.
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      # ÉTAPE 2 : Récupération de votre code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ÉTAPE 3 : Connexion au registre de conteneurs de GitHub
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -36,13 +50,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Action de build spécifique pour l'image de base
+      # ÉTAPE 4 : Mise en place de Docker Buildx (bonne pratique)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ÉTAPE 5 : Construction et publication de l'image de base
       - name: Build and push base Docker image
+        id: build-base
         uses: docker/build-push-action@v6
         with:
           context: .
-          # On spécifie quel Dockerfile utiliser
           file: ./Dockerfile.buildbase
           push: true
-          # On tague cette image comme 'latest'
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          platforms: linux/amd64
+          # Utilise le cache de GitHub pour accélérer les builds futurs.
+          # C'est BEAUCOUP plus efficace que de ne pas avoir de cache.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
