@@ -1,43 +1,29 @@
-# Nom du workflow qui apparaîtra dans l'onglet "Actions" de GitHub
+# Nom du workflow
 name: Docker Build and Push to GHCR
 
-# Déclencheur du workflow
 on:
-  # Exécute le workflow uniquement lorsque vous poussez un tag qui commence par 'v'
-  # Exemples : v1.0, v1.2.3, v2025.10.25
+  # Se déclenche quand vous poussez un tag qui commence par 'v'
   push:
     tags:
       - 'v*.*.*'
       - 'v*.*'
 
-# Variables d'environnement pour éviter la répétition
 env:
-  # Le registre de conteneurs de GitHub
   REGISTRY: ghcr.io
-  # Le nom de l'image. `${{ github.repository }}` est une variable GitHub
-  # qui se résoudra en "votre-nom/votre-repo" (ex: grokuku/aikore)
+  # Le nom de l'image sera basé sur le nom de votre dépôt (ex: grokuku/aikore)
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
-    # Utilise la dernière version d'Ubuntu disponible pour l'exécuteur
     runs-on: ubuntu-latest
-
-    # Permissions nécessaires pour que le GITHUB_TOKEN puisse
-    # lire le contenu du dépôt et écrire des paquets (images Docker)
     permissions:
       contents: read
       packages: write
 
     steps:
-      # 1. Récupération du code source
-      # Cette action checkout le code de votre branche/tag
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Connexion au GitHub Container Registry (GHCR)
-      # Utilise un token temporaire généré automatiquement par GitHub Actions
-      # pour une connexion sécurisée.
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -45,30 +31,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3. Extraction des métadonnées (nom de l'image et tags)
-      # C'est l'étape clé qui génère les étiquettes 'latest' et la version.
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Crée un tag numérique à partir du tag Git (ex: v1.2.3 -> 1.2.3)
             type=semver,pattern={{version}}
-            # Crée le tag 'latest'
             type=raw,value=latest
 
-      # 4. Construction de l'image et publication sur GHCR
-      # Cette action utilise les informations des étapes précédentes pour
-      # construire l'image à partir de votre Dockerfile et la pousser.
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          # Le contexte de build est la racine du projet
           context: .
-          # On indique qu'il faut pousser l'image vers le registre
           push: true
-          # Utilise les tags générés par l'étape "meta" (ex: 1.2.3 et latest)
           tags: ${{ steps.meta.outputs.tags }}
-          # Ajoute des labels utiles à l'image
           labels: ${{ steps.meta.outputs.labels }}

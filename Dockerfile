@@ -1,4 +1,5 @@
-FROM ghcr.io/grokuku/stable-diffusion-buildbase:latest
+# MODIFICATION ICI pour utiliser la nouvelle image de base
+FROM ghcr.io/grokuku/aikore-buildbase:latest
 
 # Copy s6-overlay and custom service configuration
 COPY docker/root/ /

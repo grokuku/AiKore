@@ -14,8 +14,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Le nom de l'image de base. `${{ github.repository_owner }}` sera votre nom d'utilisateur (ex: grokuku)
-  IMAGE_NAME: ${{ github.repository_owner }}/stable-diffusion-buildbase
+  # On utilise le nom que vous avez choisi : aikore-buildbase
+  IMAGE_NAME: ${{ github.repository_owner }}/aikore-buildbase
 
 jobs:
   build-and-push-base:
@@ -25,12 +25,10 @@ jobs:
       packages: write
 
     steps:
-      # ÉTAPE 1 : Libérer de l'espace disque AVANT TOUTE CHOSE.
-      # C'est la correction principale pour l'erreur "No space left on device".
+      # ÉTAPE 1 : Libère de l'espace disque pour éviter les erreurs
       - name: Free Disk Space (Cleanup runner)
         uses: jlumbroso/free-disk-space@main
         with:
-          # On supprime les caches d'outils, les SDK Android et .NET, etc.
           tool-cache: true
           android: true
           dotnet: true
@@ -50,13 +48,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ÉTAPE 4 : Mise en place de Docker Buildx (bonne pratique)
+      # ÉTAPE 4 : Mise en place de Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       # ÉTAPE 5 : Construction et publication de l'image de base
       - name: Build and push base Docker image
-        id: build-base
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -64,7 +61,5 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           platforms: linux/amd64
-          # Utilise le cache de GitHub pour accélérer les builds futurs.
-          # C'est BEAUCOUP plus efficace que de ne pas avoir de cache.
           cache-from: type=gha
           cache-to: type=gha,mode=max

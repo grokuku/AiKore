@@ -1,6 +1,7 @@
 services:
       aikore:
-        # La ligne la plus importante à changer :
+        # MODIFICATION ICI pour que Docker télécharge l'image depuis GitHub
+        # Remplacez VOTRE_NOM_GITHUB/VOTRE_REPO par le vôtre (ex: grokuku/aikore)
         image: ghcr.io/grokuku/AiKore:latest
         container_name: aikore
         runtime: nvidia
