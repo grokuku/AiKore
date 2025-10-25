@@ -1,0 +1,48 @@
+# Nom du workflow
+name: Build and Push Base Image
+
+on:
+  # Se déclenche quand on pousse des changements sur la branche 'main'
+  push:
+    branches:
+      - main
+    # MAIS UNIQUEMENT si le fichier Dockerfile.buildbase a été modifié
+    paths:
+      - 'Dockerfile.buildbase'
+  # Permet aussi de le lancer manuellement depuis l'interface GitHub Actions
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  # Assurez-vous que le nom de l'image correspond à celui dans votre Dockerfile
+  # ${{ github.repository_owner }} sera remplacé par votre nom d'utilisateur (ex: grokuku)
+  IMAGE_NAME: ${{ github.repository_owner }}/stable-diffusion-buildbase
+
+jobs:
+  build-and-push-base:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Action de build spécifique pour l'image de base
+      - name: Build and push base Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # On spécifie quel Dockerfile utiliser
+          file: ./Dockerfile.buildbase
+          push: true
+          # On tague cette image comme 'latest'
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest

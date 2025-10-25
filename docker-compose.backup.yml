@@ -1,13 +1,13 @@
 services:
       aikore:
-        # La ligne la plus importante à changer :
-        image: ghcr.io/grokuku/AiKore:latest
+        image: aikore:latest
         container_name: aikore
         runtime: nvidia
         volumes:
           - "${STABLE_DIFFUSION_DATA_DIRECTORY:-./data}:/config:rw"
         ports:
           - "${AIKORE_PORT:-19000}:9000/tcp"
+          - "18000:8000/tcp" # <--- for testing
         environment:
           - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
           - TZ=${TZ:-America/New_York}
