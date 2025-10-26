@@ -174,3 +174,34 @@ A single table `instances` will be created in the `aikore.db` SQLite database.
     *   Implement the `Update` functionality for saving changes to existing instances (Name, GPU IDs, etc.).
     *   Improve error handling and status reporting.
     *   Write comprehensive documentation for the new `AiKore` system.
+
+    ## 5. Known Issues & Investigation Logs
+    
+    ### 5.1. ComfyUI Reverse Proxy Integration Issues
+    
+    *   **Date:** 2025-10-25
+    *   **Status:** **Unresolved**
+    *   **Symptoms:**
+        1.  **UI State:** The ComfyUI web interface does not update its state correctly. Multiple nodes can remain highlighted in green after execution, which normally indicates the currently active node. This points to a failing WebSocket connection.
+        2.  **Save Action:** Attempting to save a workflow results in an HTTP error, preventing the user from saving their work. The specific error code has oscillated between `405 Method Not Allowed` and `403 Forbidden` depending on the NGINX configuration being tested.
+    
+    *   **Investigation Log:**
+        A series of modifications were attempted in `aikore/core/process_manager.py` to adjust the dynamically generated NGINX configuration for each instance. The goal was to make the reverse proxy transparent to the ComfyUI backend. The following hypotheses were tested:
+    
+        1.  **Hypothesis: WebSocket Buffering.**
+            *   **Action:** Added `proxy_buffering off;` to the NGINX config.
+            *   **Result:** Partially successful. Solved the green-node/WebSocket issue, but the save functionality remained broken (`405 Method Not Allowed`).
+    
+        2.  **Hypothesis: NGINX `rewrite` directive alters POST requests.**
+            *   **Action:** Replaced the `rewrite` directive with various `proxy_pass` syntaxes and `location` block types (prefix-based, regex-based).
+            *   **Result:** This led to a cycle of new errors.
+    
+        3.  **Hypothesis: Incorrect `Host` header causes security rejection.**
+            *   **Action:** Modified the `proxy_set_header Host` directive to use `$proxy_host` and/or `$host`.
+            *   **Result:** This caused ComfyUI to reject requests with `403 Forbidden` or `500 Internal Server Error` due to malformed Host values.
+    
+        4.  **Hypothesis: Incorrect `Origin` header causes CSRF rejection.**
+            *   **Action:** Attempted to rewrite the `Origin` header to match what the ComfyUI server expected.
+            *   **Result:** Did not solve the issue and led back to a `405 Method Not Allowed` error.
+    
+    *   **Conclusion:** The attempts to solve the problem by solely manipulating the NGINX configuration have proven to be a fragile and incorrect approach. The core issue lies in the ComfyUI application's default security model, which is not designed for this type of reverse proxy setup without specific configuration. The current NGINX configuration in the `process_manager` is not functional for ComfyUI.

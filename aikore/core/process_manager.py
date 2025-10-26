@@ -232,6 +232,13 @@ def start_instance_process(db: Session, instance: models.Instance):
     os.makedirs(instance_output_dir, exist_ok=True)
     os.makedirs(NGINX_SITES_AVAILABLE, exist_ok=True)
 
+    # --- GLOBAL TMPDIR FIX ---
+    # Ensure a tmp directory exists on the same filesystem as /config
+    # to prevent "Invalid cross-device link" errors with pip.
+    global_tmp_dir = "/config/tmp"
+    os.makedirs(global_tmp_dir, exist_ok=True)
+    # --- END FIX ---
+
     dest_script_path = os.path.join(instance_conf_dir, "launch.sh")
     source_script_path = os.path.join(BLUEPRINTS_DIR, instance.base_blueprint)
     try:
@@ -242,6 +249,7 @@ def start_instance_process(db: Session, instance: models.Instance):
     os.chmod(dest_script_path, os.stat(dest_script_path).st_mode | stat.S_IEXEC)
 
     env = os.environ.copy()
+    env["TMPDIR"] = global_tmp_dir # Set TMPDIR for the subprocess
     if instance.gpu_ids:
         env["CUDA_VISIBLE_DEVICES"] = instance.gpu_ids
     
@@ -314,7 +322,7 @@ def start_instance_process(db: Session, instance: models.Instance):
         os.chmod(vnc_launcher_path, stat.S_IRWXU)
         main_cmd = ['bash', vnc_launcher_path]
     
-    # NGINX Configuration (unchanged logic)
+    # NGINX Configuration
     proxy_target_port = instance.vnc_port if instance.persistent_mode else instance.port
     if instance.persistent_mode:
         nginx_conf_content = f"""
@@ -324,14 +332,23 @@ def start_instance_process(db: Session, instance: models.Instance):
             proxy_pass http://127.0.0.1:{proxy_target_port}/;
         }}"""
     else:
-        nginx_conf_content = f"""
-        location /app/{instance.name}/ {{
-            rewrite ^/app/[^/]+/(.*)$ /$1 break;
-            proxy_pass http://127.0.0.1:{proxy_target_port}/;
-            proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";
-            proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto $scheme;
-        }}"""
+        # The definitive, robust, and standard configuration.
+        # The trailing slash on location and proxy_pass is the key.
+        nginx_conf_content = textwrap.dedent(f"""\
+            location /app/{instance.name}/ {{
+                proxy_pass http://127.0.0.1:{proxy_target_port}/;
+
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_buffering off;
+
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }}
+        """)
     with open(os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf"), 'w') as f:
         f.write(nginx_conf_content)
     _reload_nginx()

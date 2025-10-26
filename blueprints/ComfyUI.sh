@@ -118,8 +118,9 @@ ln -sfn "${INSTANCE_OUTPUT_DIR}" "${INSTANCE_CONF_DIR}/ComfyUI/output"
 # Launch ComfyUI
 cd "${INSTANCE_CONF_DIR}/ComfyUI"
 
-# Construct the final command. Parameters must be added directly inside this script if needed.
-CMD="python3 main.py"
+# Construct the final command.
+# The --listen argument is crucial for reverse proxy compatibility.
+CMD="python3 main.py --listen"
 if [ -n "$WEBUI_PORT" ]; then
     CMD+=" --port ${WEBUI_PORT}"
 fi

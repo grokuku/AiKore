@@ -226,14 +226,20 @@ async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db:
         while True:
             try:
                 message = await websocket.receive_text()
-                try:
-                    # Attempt to decode as JSON for control messages
-                    data = json.loads(message)
-                    if data.get("type") == "resize" and "rows" in data and "cols" in data:
-                        process_manager.resize_terminal_process(master_fd, data['rows'], data['cols'])
-                except (json.JSONDecodeError, TypeError):
-                    # If not valid JSON, treat as user input
-                    os.write(master_fd, message.encode('utf-8'))
+                # Robustly check if the message is a control command
+                if message.strip().startswith('{'):
+                    try:
+                        data = json.loads(message)
+                        if isinstance(data, dict) and data.get("type") == "resize" and "rows" in data and "cols" in data:
+                            process_manager.resize_terminal_process(master_fd, data['rows'], data['cols'])
+                            continue # Skip writing this message to PTY
+                    except (json.JSONDecodeError, TypeError):
+                        # It looked like JSON but wasn't valid, treat as normal input
+                        pass
+                
+                # If it's not a valid control message, write it to the PTY
+                os.write(master_fd, message.encode('utf-8'))
+
             except Exception:
                 break
 
