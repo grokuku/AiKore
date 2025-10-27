@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import OperationalError
 
 # --- CONSTANTS ---
-LATEST_DB_VERSION = 2
+LATEST_DB_VERSION = 3
 DATABASE_PATH = "/config/aikore.db"
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
 
@@ -23,6 +23,36 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 # --- MIGRATION LOGIC ---
+
+def _migrate_v2_to_v3():
+    """
+    Performs the migration from database version 2 to 3.
+    - Adds the 'access_pattern' column to the 'instances' table with a default value.
+    """
+    log.info("Performing database migration from v2 to v3...")
+    try:
+        with engine.connect() as connection:
+            # Use a transaction to ensure atomicity
+            with connection.begin():
+                # Add the new column with a default value of 'port'
+                add_column_sql = text("""
+                    ALTER TABLE instances
+                    ADD COLUMN access_pattern VARCHAR NOT NULL DEFAULT 'port'
+                """)
+                connection.execute(add_column_sql)
+                
+                # Update the database version number
+                update_version_sql = text("""
+                    UPDATE aikore_meta
+                    SET value = :version
+                    WHERE key = 'database_version'
+                """)
+                connection.execute(update_version_sql, {"version": "3"})
+            
+            log.info("Successfully added 'access_pattern' column and updated DB version to 3.")
+    except Exception as e:
+        log.error(f"FATAL: Database migration from v2 to v3 failed: {e}")
+        raise
 
 def _migrate_v1_to_v2():
     """
@@ -70,8 +100,8 @@ def _migrate_v1_to_v2():
             new_db.add(new_instance)
             migrated_count += 1
         
-        # Set the new database version
-        meta_version = models.AikoreMeta(key="database_version", value=str(LATEST_DB_VERSION))
+        # Set the new database version (to 2, as this is the v1->v2 migration)
+        meta_version = models.AikoreMeta(key="database_version", value="2")
         new_db.add(meta_version)
         
         new_db.commit()
@@ -118,37 +148,42 @@ def check_and_migrate_db():
     # Check if this is a v1 database (aikore_meta table does not exist)
     if not inspector.has_table("aikore_meta"):
         log.info("Database version 1 detected (no 'aikore_meta' table). Starting migration to v2...")
+        # The v1->v2 migration creates the table and sets version to 2.
         _migrate_v1_to_v2()
-        return
-
-    # For future migrations, we'll check the version number
+        # After this, the DB is at v2. We can proceed with other migrations.
+    
     try:
         with SessionLocal() as db:
             from . import models
             version_entry = db.query(models.AikoreMeta).filter_by(key="database_version").first()
             if not version_entry:
-                # This case should be rare, but handle it.
                 log.warning("aikore_meta table exists but is empty. Assuming v1 and migrating.")
                 _migrate_v1_to_v2()
-                return
+                version_entry = db.query(models.AikoreMeta).filter_by(key="database_version").first()
             
             current_version = int(version_entry.value)
+            
             if current_version < LATEST_DB_VERSION:
-                log.info(f"Database version {current_version} detected. Latest is {LATEST_DB_VERSION}.")
-                # Here you would add a loop or if/elif chain for future migrations
-                # For now, we only have one migration path.
+                log.info(f"Database version {current_version} detected. Latest is {LATEST_DB_VERSION}. Starting migration...")
+                
                 if current_version == 1:
+                    # This should be handled by the check above, but as a safeguard:
                     _migrate_v1_to_v2()
-                else:
-                    log.error(f"Unknown database version {current_version}. No migration path available.")
-                    raise Exception(f"Cannot migrate from unknown database version {current_version}")
+                    current_version = 2 # Manually update for the next step in the chain
+                
+                if current_version == 2:
+                    _migrate_v2_to_v3()
+                    current_version = 3 # Manually update for future migrations
+
+                # Add 'if current_version == 3:' for the next migration, etc.
+                
             else:
                 log.info(f"Database is up to date (version {current_version}).")
     
-    except OperationalError:
-        # This can happen if the DB exists but is empty/corrupt
-        log.warning("Could not inspect database, assuming it's a fresh v1. Attempting migration.")
-        _migrate_v1_to_v2()
+    except OperationalError as e:
+        # This can happen if the DB is corrupt or from a future version with unknown columns
+        log.error(f"A database operational error occurred: {e}. Manual check might be needed.")
+        raise
     except Exception as e:
         log.error(f"An unexpected error occurred during database version check: {e}")
         raise

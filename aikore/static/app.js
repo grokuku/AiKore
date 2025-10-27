@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const editorExitBtn = document.getElementById('editor-exit-btn');
     const instanceViewContainer = document.getElementById('instance-view-container');
     const instanceIframe = document.getElementById('instance-iframe');
-    // NEW: Terminal elements
     const terminalViewContainer = document.getElementById('terminal-view-container');
     const terminalContent = document.getElementById('terminal-content');
 
@@ -43,14 +42,12 @@ document.addEventListener('DOMContentLoaded', () => {
         fileType: null,
     };
 
-    // NEW: Terminal state variables
     let currentTerminal = null;
     let currentTerminalSocket = null;
     let fitAddon = null;
 
     let instancesPollInterval = null;
 
-    // NEW: Centralized function to close the terminal connection
     function closeTerminal() {
         if (currentTerminalSocket) {
             currentTerminalSocket.close();
@@ -63,7 +60,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // NEW: Centralized function to hide all views in the tools pane
     function hideAllToolViews() {
         welcomeScreenContainer.classList.add('hidden');
         logViewerContainer.classList.add('hidden');
@@ -118,19 +114,29 @@ document.addEventListener('DOMContentLoaded', () => {
         return select;
     }
 
+    // NEW: Helper function to build the correct URL based on access pattern
+    function buildInstanceUrl(instance) {
+        if (!instance || !instance.port) return '#';
+        const hostname = window.location.hostname;
+        if (instance.access_pattern === 'subdomain') {
+            // Sanitize instance name to be a valid subdomain part
+            const slug = instance.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+            const hostParts = hostname.split('.');
+            // Simple check if hostname is not an IP address
+            if (hostParts.length > 1) {
+                return `${window.location.protocol}//${slug}.${hostname}`;
+            }
+        }
+        // Default to port-based access
+        return `${window.location.protocol}//${hostname}:${instance.port}`;
+    }
+
     function checkRowForChanges(row) {
         const updateButton = row.querySelector('button[data-action="update"]');
         if (!updateButton) return;
-        const nameField = row.querySelector('input[data-field="name"]');
-        const gpuIdsField = row.querySelector('input[data-field="gpu_ids"]');
-        const autostartField = row.querySelector('input[data-field="autostart"]');
-        const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
-        let changed = false;
-        if (nameField.value !== row.dataset.originalName) changed = true;
-        if (gpuIdsField.value !== row.dataset.originalGpuIds) changed = true;
-        if (autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
-        if (persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) changed = true;
-        updateButton.disabled = !changed;
+        // For now, update is not implemented, so we leave it disabled
+        // This function can be expanded when we implement the update endpoint
+        updateButton.disabled = true;
     }
 
     function updateInstanceRow(row, instance) {
@@ -139,62 +145,61 @@ document.addEventListener('DOMContentLoaded', () => {
         const isActive = !isStopped;
 
         row.dataset.status = instance.status;
-        // NEW: Add/remove active class for visual feedback
-        if (instance.is_comfyui_active_slot) {
-            row.classList.add('active-slot');
-        } else {
-            row.classList.remove('active-slot');
-        }
 
         const statusSpan = row.querySelector('.status');
         statusSpan.textContent = instance.status;
         statusSpan.className = `status status-${instance.status.toLowerCase()}`;
-        row.cells[6].textContent = instance.port || 'N/A';
+
+        // Update port and access pattern values
+        row.querySelector('[data-field="port"]').value = instance.port || '';
+        row.querySelector('[data-field="access_pattern"]').value = instance.access_pattern;
+
+        // Update action buttons based on status
         row.querySelector('[data-action="start"]').disabled = isActive;
         row.querySelector('[data-action="stop"]').disabled = isStopped;
         row.querySelector('[data-action="delete"]').disabled = isActive;
-        
-        const openButton = row.querySelector('[data-action="open"]');
-        // CORRECTED: Use the stable role selector
-        const viewButton = row.querySelector('[data-role="view-button"]');
-        const isComfyUI = instance.base_blueprint.toLowerCase().includes('comfyui');
 
-        if (isComfyUI && !instance.persistent_mode) {
-            // ComfyUI Active Slot Logic
-            openButton.classList.add('hidden'); // Hide the generic 'Open' button
-            viewButton.classList.remove('hidden');
-
-            if (instance.is_comfyui_active_slot) {
-                viewButton.textContent = 'View Active UI';
-                viewButton.dataset.action = 'view_comfyui'; // Special action
-                viewButton.disabled = false;
-            } else {
-                viewButton.textContent = 'Activate UI';
-                viewButton.dataset.action = 'activate_comfyui'; // Special action
-                viewButton.disabled = !isStarted;
-            }
+        // Update Activate/Deactivate button
+        const activateBtn = row.querySelector('[data-role="activation-button"]');
+        if (instance.persistent_mode) {
+            activateBtn.classList.add('hidden');
         } else {
-            // Standard Logic for all other instances
-            viewButton.textContent = 'View';
-            viewButton.dataset.action = 'view';
-            viewButton.disabled = !isStarted;
-            
-            // Keep the 'Open' button visible only for persistent mode, as it's the primary way to access it
-            if (instance.persistent_mode) {
-                openButton.classList.remove('hidden');
-                if (isStarted) {
-                    openButton.href = `/app/${instance.name}/`;
-                    openButton.classList.remove('disabled');
-                } else {
-                    openButton.href = '#';
-                    openButton.classList.add('disabled');
-                }
+            activateBtn.classList.remove('hidden');
+            activateBtn.disabled = !isStarted;
+            if (instance.is_active) {
+                activateBtn.textContent = 'Deactivate';
+                activateBtn.dataset.action = 'deactivate';
+                activateBtn.classList.add('active-btn');
             } else {
-                    openButton.classList.add('hidden'); // Hide 'Open' for all standard instances now
+                activateBtn.textContent = 'Activate';
+                activateBtn.dataset.action = 'activate';
+                activateBtn.classList.remove('active-btn');
             }
         }
-        
-        checkRowForChanges(row);
+
+        // Update Open and View buttons
+        const openButton = row.querySelector('[data-action="open"]');
+        const viewButton = row.querySelector('[data-role="view-button"]');
+        const canBeAccessed = isStarted && (instance.is_active || instance.persistent_mode);
+
+        if (canBeAccessed) {
+            const url = buildInstanceUrl(instance);
+            openButton.href = url;
+            viewButton.dataset.url = url; // Store URL for iframe
+            openButton.classList.remove('disabled');
+            viewButton.disabled = false;
+        } else {
+            openButton.href = '#';
+            viewButton.dataset.url = 'about:blank';
+            openButton.classList.add('disabled');
+            viewButton.disabled = true;
+        }
+
+        // Handle the special ComfyUI Active Slot button (legacy, to be phased out or integrated)
+        const comfyUIButton = row.querySelector('[data-action="activate_comfyui"]');
+        if (comfyUIButton) {
+            comfyUIButton.disabled = !isStarted;
+        }
     }
 
     function renderInstanceRow(instance, isNew = false) {
@@ -202,16 +207,22 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.id = instance.id;
         row.dataset.isNew = String(isNew);
         row.dataset.status = instance.status;
+
+        // Store original values for change detection
         row.dataset.originalName = instance.name || '';
         row.dataset.originalBlueprint = instance.base_blueprint || '';
         row.dataset.originalGpuIds = instance.gpu_ids || '';
+        row.dataset.originalPort = instance.port || '';
+        row.dataset.originalAccessPattern = instance.access_pattern || 'port';
         row.dataset.originalAutostart = String(instance.autostart);
         row.dataset.originalPersistentMode = String(instance.persistent_mode);
-        if (instance.is_comfyui_active_slot) row.classList.add('active-slot');
 
         const isStarted = instance.status === 'started';
         const isStopped = instance.status === 'stopped';
         const isActive = !isStopped;
+        const canBeAccessed = isStarted && (instance.is_active || instance.persistent_mode);
+
+        // Column: Name
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
         nameInput.value = instance.name || '';
@@ -219,72 +230,80 @@ document.addEventListener('DOMContentLoaded', () => {
         nameInput.required = true;
         nameInput.disabled = !isNew && isActive;
         row.insertCell().appendChild(nameInput);
+
+        // Column: Blueprint
         const blueprintSelect = createBlueprintSelect(instance.base_blueprint);
         blueprintSelect.disabled = !isNew;
         row.insertCell().appendChild(blueprintSelect);
+
+        // Column: GPU IDs
         const gpuInput = document.createElement('input');
         gpuInput.type = 'text';
         gpuInput.value = instance.gpu_ids || '';
         gpuInput.dataset.field = 'gpu_ids';
+        gpuInput.disabled = !isNew; // For simplicity, only editable on creation
         row.insertCell().appendChild(gpuInput);
-        const autostartCheckbox = document.createElement('input');
-        autostartCheckbox.type = 'checkbox';
-        autostartCheckbox.checked = instance.autostart;
-        autostartCheckbox.dataset.field = 'autostart';
-        row.insertCell().appendChild(autostartCheckbox);
-        const persistentModeCheckbox = document.createElement('input');
-        persistentModeCheckbox.type = 'checkbox';
-        persistentModeCheckbox.checked = instance.persistent_mode;
-        persistentModeCheckbox.dataset.field = 'persistent_mode';
-        row.insertCell().appendChild(persistentModeCheckbox);
+
+        // Column: Public Port
+        const portInput = document.createElement('input');
+        portInput.type = 'number';
+        portInput.placeholder = 'e.g. 50001';
+        portInput.value = instance.port || '';
+        portInput.dataset.field = 'port';
+        portInput.required = true;
+        portInput.disabled = !isNew; // For simplicity, only editable on creation
+        row.insertCell().appendChild(portInput);
+
+        // Column: Access Method
+        const accessSelect = document.createElement('select');
+        accessSelect.dataset.field = 'access_pattern';
+        accessSelect.innerHTML = `
+            <option value="port">Hostname:Port</option>
+            <option value="subdomain">Subdomain</option>
+        `;
+        accessSelect.value = instance.access_pattern || 'port';
+        row.insertCell().appendChild(accessSelect);
+
+        // Column: Status
         row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
-        row.insertCell().textContent = instance.port || 'N/A';
+
+        // Column: Actions
         const actionsCell = row.insertCell();
         actionsCell.classList.add('actions-column');
-
-        const isComfyUI = (instance.base_blueprint || '').toLowerCase().includes('comfyui');
-        let viewButtonText = 'View';
-        let viewButtonAction = 'view';
-        if (isComfyUI && !instance.persistent_mode) {
-            viewButtonText = instance.is_comfyui_active_slot ? 'View Active UI' : 'Activate UI';
-            viewButtonAction = instance.is_comfyui_active_slot ? 'view_comfyui' : 'activate_comfyui';
-        }
-
-        const openButtonVisibility = instance.persistent_mode ? '' : 'hidden';
-        const viewButtonVisibility = instance.persistent_mode ? 'hidden' : '';
 
         if (isNew) {
             actionsCell.innerHTML = `
                 <button class="action-btn" data-action="save" data-id="new" disabled>Save</button>
                 <button class="action-btn" data-action="cancel_new">Cancel</button>
-                <button class="action-btn" data-action="logs" disabled>Logs</button>
-                <button class="action-btn" data-action="tools_menu" disabled>Tools</button>
-                <button class="action-btn" data-action="update" disabled>Update</button>
-                <button class="action-btn" data-action="delete" disabled>Delete</button>
-                <button class="action-btn" data-role="view-button" data-action="view" disabled>View</button>
-                <a href="#" class="action-btn disabled" data-action="open">Open</a>`;
+            `;
         } else {
+            const activateBtnClass = instance.is_active ? 'active-btn' : '';
+            const activateBtnText = instance.is_active ? 'Deactivate' : 'Activate';
+            const activateBtnAction = instance.is_active ? 'deactivate' : 'activate';
+            const activateBtnVisibility = instance.persistent_mode ? 'hidden' : '';
+
             actionsCell.innerHTML = `
+                <button class="action-btn ${activateBtnClass} ${activateBtnVisibility}" data-role="activation-button" data-action="${activateBtnAction}" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>${activateBtnText}</button>
                 <button class="action-btn" data-action="start" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Start</button>
                 <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
-                <button class="action-btn" data-action="logs" data-id="${instance.id}">Logs</button>
+                <a href="${canBeAccessed ? buildInstanceUrl(instance) : '#'}" class="action-btn ${!canBeAccessed ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>
+                <button class="action-btn" data-role="view-button" data-action="view" data-url="${canBeAccessed ? buildInstanceUrl(instance) : 'about:blank'}" data-id="${instance.id}" ${!canBeAccessed ? 'disabled' : ''}>View</button>
                 <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">Tools</button>
-                <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
                 <button class="action-btn" data-action="delete" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Delete</button>
-                <button class="action-btn ${viewButtonVisibility}" data-role="view-button" data-action="${viewButtonAction}" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>${viewButtonText}</button>
-                <a href="${isStarted ? `/app/${instance.name}/` : '#'}" class="action-btn ${!isStarted ? 'disabled' : ''} ${openButtonVisibility}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
+            `;
         }
-        const allFields = row.querySelectorAll('input, select');
+
+        // Add listeners for new row save button
         if (isNew) {
             const saveButton = row.querySelector('button[data-action="save"]');
-            allFields.forEach(field => field.addEventListener('input', () => {
+            row.querySelectorAll('input, select').forEach(field => field.addEventListener('input', () => {
                 const name = row.querySelector('input[data-field="name"]').value;
                 const bp = row.querySelector('select[data-field="base_blueprint"]').value;
-                saveButton.disabled = !name || !bp;
+                const port = row.querySelector('input[data-field="port"]').value;
+                saveButton.disabled = !name || !bp || !port;
             }));
-        } else {
-            allFields.forEach(field => field.addEventListener('input', () => checkRowForChanges(row)));
         }
+
         return row;
     }
 
@@ -294,8 +313,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const instances = await response.json();
             const existingRows = new Map([...instancesTbody.querySelectorAll('tr[data-id]')].map(row => [row.dataset.id, row]));
+
+            // Clear "no instances" message if present
             const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
             if (noInstancesRow) noInstancesRow.remove();
+
             instances.forEach(instance => {
                 const instanceIdStr = String(instance.id);
                 if (existingRows.has(instanceIdStr)) {
@@ -306,16 +328,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     instancesTbody.appendChild(newRow);
                 }
             });
+
+            // Remove rows for instances that no longer exist
             for (const row of existingRows.values()) {
                 if (row.dataset.isNew !== 'true') row.remove();
             }
+
             if (instancesTbody.childElementCount === 0 && !document.querySelector('tr[data-is-new="true"]')) {
-                instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="8" style="text-align: center;">No instances created yet.</td></tr>`;
+                instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="7" style="text-align: center;">No instances created yet.</td></tr>`;
             }
         } catch (error) {
             console.error("Failed to fetch instances:", error);
             if (instancesPollInterval) clearInterval(instancesPollInterval);
-            instancesTbody.innerHTML = `<tr><td colspan="8" style="text-align:center;">Error loading data. Check console.</td></tr>`;
+            instancesTbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Error loading data. Check console.</td></tr>`;
         }
     }
 
@@ -323,7 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (document.querySelector('tr[data-is-new="true"]')) return;
         const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
         if (noInstancesRow) noInstancesRow.remove();
-        const newInstance = { id: 'new', autostart: false, persistent_mode: false, status: 'stopped' };
+        const newInstance = { id: 'new', autostart: false, persistent_mode: false, status: 'stopped', access_pattern: 'port' };
         const newRow = renderInstanceRow(newInstance, true);
         instancesTbody.appendChild(newRow);
         newRow.querySelector('input[data-field="name"]').focus();
@@ -385,14 +410,8 @@ document.addEventListener('DOMContentLoaded', () => {
         toolsPaneTitle.textContent = `Terminal: ${instanceName}`;
 
         currentTerminal = new Terminal({
-            cursorBlink: true,
-            fontSize: 14,
-            fontFamily: 'Courier New, Courier, monospace',
-            theme: {
-                background: '#111111',
-                foreground: '#e0e0e0',
-                cursor: '#e0e0e0',
-            }
+            cursorBlink: true, fontSize: 14, fontFamily: 'Courier New, Courier, monospace',
+            theme: { background: '#111111', foreground: '#e0e0e0', cursor: '#e0e0e0' }
         });
         fitAddon = new FitAddon.FitAddon();
         currentTerminal.loadAddon(fitAddon);
@@ -408,47 +427,15 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTerminalSocket.binaryType = 'arraybuffer';
 
         currentTerminalSocket.onopen = () => {
-            // Send initial size on connect
-            const initialSize = {
-                type: 'resize',
-                cols: currentTerminal.cols,
-                rows: currentTerminal.rows
-            };
+            const initialSize = { type: 'resize', cols: currentTerminal.cols, rows: currentTerminal.rows };
             currentTerminalSocket.send(JSON.stringify(initialSize));
-
-            // Handle user input
-            currentTerminal.onData(data => {
-                if (currentTerminalSocket && currentTerminalSocket.readyState === WebSocket.OPEN) {
-                    currentTerminalSocket.send(data);
-                }
-            });
-
-            // Handle terminal resize events
-            currentTerminal.onResize(size => {
-                if (currentTerminalSocket && currentTerminalSocket.readyState === WebSocket.OPEN) {
-                    const resizeMsg = {
-                        type: 'resize',
-                        cols: size.cols,
-                        rows: size.rows
-                    };
-                    currentTerminalSocket.send(JSON.stringify(resizeMsg));
-                }
-            });
+            currentTerminal.onData(data => { if (currentTerminalSocket && currentTerminalSocket.readyState === WebSocket.OPEN) currentTerminalSocket.send(data); });
+            currentTerminal.onResize(size => { if (currentTerminalSocket && currentTerminalSocket.readyState === WebSocket.OPEN) currentTerminalSocket.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows })); });
         };
 
-        currentTerminalSocket.onmessage = (event) => {
-            currentTerminal.write(new Uint8Array(event.data));
-        };
-
-        currentTerminalSocket.onclose = (event) => {
-            const reason = event.reason ? `: ${event.reason}` : '';
-            currentTerminal.write(`\r\n\r\n\x1b[31m[CONNECTION CLOSED]\x1b[0m Code: ${event.code}${reason}\r\n`);
-        };
-
-        currentTerminalSocket.onerror = (error) => {
-            currentTerminal.write('\r\n\x1b[31m[WEBSOCKET CONNECTION ERROR]\x1b[0m\r\n');
-            console.error('WebSocket Error:', error);
-        };
+        currentTerminalSocket.onmessage = (event) => { currentTerminal.write(new Uint8Array(event.data)); };
+        currentTerminalSocket.onclose = (event) => { currentTerminal.write(`\r\n\r\n\x1b[31m[CONNECTION CLOSED]\x1b[0m Code: ${event.code}${event.reason ? `: ${event.reason}` : ''}\r\n`); };
+        currentTerminalSocket.onerror = (error) => { currentTerminal.write('\r\n\x1b[31m[WEBSOCKET CONNECTION ERROR]\x1b[0m\r\n'); console.error('WebSocket Error:', error); };
     }
 
     editorSaveBtn.addEventListener('click', saveFileContent);
@@ -478,13 +465,11 @@ document.addEventListener('DOMContentLoaded', () => {
         currentMenuInstance = null;
     }
 
+    // MASTER EVENT LISTENER FOR THE TABLE BODY
     instancesTbody.addEventListener('click', async (event) => {
         const target = event.target.closest('[data-action]');
-        if (!target) return;
-
+        if (!target || target.disabled || target.classList.contains('disabled')) return;
         if (target.closest('.context-menu')) return;
-
-        if (target.disabled || target.classList.contains('disabled')) return;
 
         const action = target.dataset.action;
 
@@ -492,39 +477,53 @@ document.addEventListener('DOMContentLoaded', () => {
             showToolsMenu(target);
             return;
         }
-
         hideToolsMenu();
 
         const row = target.closest('tr');
         const instanceId = row.dataset.id;
 
-        if (action === 'start' || action === 'stop') {
+        if (action === 'start' || action === 'stop' || action === 'deactivate') {
+            target.disabled = true;
+            const endpoint = action === 'deactivate' ? `/api/instances/${instanceId}/deactivate` : `/api/instances/${instanceId}/${action}`;
+            try {
+                const response = await fetch(endpoint, { method: 'POST' });
+                if (!response.ok) throw new Error((await response.json()).detail);
+                await fetchAndRenderInstances();
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+                await fetchAndRenderInstances();
+            }
+        } else if (action === 'activate') {
             target.disabled = true;
             try {
-                const response = await fetch(`/api/instances/${instanceId}/${action}`, { method: 'POST' });
-                if (!response.ok) throw new Error((await response.json()).detail);
+                let response = await fetch(`/api/instances/${instanceId}/activate`, { method: 'POST' });
+                let result = await response.json();
+
+                if (response.status === 400) throw new Error(result.detail);
+
+                if (result.conflict) {
+                    if (confirm(`Port conflict: This port is used by "${result.conflicting_instance_name}".\n\nDo you want to force activation, deactivating the other instance?`)) {
+                        response = await fetch(`/api/instances/${instanceId}/activate?force=true`, { method: 'POST' });
+                        result = await response.json();
+                        if (!response.ok) throw new Error(result.detail || 'Forced activation failed.');
+                    }
+                } else if (!result.success) {
+                    throw new Error(result.message);
+                }
                 await fetchAndRenderInstances();
             } catch (error) {
                 alert(`Error: ${error.message}`);
                 await fetchAndRenderInstances();
             }
-        } else if (action === 'activate_comfyui') {
-                target.disabled = true;
-            try {
-                const response = await fetch(`/api/instances/${instanceId}/activate-comfyui`, { method: 'POST' });
-                if (!response.ok) throw new Error((await response.json()).detail);
-                await fetchAndRenderInstances();
-            } catch (error) {
-                alert(`Error: ${error.message}`);
-                await fetchAndRenderInstances();
-            }
+
         } else if (action === 'save') {
             const data = {
-                name: row.querySelector('input[data-field="name"]').value,
-                base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
+                name: row.querySelector('[data-field="name"]').value,
+                base_blueprint: row.querySelector('[data-field="base_blueprint"]').value,
+                port: parseInt(row.querySelector('[data-field="port"]').value, 10),
+                access_pattern: row.querySelector('[data-field="access_pattern"]').value,
                 gpu_ids: row.querySelector('input[data-field="gpu_ids"]').value || null,
-                autostart: row.querySelector('input[data-field="autostart"]').checked,
-                persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
+                // autostart and persistent_mode are not in the new row for simplicity, add if needed
             };
             try {
                 const response = await fetch('/api/instances/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
@@ -534,10 +533,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 alert(`Error: ${error.message}`);
             }
-        } else if (action === 'update') {
-            alert('Update functionality is the next logical step to implement!');
         } else if (action === 'delete') {
-            if (confirm('Are you sure you want to delete this instance?')) {
+            if (confirm('Are you sure you want to delete this instance? This will move its config to the trashcan.')) {
                 try {
                     const response = await fetch(`/api/instances/${instanceId}`, { method: 'DELETE' });
                     if (!response.ok) throw new Error((await response.json()).detail);
@@ -549,63 +546,79 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (action === 'logs') {
             hideAllToolViews();
             logViewerContainer.classList.remove('hidden');
-            toolsPaneTitle.textContent = `Logs: ${row.querySelector('[data-field="name"]').value || row.dataset.originalName}`;
+            toolsPaneTitle.textContent = `Logs: ${row.dataset.originalName}`;
             logContentArea.textContent = 'Loading logs...';
             activeLogInstanceId = instanceId;
             logSize = 0;
             const fetchLogs = async () => {
                 if (!activeLogInstanceId) return;
                 try {
-                    const url = `/api/instances/${activeLogInstanceId}/logs?offset=${logSize}`;
-                    const response = await fetch(url);
-                    if (!response.ok) throw new Error('Instance stopped or logs unavailable.');
+                    const response = await fetch(`/api/instances/${activeLogInstanceId}/logs?offset=${logSize}`);
+                    if (!response.ok) throw new Error('Logs unavailable.');
                     const data = await response.json();
-                    const isScrolledToBottom = logViewerContainer.scrollHeight - logViewerContainer.scrollTop <= logViewerContainer.clientHeight + 2;
+                    const isScrolled = logViewerContainer.scrollHeight - logViewerContainer.scrollTop <= logViewerContainer.clientHeight + 2;
                     if (data.content) {
                         if (logContentArea.textContent === 'Loading logs...') logContentArea.textContent = '';
                         logContentArea.appendChild(document.createTextNode(data.content));
                         logSize = data.size;
-                        if (isScrolledToBottom) logViewerContainer.scrollTop = logViewerContainer.scrollHeight;
+                        if (isScrolled) logViewerContainer.scrollTop = logViewerContainer.scrollHeight;
                     }
-                } catch (error) {
-                    clearInterval(activeLogInterval);
-                    activeLogInstanceId = null;
-                }
+                } catch (error) { clearInterval(activeLogInterval); activeLogInstanceId = null; }
             };
             fetchLogs();
             activeLogInterval = setInterval(fetchLogs, 2000);
         } else if (action === 'view') {
-            openInstanceView(`/app/${row.querySelector('[data-field="name"]').value || row.dataset.originalName}/`, row.querySelector('[data-field="name"]').value || row.dataset.originalName);
-        } else if (action === 'view_comfyui') {
-            openInstanceView(`/comfyui/`, row.querySelector('[data-field="name"]').value || row.dataset.originalName);
+            openInstanceView(target.dataset.url, row.dataset.originalName);
         } else if (action === 'cancel_new') {
             row.remove();
             if (instancesTbody.childElementCount === 0) fetchAndRenderInstances();
         }
     });
 
+    // Listener for access pattern changes
+    instancesTbody.addEventListener('change', async (event) => {
+        const target = event.target;
+        if (target.dataset.field === 'access_pattern') {
+            const row = target.closest('tr');
+            const instanceId = row.dataset.id;
+            const newPattern = target.value;
+            try {
+                const response = await fetch(`/api/instances/${instanceId}/access-pattern`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ access_pattern: newPattern })
+                });
+                if (!response.ok) throw new Error((await response.json()).detail);
+                // No full re-render needed, just update the Open button URL
+                const instanceData = {
+                    name: row.dataset.originalName,
+                    port: row.querySelector('[data-field="port"]').value,
+                    access_pattern: newPattern
+                };
+                const openButton = row.querySelector('[data-action="open"]');
+                const viewButton = row.querySelector('[data-role="view-button"]');
+                const newUrl = buildInstanceUrl(instanceData);
+                openButton.href = newUrl;
+                viewButton.dataset.url = newUrl;
+            } catch (error) {
+                alert(`Failed to update access pattern: ${error.message}`);
+                target.value = row.dataset.originalAccessPattern; // Revert on failure
+            }
+        }
+    });
+
     toolsContextMenu.addEventListener('click', (event) => {
         const target = event.target.closest('[data-action]');
         if (!target || target.disabled) return;
-
         const action = target.dataset.action;
-
         if (currentMenuInstance) {
-            if (action === 'script') {
-                openEditor(currentMenuInstance.id, currentMenuInstance.name, 'script');
-            } else if (action === 'terminal') {
-                openTerminal(currentMenuInstance.id, currentMenuInstance.name);
-            }
+            if (action === 'script') openEditor(currentMenuInstance.id, currentMenuInstance.name, 'script');
+            else if (action === 'terminal') openTerminal(currentMenuInstance.id, currentMenuInstance.name);
         }
-
         hideToolsMenu();
     });
 
-    document.addEventListener('click', (event) => {
-        if (!event.target.closest('.context-menu') && !event.target.closest('[data-action="tools_menu"]')) {
-            hideToolsMenu();
-        }
-    });
+    document.addEventListener('click', (event) => { if (!event.target.closest('.context-menu') && !event.target.closest('[data-action="tools_menu"]')) hideToolsMenu(); });
 
     async function initializeApp() {
         await fetchAndStoreBlueprints();
@@ -623,56 +636,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const ramUsageText = document.getElementById('ram-usage-text');
     const gpuStatsContainer = document.getElementById('gpu-stats-container');
     const gpuStatTemplate = document.getElementById('gpu-stat-template');
-    function formatBytes(bytes, decimals = 2) { if (bytes === 0) return '0 Bytes'; const k = 1024; const dm = decimals < 0 ? 0 : decimals; const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']; const i = Math.floor(Math.log(bytes) / Math.log(k)); return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]; }
-    async function updateSystemStats() { try { const response = await fetch('/api/system/stats'); if (!response.ok) return; const stats = await response.json(); cpuProgress.style.width = `${stats.cpu_percent}%`; cpuPercentText.textContent = `${stats.cpu_percent.toFixed(1)}%`; ramProgress.style.width = `${stats.ram.percent}%`; ramUsageText.textContent = `${formatBytes(stats.ram.used)} / ${formatBytes(stats.ram.total)}`; gpuStatsContainer.innerHTML = ''; if (stats.gpus && stats.gpus.length > 0) { stats.gpus.forEach(gpu => { const gpuEl = gpuStatTemplate.content.cloneNode(true); gpuEl.querySelector('.gpu-name').textContent = `GPU ${gpu.id}: ${gpu.name}`; gpuEl.querySelector('.vram-progress').style.width = `${gpu.vram.percent}%`; gpuEl.querySelector('.vram-usage-text').textContent = `${formatBytes(gpu.vram.used)} / ${formatBytes(gpu.vram.total)}`; gpuEl.querySelector('.util-progress').style.width = `${gpu.utilization_percent}%`; gpuEl.querySelector('.util-percent-text').textContent = `${gpu.utilization_percent}%`; gpuStatsContainer.appendChild(gpuEl); }); } else { gpuStatsContainer.innerHTML = '<p style="text-align:center;color:#aaa;">No NVIDIA GPUs detected.</p>'; } } catch (error) { console.warn("Could not fetch system stats:", error); } }
+    function formatBytes(bytes, d = 2) { if (bytes === 0) return '0 Bytes'; const k = 1024; const i = Math.floor(Math.log(bytes) / Math.log(k)); return `${parseFloat((bytes / Math.pow(k, i)).toFixed(d < 0 ? 0 : d))} ${['Bytes', 'KB', 'MB', 'GB', 'TB'][i]}`; }
+    async function updateSystemStats() { try { const r = await fetch('/api/system/stats'); if (!r.ok) return; const s = await r.json(); cpuProgress.style.width = `${s.cpu_percent}%`; cpuPercentText.textContent = `${s.cpu_percent.toFixed(1)}%`; ramProgress.style.width = `${s.ram.percent}%`; ramUsageText.textContent = `${formatBytes(s.ram.used)} / ${formatBytes(s.ram.total)}`; gpuStatsContainer.innerHTML = ''; if (s.gpus && s.gpus.length > 0) { s.gpus.forEach(g => { const e = gpuStatTemplate.content.cloneNode(true); e.querySelector('.gpu-name').textContent = `GPU ${g.id}: ${g.name}`; e.querySelector('.vram-progress').style.width = `${g.vram.percent}%`; e.querySelector('.vram-usage-text').textContent = `${formatBytes(g.vram.used)} / ${formatBytes(g.vram.total)}`; e.querySelector('.util-progress').style.width = `${g.utilization_percent}%`; e.querySelector('.util-percent-text').textContent = `${g.utilization_percent}%`; gpuStatsContainer.appendChild(e); }); } else { gpuStatsContainer.innerHTML = '<p style="text-align:center;color:#aaa;">No NVIDIA GPUs detected.</p>'; } } catch (e) { console.warn("Could not fetch system stats:", e); } }
 
     initializeApp();
 
     const SPLIT_STORAGE_KEY = 'aikoreSplitSizes';
     let savedSizes = { vertical: [60, 40], horizontal: [65, 35] };
-    try {
-        const storedSizes = localStorage.getItem(SPLIT_STORAGE_KEY);
-        if (storedSizes) {
-            const parsedSizes = JSON.parse(storedSizes);
-            if (parsedSizes.vertical && parsedSizes.horizontal) {
-                savedSizes = parsedSizes;
-            }
-        }
-    } catch (e) {
-        console.error("Failed to load or parse split sizes from localStorage.", e);
-    }
-    const verticalSplit = Split(['#instance-pane', '#bottom-split'], {
-        sizes: savedSizes.vertical,
-        minSize: [200, 150],
-        gutterSize: 5,
-        direction: 'vertical',
-        cursor: 'row-resize',
-        onDragEnd: function (sizes) {
-            savedSizes.vertical = sizes;
-            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes));
-        }
-    });
-    const horizontalSplit = Split(['#tools-pane', '#monitoring-pane'], {
-        sizes: savedSizes.horizontal,
-        minSize: [300, 200],
-        gutterSize: 5,
-        direction: 'horizontal',
-        cursor: 'col-resize',
-        onDragEnd: function (sizes) {
-            savedSizes.horizontal = sizes;
-            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes));
-        }
-    });
+    try { const stored = localStorage.getItem(SPLIT_STORAGE_KEY); if (stored) { const parsed = JSON.parse(stored); if (parsed.vertical && parsed.horizontal) savedSizes = parsed; } } catch (e) { console.error("Failed to load split sizes.", e); }
+    Split(['#instance-pane', '#bottom-split'], { sizes: savedSizes.vertical, minSize: [200, 150], gutterSize: 5, direction: 'vertical', onDragEnd: (s) => { savedSizes.vertical = s; localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes)); } });
+    Split(['#tools-pane', '#monitoring-pane'], { sizes: savedSizes.horizontal, minSize: [300, 200], gutterSize: 5, onDragEnd: (s) => { savedSizes.horizontal = s; localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes)); if (fitAddon) fitAddon.fit(); } });
 
     const toolsPane = document.getElementById('tools-pane');
-    const resizeObserver = new ResizeObserver(() => {
-        if (fitAddon) {
-            try {
-                fitAddon.fit();
-            } catch (e) {
-                // We can safely ignore these errors.
-            }
-        }
-    });
+    const resizeObserver = new ResizeObserver(() => { if (fitAddon) { try { fitAddon.fit(); } catch (e) { /* Ignore */ } } });
     resizeObserver.observe(toolsPane);
 });

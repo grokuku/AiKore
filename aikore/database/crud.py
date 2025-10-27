@@ -1,3 +1,4 @@
+import os
 from sqlalchemy.orm import Session
 from . import models
 from ..schemas import instance as schemas
@@ -7,6 +8,12 @@ def get_instance_by_name(db: Session, name: str):
     Retrieve a single instance from the database by its unique name.
     """
     return db.query(models.Instance).filter(models.Instance.name == name).first()
+
+def get_instance_by_port(db: Session, port: int):
+    """
+    Retrieve a single instance from the database by its assigned public port.
+    """
+    return db.query(models.Instance).filter(models.Instance.port == port).first()
 
 def get_instances(db: Session, skip: int = 0, limit: int = 100):
     """
@@ -49,17 +56,15 @@ def set_active_comfyui_slot(db: Session, instance_to_activate: models.Instance):
 def create_instance(
     db: Session, 
     instance: schemas.InstanceCreate,
-    port: int,
     vnc_port: int | None,
     vnc_display: int | None
 ):
     """
-    Create a new instance record in the database, including pre-allocated ports.
+    Create a new instance record in the database using user-provided data.
     """
     instance_data = instance.model_dump()
     db_instance = models.Instance(
         **instance_data,
-        port=port,
         vnc_port=vnc_port,
         vnc_display=vnc_display,
         is_comfyui_active_slot=False # Explicitly set to false on creation
@@ -67,6 +72,17 @@ def create_instance(
     db.add(db_instance)
     db.commit()
     db.refresh(db_instance)
+    return db_instance
+
+def update_instance_access_pattern(db: Session, instance_id: int, access_pattern: str):
+    """
+    Updates the access_pattern for a specific instance.
+    """
+    db_instance = db.query(models.Instance).filter(models.Instance.id == instance_id).first()
+    if db_instance:
+        db_instance.access_pattern = access_pattern
+        db.commit()
+        db.refresh(db_instance)
     return db_instance
 
 def update_instance_status(

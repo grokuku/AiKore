@@ -1,16 +1,19 @@
 services:
-      aikore:
-        # MODIFICATION ICI pour que Docker télécharge l'image depuis GitHub
-        # Remplacez VOTRE_NOM_GITHUB/VOTRE_REPO par le vôtre (ex: grokuku/aikore)
-        image: ghcr.io/grokuku/AiKore:latest
-        container_name: aikore
-        runtime: nvidia
-        volumes:
-          - "${STABLE_DIFFUSION_DATA_DIRECTORY:-./data}:/config:rw"
-        ports:
-          - "${AIKORE_PORT:-19000}:9000/tcp"
-        environment:
-          - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
-          - TZ=${TZ:-America/New_York}
-          - PUID=${PUID:-1000}
-          - PGID=${PGID:-1000}
+  aikore:
+    # MODIFICATION ICI pour que Docker télécharge l'image depuis GitHub
+    # Remplacez VOTRE_NOM_GITHUB/VOTRE_REPO par le vôtre (ex: grokuku/aikore)
+    image: ghcr.io/grokuku/AiKore:latest
+    container_name: aikore
+    runtime: nvidia
+    volumes:
+      - "${STABLE_DIFFUSION_DATA_DIRECTORY:-./data}:/config:rw"
+    ports:
+      - "${AIKORE_PORT:-9000}:9000/tcp"
+      - "${AVAILABLE_PORTS:-50000-50010}:${AVAILABLE_PORTS:-50000-50010}/tcp"
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-all}
+      - TZ=${TZ:-America/New_York}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - HOSTNAME=${HOSTNAME:-localhost}
+      - AVAILABLE_PORTS=${AVAILABLE_PORTS:-50000-50010}

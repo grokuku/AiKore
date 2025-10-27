@@ -29,6 +29,9 @@ class Instance(Base):
     status = Column(String, default="stopped", nullable=False)
     
     pid = Column(Integer, nullable=True)
-    port = Column(Integer, nullable=True)
+    port = Column(Integer, nullable=True) # The public-facing port, user-configurable
     vnc_port = Column(Integer, nullable=True)
     vnc_display = Column(Integer, nullable=True)
+
+    # Defines how the 'Open' URL is constructed: 'port' or 'subdomain'
+    access_pattern = Column(String, default="port", nullable=False)

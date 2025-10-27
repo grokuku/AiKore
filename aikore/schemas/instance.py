@@ -11,8 +11,10 @@ class InstanceBase(BaseModel):
 
 # --- Creation Schema ---
 # Inherits from Base and is used specifically when creating a new instance via the API.
+# Now includes the user-defined public port and access pattern.
 class InstanceCreate(InstanceBase):
-    pass
+    port: int
+    access_pattern: str = "port"
 
 # --- Read Schema ---
 # This schema is used when returning instance data from the API.
@@ -22,9 +24,10 @@ class Instance(InstanceBase):
     is_comfyui_active_slot: bool
     status: str
     pid: int | None = None
-    port: int | None = None
+    port: int | None = None # This is the public-facing port
     vnc_port: int | None = None
     vnc_display: int | None = None
+    access_pattern: str
 
     class Config:
         # This tells Pydantic to read the data even if it is not a dict,
