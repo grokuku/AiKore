@@ -331,7 +331,9 @@ body {
 }
 
 [data-action="open"],
-[data-action="view"] {
+[data-action="view"],
+[data-action="activate_comfyui"],
+[data-action="view_comfyui"] {
     background-color: #4a4a70;
 }
 
@@ -344,6 +346,19 @@ body {
 
 .action-btn:not([data-action]) {
     background-color: #4a4a70;
+}
+
+/* NEW: Highlight for the active ComfyUI slot */
+.instances-table tr.active-slot td {
+    background-color: #2c3e50; /* A desaturated blue that complements the theme */
+}
+.instances-table tr.active-slot td:first-child {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+.instances-table tr.active-slot td:last-child {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
 }
 
 /* --- UNIVERSAL CONTEXT MENU --- */

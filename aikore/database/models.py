@@ -1,5 +1,13 @@
-from sqlalchemy import Boolean, Column, Integer, String
+from sqlalchemy import Boolean, Column, Integer, String, Text
 from .session import Base
+
+class AikoreMeta(Base):
+    """
+    Stores meta-information about the database, such as the version number.
+    """
+    __tablename__ = "aikore_meta"
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=False)
 
 class Instance(Base):
     """
@@ -14,7 +22,10 @@ class Instance(Base):
     autostart = Column(Boolean, default=False, nullable=False)
     persistent_mode = Column(Boolean, default=False, nullable=False)
     
-    # Possible statuses: 'stopped', 'starting', 'stalled', 'started'
+    # Tracks if this instance is the one mapped to the static /comfyui/ endpoint
+    is_comfyui_active_slot = Column(Boolean, default=False, nullable=False)
+    
+    # Possible statuses: 'stopped', 'starting', 'stalled', 'started', 'error'
     status = Column(String, default="stopped", nullable=False)
     
     pid = Column(Integer, nullable=True)

@@ -138,7 +138,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const isStopped = instance.status === 'stopped';
         const isActive = !isStopped;
 
-        row.dataset.status = instance.status; // Store status for context menu
+        row.dataset.status = instance.status;
+        // NEW: Add/remove active class for visual feedback
+        if (instance.is_comfyui_active_slot) {
+            row.classList.add('active-slot');
+        } else {
+            row.classList.remove('active-slot');
+        }
 
         const statusSpan = row.querySelector('.status');
         statusSpan.textContent = instance.status;
@@ -146,19 +152,48 @@ document.addEventListener('DOMContentLoaded', () => {
         row.cells[6].textContent = instance.port || 'N/A';
         row.querySelector('[data-action="start"]').disabled = isActive;
         row.querySelector('[data-action="stop"]').disabled = isStopped;
-        // CORRECTED: The main tools button is no longer disabled here.
-        // row.querySelector('[data-action="tools_menu"]').disabled = isActive;
         row.querySelector('[data-action="delete"]').disabled = isActive;
+        
         const openButton = row.querySelector('[data-action="open"]');
-        if (isStarted) {
-            openButton.href = `/app/${instance.name}/`;
-            openButton.classList.remove('disabled');
+        // CORRECTED: Use the stable role selector
+        const viewButton = row.querySelector('[data-role="view-button"]');
+        const isComfyUI = instance.base_blueprint.toLowerCase().includes('comfyui');
+
+        if (isComfyUI && !instance.persistent_mode) {
+            // ComfyUI Active Slot Logic
+            openButton.classList.add('hidden'); // Hide the generic 'Open' button
+            viewButton.classList.remove('hidden');
+
+            if (instance.is_comfyui_active_slot) {
+                viewButton.textContent = 'View Active UI';
+                viewButton.dataset.action = 'view_comfyui'; // Special action
+                viewButton.disabled = false;
+            } else {
+                viewButton.textContent = 'Activate UI';
+                viewButton.dataset.action = 'activate_comfyui'; // Special action
+                viewButton.disabled = !isStarted;
+            }
         } else {
-            openButton.href = '#';
-            openButton.classList.add('disabled');
+            // Standard Logic for all other instances
+            viewButton.textContent = 'View';
+            viewButton.dataset.action = 'view';
+            viewButton.disabled = !isStarted;
+            
+            // Keep the 'Open' button visible only for persistent mode, as it's the primary way to access it
+            if (instance.persistent_mode) {
+                openButton.classList.remove('hidden');
+                if (isStarted) {
+                    openButton.href = `/app/${instance.name}/`;
+                    openButton.classList.remove('disabled');
+                } else {
+                    openButton.href = '#';
+                    openButton.classList.add('disabled');
+                }
+            } else {
+                    openButton.classList.add('hidden'); // Hide 'Open' for all standard instances now
+            }
         }
-        const viewButton = row.querySelector('[data-action="view"]');
-        viewButton.disabled = !isStarted;
+        
         checkRowForChanges(row);
     }
 
@@ -166,12 +201,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = document.createElement('tr');
         row.dataset.id = instance.id;
         row.dataset.isNew = String(isNew);
-        row.dataset.status = instance.status; // Store status for context menu
+        row.dataset.status = instance.status;
         row.dataset.originalName = instance.name || '';
         row.dataset.originalBlueprint = instance.base_blueprint || '';
         row.dataset.originalGpuIds = instance.gpu_ids || '';
         row.dataset.originalAutostart = String(instance.autostart);
         row.dataset.originalPersistentMode = String(instance.persistent_mode);
+        if (instance.is_comfyui_active_slot) row.classList.add('active-slot');
+
         const isStarted = instance.status === 'started';
         const isStopped = instance.status === 'stopped';
         const isActive = !isStopped;
@@ -204,6 +241,18 @@ document.addEventListener('DOMContentLoaded', () => {
         row.insertCell().textContent = instance.port || 'N/A';
         const actionsCell = row.insertCell();
         actionsCell.classList.add('actions-column');
+
+        const isComfyUI = (instance.base_blueprint || '').toLowerCase().includes('comfyui');
+        let viewButtonText = 'View';
+        let viewButtonAction = 'view';
+        if (isComfyUI && !instance.persistent_mode) {
+            viewButtonText = instance.is_comfyui_active_slot ? 'View Active UI' : 'Activate UI';
+            viewButtonAction = instance.is_comfyui_active_slot ? 'view_comfyui' : 'activate_comfyui';
+        }
+
+        const openButtonVisibility = instance.persistent_mode ? '' : 'hidden';
+        const viewButtonVisibility = instance.persistent_mode ? 'hidden' : '';
+
         if (isNew) {
             actionsCell.innerHTML = `
                 <button class="action-btn" data-action="save" data-id="new" disabled>Save</button>
@@ -212,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="action-btn" data-action="tools_menu" disabled>Tools</button>
                 <button class="action-btn" data-action="update" disabled>Update</button>
                 <button class="action-btn" data-action="delete" disabled>Delete</button>
-                <button class="action-btn" data-action="view" disabled>View</button>
+                <button class="action-btn" data-role="view-button" data-action="view" disabled>View</button>
                 <a href="#" class="action-btn disabled" data-action="open">Open</a>`;
         } else {
             actionsCell.innerHTML = `
@@ -222,8 +271,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">Tools</button>
                 <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
                 <button class="action-btn" data-action="delete" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Delete</button>
-                <button class="action-btn" data-action="view" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>View</button>
-                <a href="${isStarted ? `/app/${instance.name}/` : '#'}" class="action-btn ${!isStarted ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
+                <button class="action-btn ${viewButtonVisibility}" data-role="view-button" data-action="${viewButtonAction}" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>${viewButtonText}</button>
+                <a href="${isStarted ? `/app/${instance.name}/` : '#'}" class="action-btn ${!isStarted ? 'disabled' : ''} ${openButtonVisibility}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
         }
         const allFields = row.querySelectorAll('input, select');
         if (isNew) {
@@ -322,11 +371,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function openInstanceView(instanceName) {
+    function openInstanceView(instancePath, instanceName) {
         hideAllToolViews();
         instanceViewContainer.classList.remove('hidden');
         toolsPaneTitle.textContent = `View: ${instanceName}`;
-        instanceIframe.src = `/app/${instanceName}/`;
+        instanceIframe.src = instancePath;
     }
 
     function openTerminal(instanceId, instanceName) {
@@ -410,7 +459,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const status = row.dataset.status;
         const isStopped = status === 'stopped';
 
-        // Set disabled state of menu items based on instance status
         toolsContextMenu.querySelector('[data-action="terminal"]').disabled = false;
         toolsContextMenu.querySelector('[data-action="script"]').disabled = !isStopped;
 
@@ -454,6 +502,16 @@ document.addEventListener('DOMContentLoaded', () => {
             target.disabled = true;
             try {
                 const response = await fetch(`/api/instances/${instanceId}/${action}`, { method: 'POST' });
+                if (!response.ok) throw new Error((await response.json()).detail);
+                await fetchAndRenderInstances();
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+                await fetchAndRenderInstances();
+            }
+        } else if (action === 'activate_comfyui') {
+                target.disabled = true;
+            try {
+                const response = await fetch(`/api/instances/${instanceId}/activate-comfyui`, { method: 'POST' });
                 if (!response.ok) throw new Error((await response.json()).detail);
                 await fetchAndRenderInstances();
             } catch (error) {
@@ -517,7 +575,9 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchLogs();
             activeLogInterval = setInterval(fetchLogs, 2000);
         } else if (action === 'view') {
-            openInstanceView(row.querySelector('[data-field="name"]').value || row.dataset.originalName);
+            openInstanceView(`/app/${row.querySelector('[data-field="name"]').value || row.dataset.originalName}/`, row.querySelector('[data-field="name"]').value || row.dataset.originalName);
+        } else if (action === 'view_comfyui') {
+            openInstanceView(`/comfyui/`, row.querySelector('[data-field="name"]').value || row.dataset.originalName);
         } else if (action === 'cancel_new') {
             row.remove();
             if (instancesTbody.childElementCount === 0) fetchAndRenderInstances();
@@ -604,13 +664,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // NEW: Resize observer for terminal
     const toolsPane = document.getElementById('tools-pane');
     const resizeObserver = new ResizeObserver(() => {
         if (fitAddon) {
             try {
-                // This can sometimes throw an error if the terminal isn't fully visible
-                // when the pane is first rendered. A try/catch block makes it robust.
                 fitAddon.fit();
             } catch (e) {
                 // We can safely ignore these errors.

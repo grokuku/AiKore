@@ -4,4 +4,14 @@
 # The KasmVNC startup logic has been removed as it's not needed for a backend service.
 
 echo "--- Preparing to launch AiKore application ---"
+
+# --- PERMISSION FIX ---
+# The /etc/nginx directory can be mounted as a Docker volume owned by root.
+# We must change its ownership to the application user 'abc' at runtime,
+# right before dropping root privileges. This allows the Python backend
+# to dynamically create and delete proxy configuration files inside it.
+echo "Fixing permissions for NGINX configuration directories..."
+chown -R abc:abc /etc/nginx
+
+# Drop privileges to the 'abc' user and execute the main application script.
 exec s6-setuidgid abc /opt/sd-install/entry.sh

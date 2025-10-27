@@ -11,7 +11,7 @@ from ..database import crud
 from ..database.session import SessionLocal
 from ..schemas import instance as schemas
 from ..core import process_manager
-from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR, _find_free_port, _find_free_display
+from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR, _find_free_port, _find_free_display, parse_blueprint_metadata
 
 router = APIRouter(
     prefix="/api/instances",
@@ -88,10 +88,40 @@ def stop_instance(instance_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Instance is already stopped")
 
     try:
+        # Check if this instance is the active ComfyUI slot before stopping
+        is_active_slot = db_instance.is_comfyui_active_slot
+        
         process_manager.stop_instance_process(db=db, instance=db_instance)
+        
+        # If it was the active slot, unset it in the DB and update the proxy
+        if is_active_slot:
+            crud.unset_all_active_comfyui_slots(db)
+            process_manager.update_comfyui_proxy(db)
+        
         return db_instance
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stop instance: {str(e)}")
+
+@router.post("/{instance_id}/activate-comfyui", response_model=schemas.Instance, tags=["Instance Actions"])
+def activate_comfyui_slot(instance_id: int, db: Session = Depends(get_db)):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    metadata = parse_blueprint_metadata(db_instance.base_blueprint)
+    if metadata.get('app_id') != 'comfyui':
+        raise HTTPException(status_code=400, detail="This action is only for ComfyUI instances.")
+    
+    if db_instance.persistent_mode:
+        raise HTTPException(status_code=400, detail="Cannot activate UI slot for an instance in persistent mode.")
+
+    if db_instance.status != "started":
+        raise HTTPException(status_code=400, detail="Instance must be in 'started' status to be activated.")
+
+    crud.set_active_comfyui_slot(db, db_instance)
+    process_manager.update_comfyui_proxy(db)
+
+    return db_instance
 
 @router.delete("/{instance_id}", status_code=200, tags=["Instance Actions"])
 def delete_instance(instance_id: int, db: Session = Depends(get_db)):
@@ -100,6 +130,12 @@ def delete_instance(instance_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Instance not found")
     if db_instance.status != "stopped":
         raise HTTPException(status_code=400, detail="Cannot delete an active instance. Please stop it first.")
+
+    # If the instance to be deleted happens to be the active slot (e.g. if stopped manually),
+    # ensure the proxy is cleaned up. This is a safeguard.
+    if db_instance.is_comfyui_active_slot:
+        crud.unset_all_active_comfyui_slots(db)
+        process_manager.update_comfyui_proxy(db)
 
     # Move instance directory to trashcan instead of deleting
     instance_dir = os.path.join(INSTANCES_DIR, db_instance.name)

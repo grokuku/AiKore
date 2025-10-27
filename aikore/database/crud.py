@@ -20,6 +20,32 @@ def get_autostart_instances(db: Session):
     """
     return db.query(models.Instance).filter(models.Instance.autostart == True).all()
 
+def get_active_comfyui_slot(db: Session):
+    """
+    Retrieve the instance currently marked as the active ComfyUI slot.
+    """
+    return db.query(models.Instance).filter(models.Instance.is_comfyui_active_slot == True).first()
+
+def unset_all_active_comfyui_slots(db: Session):
+    """
+    Sets is_comfyui_active_slot to False for all instances.
+    """
+    db.query(models.Instance).filter(models.Instance.is_comfyui_active_slot == True).update({"is_comfyui_active_slot": False})
+    db.commit()
+
+def set_active_comfyui_slot(db: Session, instance_to_activate: models.Instance):
+    """
+    Sets a specific instance as the active ComfyUI slot, deactivating any other.
+    """
+    # First, deactivate any currently active slot
+    unset_all_active_comfyui_slots(db)
+    
+    # Then, activate the new one
+    instance_to_activate.is_comfyui_active_slot = True
+    db.commit()
+    db.refresh(instance_to_activate)
+    return instance_to_activate
+
 def create_instance(
     db: Session, 
     instance: schemas.InstanceCreate,
@@ -35,7 +61,8 @@ def create_instance(
         **instance_data,
         port=port,
         vnc_port=vnc_port,
-        vnc_display=vnc_display
+        vnc_display=vnc_display,
+        is_comfyui_active_slot=False # Explicitly set to false on creation
     )
     db.add(db_instance)
     db.commit()

@@ -62,7 +62,11 @@ RUN cd /tmp && \
     chown -R abc:abc /root && \
     chown -R abc:abc ${SD_INSTALL_DIR} && \
     chown -R abc:abc /home/abc && \
-    chown -R abc:abc ${BASE_DIR}
+    chown -R abc:abc ${BASE_DIR} && \
+    # --- CORRECTION ---
+    # Grant ownership of NGINX config directories to the app user.
+    # This allows the backend to dynamically manage proxy configurations.
+    chown -R abc:abc /etc/nginx
 
 # Expose default ports
 EXPOSE 9000/tcp

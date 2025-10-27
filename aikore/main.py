@@ -5,22 +5,25 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from .database import models, crud
-from .database.session import engine, SessionLocal
+from .database.session import SessionLocal, check_and_migrate_db
 from .api import instances, system
-from .core import process_manager # <-- Import process_manager
+from .core import process_manager
 
-# Define the path to the static directory
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-INSTANCES_DIR = "/config/instances" # Define instances dir for log cleanup
+# --- PRE-STARTUP CHECKS ---
+# Perform database check and migration before anything else.
+# This ensures the application starts with a valid database schema.
+check_and_migrate_db()
 
-# Create the database tables on startup, if they don't exist
-models.Base.metadata.create_all(bind=engine)
-
+# --- FASTAPI APP INITIALIZATION ---
 app = FastAPI(
     title="AiKore API",
     description="Backend API for managing AI WebUI instances.",
     version="0.1.0",
 )
+
+# Define paths
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+INSTANCES_DIR = "/config/instances"
 
 @app.on_event("startup")
 def startup_event():
