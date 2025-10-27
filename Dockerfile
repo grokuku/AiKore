@@ -4,6 +4,12 @@ FROM ghcr.io/grokuku/aikore-buildbase:latest
 # Copy s6-overlay and custom service configuration
 COPY docker/root/ /
 
+# --- System Dependencies ---
+# Install socat, which is required for dynamic port activation.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends socat && \
+    rm -rf /var/lib/apt/lists/*
+
 # --- AJOUT IMPORTANT : Sécurisation du fichier sudoers ---
 # Sudo ignore les fichiers avec des permissions non sécurisées.
 # 0440 = lecture seule pour root et le groupe root.

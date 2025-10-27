@@ -332,10 +332,19 @@ def activate_instance_port(instance: models.Instance):
         f'TCP:127.0.0.1:{internal_port}'
     ]
     
-    # We don't need stdout/stderr for socat, it can run detached.
-    activation_process = subprocess.Popen(cmd)
-    instance_state["activation_process"] = activation_process
-    print(f"[Manager] Activated public port {public_port} for instance '{instance.name}' (socat PID: {activation_process.pid}).")
+    try:
+        # We don't need stdout/stderr for socat, it can run detached.
+        activation_process = subprocess.Popen(cmd)
+        instance_state["activation_process"] = activation_process
+        print(f"[Manager] Activated public port {public_port} for instance '{instance.name}' (socat PID: {activation_process.pid}).")
+    except FileNotFoundError:
+        err_msg = "The 'socat' command was not found. Please ensure it is installed in the Docker container."
+        print(f"[ERROR] {err_msg}")
+        raise RuntimeError(err_msg)
+    except Exception as e:
+        err_msg = f"An unexpected error occurred while starting socat: {e}"
+        print(f"[ERROR] {err_msg}")
+        raise RuntimeError(err_msg)
 
 def deactivate_instance_port(instance_id: int):
     """

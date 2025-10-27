@@ -56,7 +56,7 @@ def create_new_instance(instance: schemas.InstanceCreate, db: Session = Depends(
         raise HTTPException(status_code=400, detail="Instance with this name already exists")
     
     # Check for port conflict
-    if crud.get_instance_by_port(db, port=instance.port):
+    if instance.port and crud.get_instance_by_port(db, port=instance.port):
         raise HTTPException(status_code=400, detail=f"Public port {instance.port} is already assigned to another instance.")
 
     vnc_port = _find_free_port() if instance.persistent_mode else None
@@ -99,6 +99,10 @@ def activate_port(instance_id: int, force: bool = False, db: Session = Depends(g
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
         raise HTTPException(status_code=404, detail="Instance not found")
+        
+    if not db_instance.port:
+        raise HTTPException(status_code=400, detail="Instance does not have a public port assigned and cannot be activated.")
+        
     if db_instance.status != "started":
         raise HTTPException(status_code=400, detail="Instance must be in 'started' status to be activated.")
     if db_instance.persistent_mode:
@@ -110,7 +114,7 @@ def activate_port(instance_id: int, force: bool = False, db: Session = Depends(g
         if state.get("activation_process") is not None:
             # This instance is active. Is its public port the same as ours?
             other_instance = crud.get_instance(db, inst_id)
-            if other_instance and other_instance.port == db_instance.port:
+            if other_instance and other_instance.port == db_instance.port and other_instance.id != db_instance.id:
                 conflicting_instance = other_instance
                 break
     

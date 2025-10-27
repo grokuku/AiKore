@@ -114,29 +114,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return select;
     }
 
-    // NEW: Helper function to build the correct URL based on access pattern
     function buildInstanceUrl(instance) {
         if (!instance || !instance.port) return '#';
         const hostname = window.location.hostname;
         if (instance.access_pattern === 'subdomain') {
-            // Sanitize instance name to be a valid subdomain part
             const slug = instance.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
             const hostParts = hostname.split('.');
-            // Simple check if hostname is not an IP address
-            if (hostParts.length > 1) {
+            if (hostParts.length > 1 && isNaN(parseInt(hostParts[hostParts.length - 1], 10))) {
                 return `${window.location.protocol}//${slug}.${hostname}`;
             }
         }
-        // Default to port-based access
         return `${window.location.protocol}//${hostname}:${instance.port}`;
-    }
-
-    function checkRowForChanges(row) {
-        const updateButton = row.querySelector('button[data-action="update"]');
-        if (!updateButton) return;
-        // For now, update is not implemented, so we leave it disabled
-        // This function can be expanded when we implement the update endpoint
-        updateButton.disabled = true;
     }
 
     function updateInstanceRow(row, instance) {
@@ -150,13 +138,16 @@ document.addEventListener('DOMContentLoaded', () => {
         statusSpan.textContent = instance.status;
         statusSpan.className = `status status-${instance.status.toLowerCase()}`;
 
-        // Update port and access pattern values
+        // Update values that are not editable
+        row.querySelector('[data-field="autostart"]').checked = instance.autostart;
+        row.querySelector('[data-field="persistent_mode"]').checked = instance.persistent_mode;
         row.querySelector('[data-field="port"]').value = instance.port || '';
         row.querySelector('[data-field="access_pattern"]').value = instance.access_pattern;
 
         // Update action buttons based on status
         row.querySelector('[data-action="start"]').disabled = isActive;
         row.querySelector('[data-action="stop"]').disabled = isStopped;
+        row.querySelector('[data-action="logs"]').disabled = isStopped;
         row.querySelector('[data-action="delete"]').disabled = isActive;
 
         // Update Activate/Deactivate button
@@ -177,29 +168,27 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        const canBeAccessed = isStarted && (instance.is_active || instance.persistent_mode);
+        const url = canBeAccessed ? buildInstanceUrl(instance) : '#';
+
         // Update Open and View buttons
         const openButton = row.querySelector('[data-action="open"]');
         const viewButton = row.querySelector('[data-role="view-button"]');
-        const canBeAccessed = isStarted && (instance.is_active || instance.persistent_mode);
 
+        openButton.href = url;
+        viewButton.dataset.url = canBeAccessed ? url : 'about:blank';
         if (canBeAccessed) {
-            const url = buildInstanceUrl(instance);
-            openButton.href = url;
-            viewButton.dataset.url = url; // Store URL for iframe
             openButton.classList.remove('disabled');
             viewButton.disabled = false;
         } else {
-            openButton.href = '#';
-            viewButton.dataset.url = 'about:blank';
             openButton.classList.add('disabled');
             viewButton.disabled = true;
         }
 
-        // Handle the special ComfyUI Active Slot button (legacy, to be phased out or integrated)
-        const comfyUIButton = row.querySelector('[data-action="activate_comfyui"]');
-        if (comfyUIButton) {
-            comfyUIButton.disabled = !isStarted;
-        }
+        // Update Access URL display
+        const accessUrlDisplay = row.querySelector('.access-url-display');
+        accessUrlDisplay.href = url;
+        accessUrlDisplay.textContent = url.replace(/^https?:\/\//, '');
     }
 
     function renderInstanceRow(instance, isNew = false) {
@@ -208,7 +197,6 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.isNew = String(isNew);
         row.dataset.status = instance.status;
 
-        // Store original values for change detection
         row.dataset.originalName = instance.name || '';
         row.dataset.originalBlueprint = instance.base_blueprint || '';
         row.dataset.originalGpuIds = instance.gpu_ids || '';
@@ -241,8 +229,28 @@ document.addEventListener('DOMContentLoaded', () => {
         gpuInput.type = 'text';
         gpuInput.value = instance.gpu_ids || '';
         gpuInput.dataset.field = 'gpu_ids';
-        gpuInput.disabled = !isNew; // For simplicity, only editable on creation
+        gpuInput.disabled = !isNew;
         row.insertCell().appendChild(gpuInput);
+
+        // Column: Autostart
+        const autostartCell = row.insertCell();
+        autostartCell.classList.add('checkbox-cell');
+        const autostartInput = document.createElement('input');
+        autostartInput.type = 'checkbox';
+        autostartInput.checked = instance.autostart || false;
+        autostartInput.dataset.field = 'autostart';
+        autostartInput.disabled = !isNew;
+        autostartCell.appendChild(autostartInput);
+
+        // Column: Persistent
+        const persistentCell = row.insertCell();
+        persistentCell.classList.add('checkbox-cell');
+        const persistentInput = document.createElement('input');
+        persistentInput.type = 'checkbox';
+        persistentInput.checked = instance.persistent_mode || false;
+        persistentInput.dataset.field = 'persistent_mode';
+        persistentInput.disabled = !isNew;
+        persistentCell.appendChild(persistentInput);
 
         // Column: Public Port
         const portInput = document.createElement('input');
@@ -251,18 +259,24 @@ document.addEventListener('DOMContentLoaded', () => {
         portInput.value = instance.port || '';
         portInput.dataset.field = 'port';
         portInput.required = true;
-        portInput.disabled = !isNew; // For simplicity, only editable on creation
+        portInput.disabled = !isNew;
         row.insertCell().appendChild(portInput);
 
-        // Column: Access Method
+        // Column: Access URL
+        const accessCell = row.insertCell();
         const accessSelect = document.createElement('select');
         accessSelect.dataset.field = 'access_pattern';
-        accessSelect.innerHTML = `
-            <option value="port">Hostname:Port</option>
-            <option value="subdomain">Subdomain</option>
-        `;
+        accessSelect.innerHTML = `<option value="port">Hostname:Port</option><option value="subdomain">Subdomain</option>`;
         accessSelect.value = instance.access_pattern || 'port';
-        row.insertCell().appendChild(accessSelect);
+        accessCell.appendChild(accessSelect);
+
+        const accessUrlDisplay = document.createElement('a');
+        accessUrlDisplay.classList.add('access-url-display');
+        accessUrlDisplay.target = '_blank';
+        const url = buildInstanceUrl(instance);
+        accessUrlDisplay.href = url;
+        accessUrlDisplay.textContent = url !== '#' ? url.replace(/^https?:\/\//, '') : '...';
+        accessCell.appendChild(accessUrlDisplay);
 
         // Column: Status
         row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
@@ -281,28 +295,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const activateBtnText = instance.is_active ? 'Deactivate' : 'Activate';
             const activateBtnAction = instance.is_active ? 'deactivate' : 'activate';
             const activateBtnVisibility = instance.persistent_mode ? 'hidden' : '';
+            const instanceUrl = buildInstanceUrl(instance);
 
             actionsCell.innerHTML = `
-                <button class="action-btn ${activateBtnClass} ${activateBtnVisibility}" data-role="activation-button" data-action="${activateBtnAction}" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>${activateBtnText}</button>
                 <button class="action-btn" data-action="start" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Start</button>
                 <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
-                <a href="${canBeAccessed ? buildInstanceUrl(instance) : '#'}" class="action-btn ${!canBeAccessed ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>
-                <button class="action-btn" data-role="view-button" data-action="view" data-url="${canBeAccessed ? buildInstanceUrl(instance) : 'about:blank'}" data-id="${instance.id}" ${!canBeAccessed ? 'disabled' : ''}>View</button>
+                <button class="action-btn" data-action="logs" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Logs</button>
                 <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">Tools</button>
+                <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
                 <button class="action-btn" data-action="delete" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Delete</button>
+                <button class="action-btn" data-role="view-button" data-action="view" data-url="${canBeAccessed ? instanceUrl : 'about:blank'}" data-id="${instance.id}" ${!canBeAccessed ? 'disabled' : ''}>View</button>
+                <a href="${canBeAccessed ? instanceUrl : '#'}" class="action-btn ${!canBeAccessed ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>
+                <button class="action-btn ${activateBtnClass} ${activateBtnVisibility}" data-role="activation-button" data-action="${activateBtnAction}" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>${activateBtnText}</button>
             `;
         }
 
-        // Add listeners for new row save button
         if (isNew) {
             const saveButton = row.querySelector('button[data-action="save"]');
+            const fieldsToValidate = ['name', 'base_blueprint', 'port'];
             row.querySelectorAll('input, select').forEach(field => field.addEventListener('input', () => {
-                const name = row.querySelector('input[data-field="name"]').value;
-                const bp = row.querySelector('select[data-field="base_blueprint"]').value;
-                const port = row.querySelector('input[data-field="port"]').value;
-                saveButton.disabled = !name || !bp || !port;
+                const allValid = fieldsToValidate.every(f => row.querySelector(`[data-field="${f}"]`).value);
+                saveButton.disabled = !allValid;
             }));
         }
+
+        const updateUrlDisplay = () => {
+            const currentData = {
+                name: row.querySelector('[data-field="name"]').value,
+                port: row.querySelector('[data-field="port"]').value,
+                access_pattern: row.querySelector('[data-field="access_pattern"]').value,
+            };
+            const newUrl = buildInstanceUrl(currentData);
+            accessUrlDisplay.href = newUrl;
+            accessUrlDisplay.textContent = newUrl !== '#' ? newUrl.replace(/^https?:\/\//, '') : '...';
+        };
+        row.querySelector('[data-field="name"]').addEventListener('input', updateUrlDisplay);
+        row.querySelector('[data-field="port"]').addEventListener('input', updateUrlDisplay);
+        row.querySelector('[data-field="access_pattern"]').addEventListener('change', updateUrlDisplay);
 
         return row;
     }
@@ -314,7 +343,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const instances = await response.json();
             const existingRows = new Map([...instancesTbody.querySelectorAll('tr[data-id]')].map(row => [row.dataset.id, row]));
 
-            // Clear "no instances" message if present
             const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
             if (noInstancesRow) noInstancesRow.remove();
 
@@ -329,18 +357,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            // Remove rows for instances that no longer exist
             for (const row of existingRows.values()) {
                 if (row.dataset.isNew !== 'true') row.remove();
             }
 
             if (instancesTbody.childElementCount === 0 && !document.querySelector('tr[data-is-new="true"]')) {
-                instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="7" style="text-align: center;">No instances created yet.</td></tr>`;
+                instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="9" style="text-align: center;">No instances created yet.</td></tr>`;
             }
         } catch (error) {
             console.error("Failed to fetch instances:", error);
             if (instancesPollInterval) clearInterval(instancesPollInterval);
-            instancesTbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Error loading data. Check console.</td></tr>`;
+            instancesTbody.innerHTML = `<tr><td colspan="9" style="text-align:center;">Error loading data. Check console.</td></tr>`;
         }
     }
 
@@ -465,7 +492,6 @@ document.addEventListener('DOMContentLoaded', () => {
         currentMenuInstance = null;
     }
 
-    // MASTER EVENT LISTENER FOR THE TABLE BODY
     instancesTbody.addEventListener('click', async (event) => {
         const target = event.target.closest('[data-action]');
         if (!target || target.disabled || target.classList.contains('disabled')) return;
@@ -523,7 +549,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 port: parseInt(row.querySelector('[data-field="port"]').value, 10),
                 access_pattern: row.querySelector('[data-field="access_pattern"]').value,
                 gpu_ids: row.querySelector('input[data-field="gpu_ids"]').value || null,
-                // autostart and persistent_mode are not in the new row for simplicity, add if needed
+                autostart: row.querySelector('[data-field="autostart"]').checked,
+                persistent_mode: row.querySelector('[data-field="persistent_mode"]').checked
             };
             try {
                 const response = await fetch('/api/instances/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
@@ -575,7 +602,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Listener for access pattern changes
     instancesTbody.addEventListener('change', async (event) => {
         const target = event.target;
         if (target.dataset.field === 'access_pattern') {
@@ -589,20 +615,21 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({ access_pattern: newPattern })
                 });
                 if (!response.ok) throw new Error((await response.json()).detail);
-                // No full re-render needed, just update the Open button URL
-                const instanceData = {
-                    name: row.dataset.originalName,
+                
+                const instanceDataForUpdate = {
+                    id: instanceId,
+                    name: row.querySelector('[data-field="name"]').value || row.dataset.originalName,
                     port: row.querySelector('[data-field="port"]').value,
-                    access_pattern: newPattern
+                    access_pattern: newPattern,
+                    status: row.dataset.status,
+                    is_active: row.querySelector('[data-role="activation-button"]')?.dataset.action === 'deactivate',
+                    persistent_mode: row.querySelector('[data-field="persistent_mode"]').checked
                 };
-                const openButton = row.querySelector('[data-action="open"]');
-                const viewButton = row.querySelector('[data-role="view-button"]');
-                const newUrl = buildInstanceUrl(instanceData);
-                openButton.href = newUrl;
-                viewButton.dataset.url = newUrl;
+                updateInstanceRow(row, instanceDataForUpdate);
+
             } catch (error) {
                 alert(`Failed to update access pattern: ${error.message}`);
-                target.value = row.dataset.originalAccessPattern; // Revert on failure
+                target.value = row.dataset.originalAccessPattern;
             }
         }
     });

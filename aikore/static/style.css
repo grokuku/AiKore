@@ -188,20 +188,18 @@ body {
 }
 
 .instances-table td {
-    padding: 0 5px;
+    padding: 8px 5px; /* Added vertical padding */
     vertical-align: middle;
 }
 
-/* CENTER CHECKBOX COLUMNS */
-.instances-table th:nth-child(4),
-.instances-table th:nth-child(5),
-.instances-table td:nth-child(4),
-.instances-table td:nth-child(5) {
+.instances-table th.checkbox-cell,
+.instances-table td.checkbox-cell {
     text-align: center;
 }
 
 /* STYLING FOR "CASES" (INPUTS, SELECTS, ETC.) */
 .instances-table input[type="text"],
+.instances-table input[type="number"],
 .instances-table select {
     width: 100%;
     padding: 10px;
@@ -219,6 +217,21 @@ body {
     width: 20px;
     height: 20px;
     vertical-align: middle;
+    cursor: pointer;
+}
+
+.instances-table a.access-url-display {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+    color: #aaa;
+    text-decoration: none;
+    word-break: break-all;
+    user-select: text;
+}
+
+.instances-table a.access-url-display:hover {
+    text-decoration: underline;
 }
 
 .status {
@@ -300,8 +313,6 @@ body {
     justify-content: flex-end;
     align-items: center;
     gap: 5px;
-    padding: 8px 5px;
-    /* Add some vertical padding to the cell */
 }
 
 /* BUTTON COLORS */
@@ -331,10 +342,16 @@ body {
 }
 
 [data-action="open"],
-[data-action="view"],
-[data-action="activate_comfyui"],
-[data-action="view_comfyui"] {
+[data-action="view"] {
     background-color: #4a4a70;
+}
+
+.action-btn[data-role="activation-button"] {
+    background-color: #007bff; /* Blue for Activate */
+}
+
+.action-btn[data-role="activation-button"].active-btn {
+    background-color: #20c997; /* Teal for Deactivate */
 }
 
 [data-action="cancel_new"] {
