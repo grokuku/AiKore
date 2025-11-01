@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AiKore Instance</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <iframe id="fullscreen-iframe"></iframe>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const iframe = document.getElementById('fullscreen-iframe');
+            const urlParams = new URLSearchParams(window.location.search);
+            const instanceUrl = urlParams.get('url');
+            if (instanceUrl) {
+                iframe.src = instanceUrl;
+            } else {
+                iframe.src = 'about:blank';
+            }
+        });
+    </script>
+</body>
+</html>

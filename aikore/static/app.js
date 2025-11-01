@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const openButton = row.querySelector('[data-action="open"]');
         const viewButton = row.querySelector('[data-role="view-button"]');
 
-        openButton.href = url;
+        openButton.href = (url !== '#') ? `/static/fullscreen.html?url=${encodeURIComponent(url)}` : '#';
         viewButton.dataset.url = canBeAccessed ? url : 'about:blank';
         if (canBeAccessed) {
             openButton.classList.remove('disabled');
@@ -305,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
                 <button class="action-btn" data-action="delete" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Delete</button>
                 <button class="action-btn" data-role="view-button" data-action="view" data-url="${canBeAccessed ? instanceUrl : 'about:blank'}" data-id="${instance.id}" ${!canBeAccessed ? 'disabled' : ''}>View</button>
-                <a href="${canBeAccessed ? instanceUrl : '#'}" class="action-btn ${!canBeAccessed ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>
+                <a href="${canBeAccessed ? `/static/fullscreen.html?url=${encodeURIComponent(instanceUrl)}` : '#'}" class="action-btn ${!canBeAccessed ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>
                 <button class="action-btn ${activateBtnClass} ${activateBtnVisibility}" data-role="activation-button" data-action="${activateBtnAction}" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>${activateBtnText}</button>
             `;
         }
