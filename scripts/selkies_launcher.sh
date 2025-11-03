@@ -21,9 +21,8 @@ fi
 # The base image already provides a running X server on :1
 export DISPLAY=":1"
 
-# The base image provides the python environment with the selkies module.
-# We assume 'python' is correctly pathed by the base image environment.
-PYTHON_EXEC="python"
+# We must use the absolute path to the python environment provided by the base image.
+PYTHON_EXEC="/lsiopy/bin/selkies"
 
 # The web assets for the UI are now copied to /opt/selkies-web during build.
 SELKIES_WEB_ROOT="/opt/selkies-web"
@@ -48,7 +47,7 @@ echo "[INFO] X Server is ready."
 # We do not start Xvfb, openbox, or any audio server. We trust the base image.
 echo "[INFO] Starting Selkies WebRTC server on instance port ${INSTANCE_PORT}..."
 export SELKIES_PORT=${INSTANCE_PORT}
-${PYTHON_EXEC} -m selkies.selkies --gst-web ${SELKIES_WEB_ROOT} &
+${PYTHON_EXEC} -m selkies.selkies --host 0.0.0.0 --gst-web ${SELKIES_WEB_ROOT} &
 
 # 3. Run the Blueprint Application
 echo "[INFO] Launching blueprint: ${BLUEPRINT_SCRIPT}"

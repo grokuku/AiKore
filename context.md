@@ -163,3 +163,17 @@ Le projet est dans une phase avancée, avec un socle fonctionnel robuste. Les fo
 
 *   **Priorité 2 : Implémenter la fonctionnalité "Update".**
     *   Créer l'endpoint API et la logique de base de données pour la mise à jour d'une instance existante.
+
+### 6.5. Journal d'Investigation (Suite) : Résolution Selkies
+
+*   **2025-11-03 (Session de débogage intensive) :**
+    *   **Hypothèse initiale :** Les erreurs (`command not found`, `ModuleNotFoundError`) proviennent d'un `PATH` incorrect ou d'un conflit d'environnement Python (système vs. Conda).
+    *   **Découverte majeure :** L'analyse du `Dockerfile` principal révèle que l'image de base `aikore-buildbase:latest` est tirée d'un registre (`ghcr.io`) et n'est pas construite à partir du `Dockerfile.buildbase` local. Les modifications apportées à ce dernier étaient donc ignorées.
+    *   **Correction du processus de build :** L'utilisateur a corrigé son pipeline de build pour que l'image `aikore-buildbase:latest` soit désormais construite à partir du `Dockerfile.buildbase` local, qui utilise la véritable image `ghcr.io/linuxserver/baseimage-selkies:ubuntunoble` comme base.
+    *   **Analyse de la nouvelle image :** Une fois la bonne image de base en place, une commande `find` a permis de confirmer deux points cruciaux :
+        1.  Le module Python `selkies` **est bien présent**, mais dans un environnement virtuel dédié (`/lsiopy`), et non dans l'environnement Conda.
+        2.  L'exécutable `xset` est également présent.
+    *   **Correction du `selkies_launcher.sh` :** Le script a été modifié pour utiliser le chemin absolu vers l'exécutable de Selkies (`/lsiopy/bin/selkies`), résolvant ainsi le conflit de `PATH` avec Conda.
+    *   **Correction de l'accès réseau :** L'erreur `NS_ERROR_CONNECTION_REFUSED` persistait. L'analyse a montré que le serveur HTTP interne de Selkies n'écoutait que sur `localhost`. L'ajout de l'argument `--host 0.0.0.0` à la commande de lancement dans `selkies_launcher.sh` a résolu ce problème.
+    *   **État actuel (Fin de session) :** Le serveur Selkies démarre maintenant avec succès, sans erreur dans les logs, et écoute sur le bon port et la bonne interface. Le problème de lancement est **résolu**.
+    *   **Prochain point :** L'utilisateur observe une erreur `Failed to open a WebSocket connection`. Cela est dû à une tentative de connexion directe au port WebSocket via HTTP. Ce point sera traité dans une session future.
