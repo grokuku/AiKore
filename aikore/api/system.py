@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 import os
 import psutil
 from pynvml import *
+from sqlalchemy.orm import Session
 
 from ..core.process_manager import BLUEPRINTS_DIR
+from ..database import crud
+from ..database.session import SessionLocal
 
 router = APIRouter(
     prefix="/api/system",
@@ -74,3 +77,67 @@ def get_system_stats():
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred while fetching system stats: {str(e)}")
         
     return stats
+
+@router.get("/debug-nginx")
+def debug_nginx():
+    nginx_log_path = "/var/log/nginx/debug.log"
+    locations_dir = "/etc/nginx/locations.d"
+    log_content = ""
+    locations_content = {}
+
+    try:
+        if os.path.exists(nginx_log_path):
+            with open(nginx_log_path, "r", encoding='utf-8', errors='ignore') as f:
+                log_content = f.read()
+        else:
+            log_content = "NGINX debug log not found at " + nginx_log_path
+    except Exception as e:
+        log_content = f"Error reading log file: {e}"
+
+    try:
+        if os.path.isdir(locations_dir):
+            for filename in os.listdir(locations_dir):
+                filepath = os.path.join(locations_dir, filename)
+                if os.path.isfile(filepath):
+                    with open(filepath, "r", encoding='utf-8', errors='ignore') as f:
+                        locations_content[filename] = f.read()
+        else:
+            locations_content["error"] = "locations.d directory not found at " + locations_dir
+    except Exception as e:
+        locations_content["error"] = f"Error reading locations dir: {e}"
+
+    return {
+        "nginx_debug_log": log_content,
+        "locations_d": locations_content,
+    }
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@router.get("/available-ports")
+def get_available_ports(db: Session = Depends(get_db)):
+    """
+    Returns a list of available ports for new instances based on the configured range.
+    """
+    port_range_str = os.environ.get("AIKORE_INSTANCE_PORT_RANGE", "19001-19020")
+    try:
+        start_port, end_port = map(int, port_range_str.split('-'))
+        if start_port > end_port:
+            raise ValueError("Start port must be less than or equal to end port.")
+        all_possible_ports = set(range(start_port, end_port + 1))
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid AIKORE_INSTANCE_PORT_RANGE format: '{port_range_str}'. Expected 'start-end'."
+        )
+
+    instances = crud.get_instances(db, limit=1000) # Get all instances
+    used_ports = {instance.port for instance in instances if instance.port is not None}
+    
+    available_ports = sorted(list(all_possible_ports - used_ports))
+    
+    return {"available_ports": available_ports}

@@ -9,15 +9,15 @@ WORKDIR /build
 
 # --- Dépendances système ---
 RUN apt-get update && apt-get install -y -q=2 \
-     build-essential wget curl git cmake gnupg bc rsync ffmpeg ninja-build \
-     libxft2 xvfb \
-     python3.12 python3.12-dev python3.12-venv python3-setuptools \
-     cuda-toolkit-12-8 \
-     && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
-     && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
-     && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
-     && apt-get clean \
-     && rm -rf /var/lib/apt/lists/*
+        build-essential wget curl git cmake gnupg bc rsync ffmpeg ninja-build \
+        libxft2 xvfb \
+        python3.12 python3.12-dev python3.12-venv python3-setuptools \
+        cuda-toolkit-12-8 \
+        && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
+        && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+        && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
+        && apt-get clean \
+        && rm -rf /var/lib/apt/lists/*
 
 # Ajouter CUDA dans le PATH (au cas où)
 ENV PATH="/usr/local/cuda/bin:$PATH"
@@ -25,97 +25,83 @@ ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include"
 
 # --- Paquets Python ---
 RUN python3.12 -m pip install --no-cache-dir wheel packaging \
-     && python3.12 -m pip install --no-cache-dir torch==2.8.0 torchvision torchaudio \
-     --extra-index-url https://download.pytorch.org/whl/cu128 \
-     && python3.12 -m pip install --no-cache-dir cython==0.29.37
+        && python3.12 -m pip install --no-cache-dir torch==2.8.0 torchvision torchaudio \
+        --extra-index-url https://download.pytorch.org/whl/cu128 \
+        && python3.12 -m pip install --no-cache-dir cython==0.29.37
 
 # --- Compilation des wheels ---
 
-# flash-attention
-#RUN git clone https://github.com/Dao-AILab/flash-attention --recurse-submodules \
-#&& cd flash-attention \
-#&& python3.12 setup.py bdist_wheel \
-#&& cp dist/*.whl /build/
-
 # diso
 RUN git clone https://github.com/SarahWeiii/diso --recurse-submodules \
-     && cd diso \
-     && python3.12 setup.py bdist_wheel \
-     && cp dist/*.whl /build/
+        && cd diso \
+        && python3.12 setup.py bdist_wheel \
+        && cp dist/*.whl /build/
 
 # nvdiffrast
 RUN git clone https://github.com/NVlabs/nvdiffrast.git \
-     && cd nvdiffrast \
-     && python3.12 setup.py bdist_wheel \
-     && cp dist/*.whl /build/
+        && cd nvdiffrast \
+        && python3.12 setup.py bdist_wheel \
+        && cp dist/*.whl /build/
 
 # kaolin
 RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git \
-     && cd kaolin_5090 \
-     && export IGNORE_TORCH_VER=1 && python3.12 setup.py bdist_wheel \
-     && cp dist/*.whl /build/
+        && cd kaolin_5090 \
+        && export IGNORE_TORCH_VER=1 && python3.12 setup.py bdist_wheel \
+        && cp dist/*.whl /build/
 
 ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a"
 
 # mip-splatting / diff-gaussian-rasterization
 RUN git clone https://github.com/autonomousvision/mip-splatting --recurse-submodules \
-     && cd mip-splatting/submodules/diff-gaussian-rasterization \
-     && python3.12 setup.py bdist_wheel \
-     && cp dist/*.whl /build/
+        && cd mip-splatting/submodules/diff-gaussian-rasterization \
+        && python3.12 setup.py bdist_wheel \
+        && cp dist/*.whl /build/
 
 # vox2seq / TRELLIS
-# Source found in a Hugging Face Space, as it seems to be removed from the original MS repo.
 RUN git clone https://huggingface.co/spaces/dkatz2391/TRELLIS_TextTo3D_Try2 TRELLIS_source \
-     && cd TRELLIS_source/extensions/vox2seq \
-     && python3.12 setup.py bdist_wheel \
-     && cp dist/*.whl /build/
+        && cd TRELLIS_source/extensions/vox2seq \
+        && python3.12 setup.py bdist_wheel \
+        && cp dist/*.whl /build/
 
 # --- Final Stage ---
-# On part d'une base Ubuntu + s6-overlay propre.
-FROM lscr.io/linuxserver/baseimage-ubuntu:noble
+# NEW: Start from the official linuxserver.io Selkies base image
+FROM ghcr.io/linuxserver/baseimage-selkies:ubuntunoble
 
-# On CONSOLIDE ICI l'installation de TOUS les paquets système nécessaires à l'exécution.
-RUN apt-get update -q && \
-     apt-get install -y -q=2 --no-install-recommends \
-     # Utilitaires de base
-     curl software-properties-common wget gnupg mc bc nano rsync \
-     libxft2 xvfb cmake build-essential ffmpeg gcc-13 g++-13 git \
-     gawk dos2unix \
-     # La pile VNC complète
-     tigervnc-standalone-server websockify novnc openbox python3-xdg \
-     # Le proxy et l'escalade de privilèges
-     nginx sudo && \
-     # --- START: Official Mozilla APT Repo method for Firefox ---
-     # 1. Get the Mozilla signing key
-     install -d -m 0755 /etc/apt/keyrings && \
-     wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null && \
-     # 2. Add the Mozilla APT repository
-     echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | tee /etc/apt/sources.list.d/mozilla.list > /dev/null && \
-     # 3. Pin the repository to ensure it's preferred
-     echo 'Package: *' > /etc/apt/preferences.d/mozilla && \
-     echo 'Pin: origin packages.mozilla.org' >> /etc/apt/preferences.d/mozilla && \
-     echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mozilla && \
-     # 4. Update and install Firefox
-     apt-get update -q && \
-     apt-get install -y firefox && \
-     # --- END: Firefox Install ---
-     # --- START: Force Firefox Policies ---
-     mkdir -p /usr/lib/firefox/distribution && \
-     echo '{ "policies": { "DisableAppUpdate": true, "DisableFirefoxAccounts": true, "DisableFirefoxStudies": true, "DisableTelemetry": true, "NoDefaultBrowserCheck": true, "Preferences": { "browser.onboarding.enabled": { "Value": false, "Status": "locked" }, "trailhead.firstrun.didSeeAboutWelcome": { "Value": true, "Status": "locked" }, "network.proxy.allow_hijacking_localhost": { "Value": true, "Status": "locked" } } } }' > /usr/lib/firefox/distribution/policies.json && \
-     # --- END: Force Firefox Policies ---
-     # Installation CUDA et DotNet
-     cd /tmp/ && \
-     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
-     dpkg -i cuda-keyring_1.1-1_all.deb && \
-     wget https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
-     dpkg -i packages-microsoft-prod.deb && \
-     rm packages-microsoft-prod.deb && \
-     apt-get update && \
-     apt-get -y install cuda-toolkit-12-8 dotnet-sdk-8.0 && \
-     # Nettoyage final
-     apt-get clean && \
-     apt autoremove -y && \
-     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# Install AiKore base dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    gcc-13 g++-13 dos2unix wget git nginx sudo python3 python3-pip \
+    && \
+    rm -rf /var/lib/apt/lists/*
 
-# On copie les wheels compilées
+# Install Firefox from Mozilla's APT repository
+RUN install -d -m 0755 /etc/apt/keyrings && \
+    wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null && \
+    echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | tee /etc/apt/sources.list.d/mozilla.list > /dev/null && \
+    echo 'Package: *' > /etc/apt/preferences.d/mozilla && \
+    echo 'Pin: origin packages.mozilla.org' >> /etc/apt/preferences.d/mozilla && \
+    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mozilla && \
+    apt-get update -q && \
+    apt-get install -y firefox
+
+# Apply Firefox policies
+RUN mkdir -p /usr/lib/firefox/distribution && \
+    echo '{ "policies": { "DisableAppUpdate": true, "DisableFirefoxAccounts": true, "DisableFirefoxStudies": true, "DisableTelemetry": true, "NoDefaultBrowserCheck": true, "Preferences": { "browser.onboarding.enabled": { "Value": false, "Status": "locked" }, "trailhead.firstrun.didSeeAboutWelcome": { "Value": true, "Status": "locked" }, "network.proxy.allow_hijacking_localhost": { "Value": true, "Status": "locked" } } } }' > /usr/lib/firefox/distribution/policies.json
+
+# Install CUDA and .NET SDKs
+RUN apt-get update && \
+    cd /tmp/ && \
+    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
+    dpkg -i cuda-keyring_1.1-1_all.deb && \
+    wget https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
+    dpkg -i packages-microsoft-prod.deb && \
+    rm packages-microsoft-prod.deb && \
+    apt-get update && \
+    apt-get -y install cuda-toolkit-12-8 dotnet-sdk-8.0
+
+# Final cleanup
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Copy the pre-compiled wheels from the builder stage
 COPY --from=builder /build/*.whl /wheels/

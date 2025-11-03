@@ -188,18 +188,20 @@ body {
 }
 
 .instances-table td {
-    padding: 8px 5px; /* Added vertical padding */
+    padding: 0 5px;
     vertical-align: middle;
 }
 
-.instances-table th.checkbox-cell,
-.instances-table td.checkbox-cell {
+/* CENTER CHECKBOX COLUMNS */
+.instances-table th:nth-child(4),
+.instances-table th:nth-child(5),
+.instances-table td:nth-child(4),
+.instances-table td:nth-child(5) {
     text-align: center;
 }
 
 /* STYLING FOR "CASES" (INPUTS, SELECTS, ETC.) */
 .instances-table input[type="text"],
-.instances-table input[type="number"],
 .instances-table select {
     width: 100%;
     padding: 10px;
@@ -217,26 +219,11 @@ body {
     width: 20px;
     height: 20px;
     vertical-align: middle;
-    cursor: pointer;
-}
-
-.instances-table a.access-url-display {
-    display: block;
-    margin-top: 5px;
-    font-size: 12px;
-    color: #aaa;
-    text-decoration: none;
-    word-break: break-all;
-    user-select: text;
-}
-
-.instances-table a.access-url-display:hover {
-    text-decoration: underline;
 }
 
 .status {
     font-weight: bold;
-    padding: 10px 12px;
+    padding: 11px 12px;
     /* Adjusted vertical padding to match input height */
     border-radius: 6px;
     display: block;
@@ -279,7 +266,7 @@ body {
 
 /* ACTION BUTTONS STYLING */
 .action-btn {
-    padding: 10px 12px;
+    padding: 8px 12px;
     border: none;
     color: #ffffff;
     cursor: pointer;
@@ -287,12 +274,12 @@ body {
     white-space: nowrap;
     transition: filter 0.2s ease, opacity 0.2s ease;
     font-weight: 500;
-    font-size: 14px;
+    font-size: 13px;
+    /* Slightly smaller for more buttons */
     text-decoration: none;
     /* For <a> tags */
     display: inline-block;
     /* For <a> tags */
-    box-sizing: border-box;
 }
 
 .action-btn:hover:not(:disabled):not(.disabled) {
@@ -313,6 +300,8 @@ body {
     justify-content: flex-end;
     align-items: center;
     gap: 5px;
+    padding: 8px 5px;
+    /* Add some vertical padding to the cell */
 }
 
 /* BUTTON COLORS */
@@ -346,14 +335,6 @@ body {
     background-color: #4a4a70;
 }
 
-.action-btn[data-role="activation-button"] {
-    background-color: #007bff; /* Blue for Activate */
-}
-
-.action-btn[data-role="activation-button"].active-btn {
-    background-color: #20c997; /* Teal for Deactivate */
-}
-
 [data-action="cancel_new"] {
     background-color: #f8f9fa;
     /* Light grey */
@@ -363,19 +344,6 @@ body {
 
 .action-btn:not([data-action]) {
     background-color: #4a4a70;
-}
-
-/* NEW: Highlight for the active ComfyUI slot */
-.instances-table tr.active-slot td {
-    background-color: #2c3e50; /* A desaturated blue that complements the theme */
-}
-.instances-table tr.active-slot td:first-child {
-    border-top-left-radius: 6px;
-    border-bottom-left-radius: 6px;
-}
-.instances-table tr.active-slot td:last-child {
-    border-top-right-radius: 6px;
-    border-bottom-right-radius: 6px;
 }
 
 /* --- UNIVERSAL CONTEXT MENU --- */
@@ -616,4 +584,44 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+/* --- MODAL STYLES --- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+
+.modal-content {
+    background-color: #2c2c54;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    border: 1px solid #3b3b6b;
+    min-width: 400px;
+    text-align: center;
+}
+
+.modal-content h2 {
+    margin-top: 0;
+    color: #ffffff;
+}
+
+.modal-actions {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+}
+
+.danger-btn {
+    background-color: #dc3545;
 }

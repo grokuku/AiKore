@@ -31,10 +31,9 @@
                                 <th>Base Blueprint</th>
                                 <th>GPU IDs</th>
                                 <th>Autostart</th>
-                                <th>Persistent</th>
-                                <th>Public Port</th>
-                                <th>Access URL</th>
+                                <th>Persistent UI</th>
                                 <th class="status-column">Status</th>
+                                <th>Port</th>
                                 <th class="actions-column">Actions</th>
                             </tr>
                         </thead>
@@ -156,6 +155,32 @@
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <!-- Our application script -->
     <script src="/static/app.js"></script>
+
+    <!-- Modal for Delete Options -->
+    <div id="delete-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Delete Instance: <span id="delete-modal-instance-name"></span></h2>
+            <p>Choose a deletion method:</p>
+            <div class="modal-actions">
+                <button id="delete-btn-permanent" class="action-btn danger-btn">Permanent Delete</button>
+                <button id="delete-btn-trash" class="action-btn">Move to Trashcan</button>
+                <button id="delete-btn-cancel" class="action-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Overwrite Confirmation -->
+    <div id="overwrite-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Overwrite Confirmation</h2>
+            <p>An instance with the name "<span id="overwrite-modal-instance-name"></span>" already exists in the trashcan.</p>
+            <p>Do you want to overwrite it?</p>
+            <div class="modal-actions">
+                <button id="overwrite-btn-confirm" class="action-btn danger-btn">Overwrite</button>
+                <button id="overwrite-btn-cancel" class="action-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
 </body>
 
 </html>

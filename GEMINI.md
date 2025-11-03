@@ -1,51 +1,32 @@
-# AiKore Project
-
-## Project Overview
-
-AiKore is a web-based application designed to manage and run various AI web UI instances, such as Stable Diffusion. It provides a centralized interface to start, stop, and monitor these instances.
-
-The project is architected as a containerized application using Docker and Docker Compose. The backend is a FastAPI application written in Python, which communicates with a frontend built with HTML, CSS, and JavaScript. Nginx is used as a reverse proxy to manage access to the different AI instances.
-
-The application uses a Conda-managed Python environment and relies on SQLAlchemy for database interactions. Process supervision within the container is handled by `s6-overlay`.
-
-## Building and Running
-
-The project is managed using `make` commands that wrap `docker-compose` for easier management of the application stack.
-
-### Key Commands
-
-*   **Start the application:**
-    ```bash
-    make up [profile]
-    ```
-    Replace `[profile]` with the name of the AI instance you want to run (e.g., `fooocus`).
-
-*   **Stop the application:**
-    ```bash
-    make down [profile]
-    ```
-
-*   **Start in detached mode:**
-    ```bash
-    make start [profile]
-    ```
-
-*   **View logs:**
-    ```bash
-    make logs [profile]
-    ```
-
-### Available Profiles
-
-The available profiles for the AI instances are dynamically loaded from the `docker-compose.yml` file. Refer to this file for a list of supported profiles.
-
-## Development Conventions
-
-*   **Containerized Development:** The entire development environment is containerized using Docker. The `Dockerfile` and `docker-compose.yml` files define the services, dependencies, and environment.
-*   **Multi-stage Docker Build:** The use of a `buildbase` image suggests a multi-stage build process to create a lean production image.
-*   **Directory Structure:** The project follows a clear directory structure:
-    *   `aikore/`: Contains the main FastAPI application source code.
-    *   `docker/`: Holds Docker-related configurations, including Nginx and `s6-overlay` setups.
-    *   `blueprints/`: Contains scripts and configuration files for the different AI instances.
-*   **Process Supervision:** `s6-overlay` is used for managing processes within the container, ensuring that services like Nginx and the main application are running correctly.
-*   **Database Migrations:** The application automatically checks for and applies database migrations on startup.
+## Gemini Added Memories
+- Use English for all code, auxiliary files (info, context, etc.), but communicate directly with the user in French.
+- L'utilisateur effectue ses tests sur un serveur distant.
+- Débogage d'un problème de reverse proxy avec ComfyUI dans AiKore. L'utilisateur obtient une erreur 404 Not Found. L'hypothèse actuelle est que le processus backend de ComfyUI ne parvient pas à localiser les fichiers de son propre frontend, qui sont servis à partir du paquet pip `comfyui-frontend-package`. La prochaine étape proposée est d'obtenir la permission de l'utilisateur pour modifier temporairement `reference/ComfyUI/server.py` afin d'ajouter des logs de débogage pour vérifier le chemin du `web_root` et son existence du point de vue du processus en cours d'exécution.
+- Starting the Selkies integration project. The goal is to replace the VNC implementation for Persistent UI instances with Selkies, within a single Docker container. Phase 1 is to merge Selkies' system dependencies into the AiKore Dockerfile.
+- Selkies Integration, Phase 1 Complete: Merged Selkies system dependencies into AiKore's Dockerfile.buildbase. Next is Phase 2: Integrate Selkies application components.
+- Selkies Integration, Phase 2 Complete: Integrated Selkies application components (Python server, web UI) into AiKore's main Dockerfile. Next is Phase 3: Create the selkies_launcher.sh script.
+- Selkies Integration, Phase 3 Complete: Created the selkies_launcher.sh script capable of launching an isolated Selkies stack. Next is Phase 4: Integrate the launcher into process_manager.py.
+- Selkies Integration, Phase 4 Complete: The process_manager.py has been updated to call selkies_launcher.sh for Persistent UI instances. The initial coding phase for Selkies integration is now finished. Awaiting user testing after Docker image rebuild.
+- **Selkies Integration Debugging Session (2025-11-02):**
+    - **Issue:** Persistent UI instances were not launching correctly, resulting in `404 Not Found` for Selkies UI and `command not found` / `ModuleNotFoundError` in `output.log`.
+    - **Initial Hypothesis:** Missing system packages (`virtualgl`, `pipewire`) and `selkies` Python module in the base image.
+    - **Actions Taken:**
+        - Refactored all "vnc" naming to "persistent" across the backend (`models.py`, `schemas/instance.py`, `api/instances.py`, `crud.py`, `process_manager.py`).
+        - Moved `selkies_launcher.sh` to `scripts/` directory and updated `Dockerfile` accordingly.
+        - Fixed `app.js` to correctly display `persistent_port` and link "Open"/"View" buttons to it for persistent instances.
+        - **Re-architected Port Allocation:** Modified `api/instances.py` so that:
+            - For **Persistent UI** instances: `persistent_port` is chosen from the user-visible pool (e.g., 19001-19020), and the internal application `port` is a random ephemeral port.
+            - For **Normal** instances: `port` is chosen from the user-visible pool.
+        - Debugged `selkies_launcher.sh` errors from `output.log`:
+            - Attempted to install `virtualgl` via `apt` and PPA, which failed.
+            - Analyzed `reference_read_only/docker-firefox/Dockerfile` and `autostart` script, revealing `virtualgl` is not explicitly installed for Firefox.
+            - **Root Cause Identified:** `vglrun` was not needed for basic desktop, but `pipewire` and the `selkies` Python module were genuinely missing from the base image. Also, `PATH` conflicts with Conda environments were causing `command not found` errors for system binaries.
+        - **Final Fixes Applied:**
+            - **`Dockerfile.buildbase`:**
+                - Removed `virtualgl` installation attempts.
+                - Added `pipewire`, `wireplumber`, `pipewire-pulse` to `apt-get install`.
+                - Added `git clone` and `pip install` for the `selkies` Python module.
+            - **`scripts/selkies_launcher.sh`:**
+                - Removed `vglrun` from the Openbox launch command.
+                - Ensured absolute paths (`/usr/bin/` for audio and Python) are used for system commands to prevent `PATH` conflicts.
+    - **Next Step:** User to rebuild Docker images and test with a new persistent instance.

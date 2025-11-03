@@ -4,12 +4,6 @@ FROM ghcr.io/grokuku/aikore-buildbase:latest
 # Copy s6-overlay and custom service configuration
 COPY docker/root/ /
 
-# --- System Dependencies ---
-# Install socat, which is required for dynamic port activation.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends socat && \
-    rm -rf /var/lib/apt/lists/*
-
 # --- AJOUT IMPORTANT : Sécurisation du fichier sudoers ---
 # Sudo ignore les fichiers avec des permissions non sécurisées.
 # 0440 = lecture seule pour root et le groupe root.
@@ -40,6 +34,7 @@ RUN mkdir -p ${BASE_DIR}/temp ${SD_INSTALL_DIR}
 # Copy AiKore application and its blueprints
 COPY --chown=abc:abc aikore/ ${SD_INSTALL_DIR}/aikore/
 COPY --chown=abc:abc blueprints/ ${SD_INSTALL_DIR}/blueprints/
+COPY --chown=abc:abc scripts/ ${SD_INSTALL_DIR}/scripts/
 
 # Copy application scripts
 COPY --chown=abc:abc entry.sh ${SD_INSTALL_DIR}/entry.sh
@@ -57,22 +52,31 @@ ENV HOME=/home/abc
 RUN mkdir /home/abc && \
     chown -R abc:abc /home/abc
 
+# Create and set permissions for the NGINX reload flag directory
+RUN mkdir -p /run/aikore && \
+    chown abc:abc /run/aikore
+
 # Install Miniforge for Python environment management (uses conda-forge by default)
 RUN cd /tmp && \
     # URL for Miniforge installer
     wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh && \
     # Install Miniforge directly into the path expected by all launch scripts
     bash Miniforge3-Linux-x86_64.sh -b -p /home/abc/miniconda3 && \
-    rm Miniforge3-Linux-x86_64.sh && \
+    rm Miniforge3-Linux-x86_64.sh
+
+# Clone the Selkies repository to get the web frontend
+RUN git clone --depth 1 https://github.com/selkies-project/selkies.git /tmp/selkies-repo && \
+    mkdir -p /opt/selkies-web && \
+    mv /tmp/selkies-repo/addons/gst-web/src/* /opt/selkies-web/ && \
+    rm -rf /tmp/selkies-repo
+
+RUN \
     # Set final ownership for application folders
     chown -R abc:abc /root && \
     chown -R abc:abc ${SD_INSTALL_DIR} && \
     chown -R abc:abc /home/abc && \
     chown -R abc:abc ${BASE_DIR} && \
-    # --- CORRECTION ---
-    # Grant ownership of NGINX config directories to the app user.
-    # This allows the backend to dynamically manage proxy configurations.
-    chown -R abc:abc /etc/nginx
+    chown -R abc:abc /opt/selkies-web
 
 # Expose default ports
 EXPOSE 9000/tcp

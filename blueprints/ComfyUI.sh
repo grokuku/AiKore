@@ -2,7 +2,6 @@
 # aikore.name = ComfyUI
 # aikore.category = Image Generation
 # aikore.description = A powerful and modular GUI for Stable Diffusion.
-# aikore.app_id = comfyui
 # aikore.venv_type = conda
 # aikore.venv_path = ./env
 ### AIKORE-METADATA-END ###
@@ -63,7 +62,7 @@ source activate "${INSTANCE_CONF_DIR}/env"
 conda install -n base conda-libmamba-solver -y
 conda install -c conda-forge python=3.12 pip --solver=libmamba -y # CORRECTED SYNTAX
 pip install --upgrade pip
-pip install torch==2.8.0 torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu128
+pip install torch==2.8.0 torchvision toraudio --extra-index-url https://download.pytorch.org/whl/cu128
 conda install -c conda-forge git gxx libcurand --solver=libmamba -y
 conda install -c nvidia cuda-cudart --solver=libmamba -y
 pip install --no-deps flash-attn
@@ -120,8 +119,9 @@ ln -sfn "${INSTANCE_OUTPUT_DIR}" "${INSTANCE_CONF_DIR}/ComfyUI/output"
 cd "${INSTANCE_CONF_DIR}/ComfyUI"
 
 # Construct the final command.
-# The --listen argument is crucial for reverse proxy compatibility.
-CMD="python3 main.py --listen"
+# --listen: crucial for reverse proxy compatibility.
+# --enable-cors-header: crucial for API write access (save, load, etc.) via reverse proxy.
+CMD="python3 main.py --listen --enable-cors-header"
 if [ -n "$WEBUI_PORT" ]; then
     CMD+=" --port ${WEBUI_PORT}"
 fi
