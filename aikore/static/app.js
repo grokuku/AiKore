@@ -127,36 +127,49 @@ document.addEventListener('DOMContentLoaded', () => {
         const isStopped = instance.status === 'stopped';
         const isActive = !isStopped;
 
-        // NEW: Determine the correct port to use for buttons
-        const targetPort = instance.persistent_mode ? instance.persistent_port : instance.port;
-
+        // Store latest data on the row
         row.dataset.status = instance.status;
         row.dataset.port = instance.port || '';
         row.dataset.persistentPort = instance.persistent_port || '';
         row.dataset.persistentMode = String(instance.persistent_mode);
+        row.dataset.name = instance.name; // Store name for slugify
 
         const statusSpan = row.querySelector('.status');
         statusSpan.textContent = instance.status;
         statusSpan.className = `status status-${instance.status.toLowerCase()}`;
         
-        // Display the correct port based on mode
-        row.cells[6].textContent = targetPort || 'N/A';
+        // Display the correct user-facing port in the table
+        const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
+        row.cells[6].textContent = displayPort || 'N/A';
 
+        // Enable/disable buttons based on status
         row.querySelector('[data-action="start"]').disabled = isActive;
         row.querySelector('[data-action="stop"]').disabled = isStopped;
         row.querySelector('[data-action="delete"]').disabled = isActive;
         
         const openButton = row.querySelector('[data-action="open"]');
-        if (isStarted && targetPort) {
-            openButton.href = `//${window.location.hostname}:${targetPort}/`;
-            openButton.classList.remove('disabled');
-        } else {
-            openButton.href = '#';
-            openButton.classList.add('disabled');
-        }
-        
         const viewButton = row.querySelector('[data-action="view"]');
-        viewButton.disabled = !isStarted || !targetPort;
+
+        let openHref = '#';
+        let viewDisabled = true;
+
+        if (isStarted) {
+            if (instance.persistent_mode) {
+                openHref = `//${window.location.hostname}:${instance.persistent_port}/`;
+                viewDisabled = false;
+            } else if (instance.port) {
+                openHref = `//${window.location.hostname}:${instance.port}/`;
+                viewDisabled = false;
+            }
+        }
+
+        openButton.href = openHref;
+        if (openHref === '#') {
+            openButton.classList.add('disabled');
+        } else {
+            openButton.classList.remove('disabled');
+        }
+        viewButton.disabled = viewDisabled;
 
         checkRowForChanges(row);
     }
@@ -167,6 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.isNew = String(isNew);
         row.dataset.status = instance.status;
         row.dataset.originalName = instance.name || '';
+        row.dataset.name = instance.name || ''; // For slugify
         row.dataset.originalBlueprint = instance.base_blueprint || '';
         row.dataset.originalGpuIds = instance.gpu_ids || '';
         row.dataset.originalAutostart = String(instance.autostart);
@@ -177,9 +191,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const isStarted = instance.status === 'started';
         const isStopped = instance.status === 'stopped';
         const isActive = !isStopped;
-
-        // NEW: Determine the correct port to use for buttons
-        const targetPort = instance.persistent_mode ? instance.persistent_port : instance.port;
 
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
@@ -227,8 +238,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             portCell.appendChild(portSelect);
         } else {
-            // NEW: Display the correct port based on mode
-            portCell.textContent = targetPort || 'N/A';
+            const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
+            portCell.textContent = displayPort || 'N/A';
         }
         const actionsCell = row.insertCell();
         actionsCell.classList.add('actions-column');
@@ -243,6 +254,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="action-btn" data-action="view" disabled>View</button>
                 <a href="#" class="action-btn disabled" data-action="open">Open</a>`;
         } else {
+            let openHref = '#';
+            let viewDisabled = true;
+            if (isStarted) {
+                if (instance.persistent_mode) {
+                    openHref = `//${window.location.hostname}:${instance.persistent_port}/`;
+                    viewDisabled = false;
+                } else if (instance.port) {
+                    openHref = `//${window.location.hostname}:${instance.port}/`;
+                    viewDisabled = false;
+                }
+            }
+
             actionsCell.innerHTML = `
                 <button class="action-btn" data-action="start" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Start</button>
                 <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
@@ -250,8 +273,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">Tools</button>
                 <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
                 <button class="action-btn" data-action="delete" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Delete</button>
-                <button class="action-btn" data-action="view" data-id="${instance.id}" ${!isStarted || !targetPort ? 'disabled' : ''}>View</button>
-                <a href="${isStarted && targetPort ? `//${window.location.hostname}:${targetPort}/` : '#'}" class="action-btn ${!isStarted || !targetPort ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
+                <button class="action-btn" data-action="view" data-id="${instance.id}" ${viewDisabled ? 'disabled' : ''}>View</button>
+                <a href="${openHref}" class="action-btn ${openHref === '#' ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
         }
         const allFields = row.querySelectorAll('input, select');
         if (isNew) {
@@ -368,16 +391,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function openInstanceView(instanceName, instancePort) {
+    function openInstanceView(instanceName, url) {
         hideAllToolViews();
         instanceViewContainer.classList.remove('hidden');
         toolsPaneTitle.textContent = `View: ${instanceName}`;
-        if (!instancePort) {
+        if (!url) {
             instanceIframe.src = 'about:blank';
-            console.error("Cannot open view: instance port is missing.");
+            console.error("Cannot open view: instance URL is missing.");
             return;
         }
-        instanceIframe.src = `//${window.location.hostname}:${instancePort}/`;
+        instanceIframe.src = url;
     }
 
     function openTerminal(instanceId, instanceName) {
@@ -538,11 +561,22 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchLogs();
             activeLogInterval = setInterval(fetchLogs, 2000);
         } else if (action === 'view') {
-            const instanceName = row.querySelector('[data-field="name"]').value || row.dataset.originalName;
-            // NEW: Logic to get the correct port
+            const instanceName = row.dataset.name;
             const isPersistent = row.dataset.persistentMode === 'true';
-            const targetPort = isPersistent ? row.dataset.persistentPort : row.dataset.port;
-            openInstanceView(instanceName, targetPort);
+            const isStarted = row.dataset.status === 'started';
+            let url = null;
+            if (isStarted) {
+                if (isPersistent) {
+                    const slug = slugify(instanceName);
+                    url = `/instance/${slug}/`;
+                } else {
+                    const targetPort = row.dataset.port;
+                    if (targetPort) {
+                        url = `//${window.location.hostname}:${targetPort}/`;
+                    }
+                }
+            }
+            openInstanceView(instanceName, url);
         } else if (action === 'cancel_new') {
             row.remove();
             if (instancesTbody.childElementCount === 0) fetchAndRenderInstances();
@@ -615,6 +649,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     // --- End Modal Logic ---
+
+    function slugify(value) {
+        if (!value) return '';
+        value = value.toString().toLowerCase();
+        value = value.replace(/[^a-z0-9\s-]/g, ''); // Remove characters that are not alphanumeric, whitespace, or hyphen.
+        value = value.replace(/[\s_-]+/g, '-'); // Replace whitespace, underscore, or hyphen with a single hyphen.
+        value = value.replace(/^-+|-+$/g, ''); // Trim leading/trailing hyphens.
+        return value;
+    }
 
     async function initializeApp() {
         await fetchAndStoreBlueprints();

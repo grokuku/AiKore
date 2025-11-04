@@ -16,10 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return '#' + r + g + b;
     }
 
-    function lerp(a, b, amount) {
-        return a + (b - a) * amount;
-    }
-
     class SceneManager {
         constructor(canvas, logoPath) {
             this.canvas = canvas;
@@ -28,9 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
             this.state = 'loading'; // loading, transitioning, idle
 
             this.colors = ['#00ff9d', '#ff00ff', '#00ffff', '#ffff00', '#ff9900', '#ff4d4d', '#4d4dff'];
-            this.effects = [WaveEffect, ZoomRotateEffect];
             
-            this.previousEffect = null;
             this.currentEffect = null;
             this.currentColor = this.colors[0];
             this.previousColor = this.colors[0];
@@ -61,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             this.renderer.init();
             this.currentEffect = new WaveEffect(this.renderer);
-            this.previousEffect = this.currentEffect;
 
             setInterval(() => this.startTransition(), this.idleDuration + this.transitionDuration);
 
@@ -69,20 +62,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         recreateEffects() {
-            this.currentEffect = new (this.currentEffect.constructor)(this.renderer);
-            this.previousEffect = new (this.previousEffect.constructor)(this.renderer);
+            this.currentEffect = new WaveEffect(this.renderer);
         }
 
         startTransition() {
-            this.previousEffect = this.currentEffect;
             this.previousColor = this.currentColor;
-
-            let NextEffectClass;
-            do {
-                NextEffectClass = this.effects[Math.floor(Math.random() * this.effects.length)];
-            } while (NextEffectClass === this.currentEffect.constructor);
-
-            this.currentEffect = new NextEffectClass(this.renderer);
             this.currentColor = this.colors[Math.floor(Math.random() * this.colors.length)];
             
             this.state = 'transitioning';
@@ -96,12 +80,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             this.time++;
-            let progress = 1.0;
             let activeColor = this.currentColor;
 
             if (this.state === 'transitioning') {
                 const elapsedTime = Date.now() - this.transitionStartTime;
-                progress = Math.min(elapsedTime / this.transitionDuration, 1.0);
+                const progress = Math.min(elapsedTime / this.transitionDuration, 1.0);
                 activeColor = blendColors(this.previousColor, this.currentColor, progress);
 
                 if (progress >= 1.0) {
@@ -110,18 +93,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const particlesToRender = this.renderer.particles.map(p => {
-                const prevState = this.previousEffect.apply(p, this.time);
-                const currentState = this.currentEffect.apply(p, this.time);
-
-                // Interpolate all properties
+                const effectState = this.currentEffect.apply(p, this.time);
                 return {
                     char: p.char,
-                    x: lerp(prevState.x, currentState.x, progress),
-                    y: lerp(prevState.y, currentState.y, progress),
-                    rotation: lerp(prevState.rotation, currentState.rotation, progress),
-                    size: lerp(prevState.size, currentState.size, progress),
-                    pixelAlpha: lerp(prevState.pixelAlpha, currentState.pixelAlpha, progress),
-                    charAlpha: lerp(prevState.charAlpha, currentState.charAlpha, progress),
+                    ...effectState
                 };
             });
 

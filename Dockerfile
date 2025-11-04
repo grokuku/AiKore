@@ -64,11 +64,8 @@ RUN cd /tmp && \
     bash Miniforge3-Linux-x86_64.sh -b -p /home/abc/miniconda3 && \
     rm Miniforge3-Linux-x86_64.sh
 
-# Clone the Selkies repository to get the web frontend
-RUN git clone --depth 1 https://github.com/selkies-project/selkies.git /tmp/selkies-repo && \
-    mkdir -p /opt/selkies-web && \
-    mv /tmp/selkies-repo/addons/gst-web/src/* /opt/selkies-web/ && \
-    rm -rf /tmp/selkies-repo
+# Copy the modified Selkies web frontend from the local project
+COPY reference_read_only/selkies-project/addons/gst-web/src/ /opt/selkies-web/
 
 RUN \
     # Set final ownership for application folders

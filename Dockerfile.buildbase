@@ -1,107 +1,114 @@
-# --- Builder Stage ---
-FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04 AS builder
+# Phase 1: KasmVNC Build Environment
+# This buildbase is responsible for creating an environment capable of compiling KasmVNC.
 
+FROM ubuntu:jammy
+
+# Prevent interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PIP_BREAK_SYSTEM_PACKAGES=1
-ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12"
-ENV MAX_JOBS=8
-WORKDIR /build
 
-# --- Dépendances système ---
-RUN apt-get update && apt-get install -y -q=2 \
-        build-essential wget curl git cmake gnupg bc rsync ffmpeg ninja-build \
-        libxft2 xvfb \
-        python3.12 python3.12-dev python3.12-venv python3-setuptools \
-        cuda-toolkit-12-8 \
-        && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
-        && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
-        && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
-        && apt-get clean \
-        && rm -rf /var/lib/apt/lists/*
+# Install essential build tools and KasmVNC dependencies from Ubuntu repositories
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build Tools
+    build-essential \
+    cmake \
+    ninja-build \
+    nasm \
+    git \
+    wget \
+    curl \
+    autoconf \
+    automake \
+    libtool \
+    pkg-config \
+    xutils-dev \
+    dos2unix \
+    \
+    # NodeJS for frontend build
+    nodejs \
+    npm \
+    \
+    # KasmVNC Runtime & Build Dependencies
+    libgnutls28-dev \
+    libpng-dev \
+    libtiff-dev \
+    libgif-dev \
+    libavformat-dev \
+    libavcodec-dev \
+    libswscale-dev \
+    libssl-dev \
+    libxrandr-dev \
+    libxcursor-dev \
+    libfreetype6-dev \
+    libxtst-dev \
+    libpixman-1-dev \
+    libxshmfence-dev \
+    libxcvt-dev \
+    libxkbfile-dev \
+    x11proto-dev \
+    libgbm-dev \
+    libxfont-dev \
+    \
+    # Other utilities that are useful
+    sudo \
+    htop \
+    vim \
+    socat \
+    && rm -rf /var/lib/apt/lists/*
 
-# Ajouter CUDA dans le PATH (au cas où)
-ENV PATH="/usr/local/cuda/bin:$PATH"
-ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include"
+# The original KasmVNC dev dockerfile uses Node 20.x
+# The default in Ubuntu Jammy is 12.x. We need to upgrade it.
+RUN npm install -g n && \
+    n 20 && \
+    apt-get purge -y nodejs npm
 
-# --- Paquets Python ---
-RUN python3.12 -m pip install --no-cache-dir wheel packaging \
-        && python3.12 -m pip install --no-cache-dir torch==2.8.0 torchvision torchaudio \
-        --extra-index-url https://download.pytorch.org/whl/cu128 \
-        && python3.12 -m pip install --no-cache-dir cython==0.29.37
+# --- Compile and install dependencies from source ---
 
-# --- Compilation des wheels ---
+# libjpeg-turbo
+RUN \
+    JPEG_TURBO_RELEASE=$(curl -sX GET "https://api.github.com/repos/libjpeg-turbo/libjpeg-turbo/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
+    mkdir -p /tmp/build/libjpeg-turbo && \
+    wget -qO- "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/${JPEG_TURBO_RELEASE}.tar.gz" | tar xz -C /tmp/build/libjpeg-turbo --strip-components=1 && \
+    cd /tmp/build/libjpeg-turbo && \
+    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -GNinja . && \
+    ninja -C build install && \
+    rm -rf /tmp/build/libjpeg-turbo
 
-# diso
-RUN git clone https://github.com/SarahWeiii/diso --recurse-submodules \
-        && cd diso \
-        && python3.12 setup.py bdist_wheel \
-        && cp dist/*.whl /build/
+# libwebp
+RUN \
+    WEBP_RELEASE=$(curl -sX GET "https://api.github.com/repos/webmproject/libwebp/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
+    mkdir -p /tmp/build/libwebp && \
+    wget -qO- "https://github.com/webmproject/libwebp/archive/${WEBP_RELEASE}.tar.gz" | tar xz -C /tmp/build/libwebp --strip-components=1 && \
+    cd /tmp/build/libwebp && \
+    ./autogen.sh && \
+    ./configure --prefix=/usr/local --enable-libwebpmux --enable-libwebpdemux && \
+    make && \
+    make install && \
+    rm -rf /tmp/build/libwebp
 
-# nvdiffrast
-RUN git clone https://github.com/NVlabs/nvdiffrast.git \
-        && cd nvdiffrast \
-        && python3.12 setup.py bdist_wheel \
-        && cp dist/*.whl /build/
+# TBB (oneTBB)
+RUN \
+    TBB_RELEASE=$(curl -sX GET "https://api.github.com/repos/oneapi-src/oneTBB/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
+    mkdir -p /tmp/build/oneTBB && \
+    wget -qO- "https://github.com/oneapi-src/oneTBB/archive/${TBB_RELEASE}.tar.gz" | tar xz -C /tmp/build/oneTBB --strip-components=1 && \
+    cd /tmp/build/oneTBB && \
+    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DTBB_TEST=OFF -GNinja . && \
+    ninja -C build install && \
+    rm -rf /tmp/build/oneTBB
 
-# kaolin
-RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git \
-        && cd kaolin_5090 \
-        && export IGNORE_TORCH_VER=1 && python3.12 setup.py bdist_wheel \
-        && cp dist/*.whl /build/
+# cpuid
+RUN \
+    CPUID_RELEASE=$(curl -sX GET "https://api.github.com/repos/anrieff/libcpuid/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
+    mkdir -p /tmp/build/libcpuid && \
+    wget -qO- "https://github.com/anrieff/libcpuid/archive/${CPUID_RELEASE}.tar.gz" | tar xz -C /tmp/build/libcpuid --strip-components=1 && \
+    cd /tmp/build/libcpuid && \
+    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -GNinja . && \
+    ninja -C build install && \
+    rm -rf /tmp/build/libcpuid
 
-ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a"
 
-# mip-splatting / diff-gaussian-rasterization
-RUN git clone https://github.com/autonomousvision/mip-splatting --recurse-submodules \
-        && cd mip-splatting/submodules/diff-gaussian-rasterization \
-        && python3.12 setup.py bdist_wheel \
-        && cp dist/*.whl /build/
+# Set up a non-root user, similar to the previous setup
+RUN useradd -m -u 1000 -s /bin/bash abc && \
+    echo "abc  ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-# vox2seq / TRELLIS
-RUN git clone https://huggingface.co/spaces/dkatz2391/TRELLIS_TextTo3D_Try2 TRELLIS_source \
-        && cd TRELLIS_source/extensions/vox2seq \
-        && python3.12 setup.py bdist_wheel \
-        && cp dist/*.whl /build/
-
-# --- Final Stage ---
-# NEW: Start from the official linuxserver.io Selkies base image
-FROM ghcr.io/linuxserver/baseimage-selkies:ubuntunoble
-
-# Install AiKore base dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    gcc-13 g++-13 dos2unix wget git nginx sudo python3 python3-pip \
-    && \
-    rm -rf /var/lib/apt/lists/*
-
-# Install Firefox from Mozilla's APT repository
-RUN install -d -m 0755 /etc/apt/keyrings && \
-    wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null && \
-    echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | tee /etc/apt/sources.list.d/mozilla.list > /dev/null && \
-    echo 'Package: *' > /etc/apt/preferences.d/mozilla && \
-    echo 'Pin: origin packages.mozilla.org' >> /etc/apt/preferences.d/mozilla && \
-    echo 'Pin-Priority: 1001' >> /etc/apt/preferences.d/mozilla && \
-    apt-get update -q && \
-    apt-get install -y firefox
-
-# Apply Firefox policies
-RUN mkdir -p /usr/lib/firefox/distribution && \
-    echo '{ "policies": { "DisableAppUpdate": true, "DisableFirefoxAccounts": true, "DisableFirefoxStudies": true, "DisableTelemetry": true, "NoDefaultBrowserCheck": true, "Preferences": { "browser.onboarding.enabled": { "Value": false, "Status": "locked" }, "trailhead.firstrun.didSeeAboutWelcome": { "Value": true, "Status": "locked" }, "network.proxy.allow_hijacking_localhost": { "Value": true, "Status": "locked" } } } }' > /usr/lib/firefox/distribution/policies.json
-
-# Install CUDA and .NET SDKs
-RUN apt-get update && \
-    cd /tmp/ && \
-    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
-    dpkg -i cuda-keyring_1.1-1_all.deb && \
-    wget https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb && \
-    dpkg -i packages-microsoft-prod.deb && \
-    rm packages-microsoft-prod.deb && \
-    apt-get update && \
-    apt-get -y install cuda-toolkit-12-8 dotnet-sdk-8.0
-
-# Final cleanup
-RUN apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-# Copy the pre-compiled wheels from the builder stage
-COPY --from=builder /build/*.whl /wheels/
+USER abc
+WORKDIR /home/abc

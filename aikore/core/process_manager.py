@@ -10,9 +10,9 @@ import requests
 import signal
 import psutil
 import pty
-import fcntl  # NEW: For terminal resizing
-import termios # NEW: For terminal resizing
-import struct  # NEW: For terminal resizing
+import fcntl
+import termios
+import struct
 from pathlib import Path
 from subprocess import PIPE, STDOUT
 from sqlalchemy.orm import Session
@@ -66,11 +66,10 @@ def _reload_nginx():
 
 def _cleanup_instance_files(instance_slug: str):
     """Cleans up NGINX conf and other temp files for an instance."""
-    # NGINX config cleanup is no longer needed for direct port access.
-    # nginx_conf_path = os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf")
-    # if os.path.exists(nginx_conf_path):
-    #     os.remove(nginx_conf_path)
-    #     _reload_nginx()
+    nginx_conf_path = os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf")
+    if os.path.exists(nginx_conf_path):
+        os.remove(nginx_conf_path)
+        _reload_nginx()
     
     # Cleanup Firefox profile if it exists
     firefox_profile_dir = f"/tmp/firefox-profiles/{instance_slug}"
@@ -78,7 +77,7 @@ def _cleanup_instance_files(instance_slug: str):
         import shutil
         shutil.rmtree(firefox_profile_dir, ignore_errors=True)
 
-# --- NEW: TERMINAL MANAGEMENT ---
+# --- TERMINAL MANAGEMENT ---
 
 def parse_blueprint_metadata(blueprint_filename: str) -> dict:
     """
@@ -145,7 +144,6 @@ def start_terminal_process(instance: models.Instance):
     else:  # Parent process
         return pid, master_fd
 
-# NEW: Function to handle resizing the PTY
 def resize_terminal_process(master_fd: int, rows: int, cols: int):
     """
     Resizes the pseudo-terminal window size.
@@ -161,7 +159,7 @@ def resize_terminal_process(master_fd: int, rows: int, cols: int):
 
 # --- CORE MONITORING LOGIC ---
 
-def monitor_instance_thread(instance_id: int, pid: int, port: int, persistent_display: int | None, instance_slug: str):
+def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, internal_app_port: int, persistent_display: int | None, instance_slug: str):
     """
     Runs in a background thread to monitor an instance's web server.
     Updates the instance status and launches Firefox when ready.
@@ -169,17 +167,16 @@ def monitor_instance_thread(instance_id: int, pid: int, port: int, persistent_di
     start_time = time.time()
     
     while psutil.pid_exists(pid):
-        # Check if the web application is accessible
         try:
-            response = requests.get(f"http://127.0.0.1:{port}", timeout=2)
-            # We consider any successful HTTP response as the service being ready
+            # Poll the port that is supposed to be ready (either app port or selkies port)
+            response = requests.get(f"http://127.0.0.1:{port_to_monitor}", timeout=2)
+            
             if response.status_code < 500:
-                print(f"[Monitor-{instance_id}] Instance is RUNNING on port {port}.")
+                print(f"[Monitor-{instance_id}] Instance is RUNNING on port {port_to_monitor}.")
                 with SessionLocal() as db:
                     db.query(models.Instance).filter(models.Instance.id == instance_id).update({"status": "started"})
                     db.commit()
 
-                # If in Persistent mode, launch Firefox now
                 if persistent_display is not None:
                     print(f"[Monitor-{instance_id}] Persistent mode detected. Launching Firefox on display :{persistent_display}.")
                     firefox_profile_dir = f"/tmp/firefox-profiles/{instance_slug}"
@@ -188,21 +185,22 @@ def monitor_instance_thread(instance_id: int, pid: int, port: int, persistent_di
                     ff_env = os.environ.copy()
                     ff_env["DISPLAY"] = f":{persistent_display}"
                     
-                    target_url = f'http://127.0.0.1:{port}'
+                    # --- THIS IS THE FIX ---
+                    # Firefox, running inside the container, must connect to the INTERNAL application port,
+                    # not the external Selkies port that is being monitored.
+                    target_url = f'http://127.0.0.1:{internal_app_port}'
+                    print(f"[Monitor-{instance_id}] Pointing internal Firefox to {target_url}")
                     
-                    # Use the explicit '-url' argument for better reliability
                     subprocess.Popen(
                         ['/usr/bin/firefox', '--profile', firefox_profile_dir, '--kiosk', '-url', target_url],
                         env=ff_env
                     )
-                break # Exit the monitoring loop on success
+                break
         
         except requests.exceptions.ConnectionError:
-            # Application is not yet ready, check for timeout
             elapsed_time = time.time() - start_time
             if elapsed_time > STALLED_TIMEOUT:
                 with SessionLocal() as db:
-                    # Update to 'stalled' only if it's currently 'starting'
                     instance = db.query(models.Instance).filter(models.Instance.id == instance_id).first()
                     if instance and instance.status == "starting":
                         instance.status = "stalled"
@@ -260,25 +258,46 @@ def start_instance_process(db: Session, instance: models.Instance):
     env["INSTANCE_CONF_DIR"] = instance_conf_dir
     env["INSTANCE_OUTPUT_DIR"] = instance_output_dir
     env["BLUEPRINT_ID"] = os.path.splitext(instance.base_blueprint)[0]
+    env["SUBFOLDER"] = f"/instance/{instance_slug}/"
     
-    print(f"[DEBUG] Checking persistent_mode for instance {instance.name}: {instance.persistent_mode} (Type: {type(instance.persistent_mode)})")
+    # Determine which port to monitor and which is the internal app port
+    port_to_monitor = instance.port
+    internal_app_port = instance.port
+
     if instance.persistent_mode:
-        # --- NEW SELKIES LAUNCH LOGIC ---
-        selkies_launcher_path = os.path.join(SCRIPTS_DIR, "selkies_launcher.sh")
+        kasm_launcher_path = os.path.join(SCRIPTS_DIR, "kasm_launcher.sh")
         main_cmd = [
             'bash', 
-            selkies_launcher_path, 
+            kasm_launcher_path, 
             instance.name, 
-            str(instance.persistent_port), # Use the persistent port for the Selkies UI
-            dest_script_path # The blueprint script to run inside Selkies
+            str(instance.persistent_port),
+            dest_script_path
         ]
-        # --- END SELKIES LAUNCH LOGIC ---
-    else:
-        main_cmd = ['bash', dest_script_path]
-    
-    # NGINX configuration is no longer needed for direct port access.
+        port_to_monitor = instance.persistent_port
+        # The internal app port remains instance.port
 
-    # Launch Process and Monitor Thread
+        print(f"[Manager] Persistent mode: Bypassing NGINX proxy. Instance will be directly accessible on port {instance.persistent_port}.")
+
+    else:
+        # For normal instances, use reverse proxy
+        main_cmd = ['bash', dest_script_path]
+        
+        nginx_conf_path = os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf")
+        nginx_conf = textwrap.dedent(f"""
+            location /instance/{instance_slug}/ {{
+                proxy_pass http://127.0.0.1:{instance.port}/;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_buffering off;
+            }}
+        """)
+        with open(nginx_conf_path, 'w') as f:
+            f.write(nginx_conf)
+        _reload_nginx()
+
+    # Launch Process
     output_log_path = os.path.join(instance_conf_dir, "output.log")
     with open(output_log_path, 'w') as output_log:
         main_process = subprocess.Popen(main_cmd, cwd=instance_conf_dir, env=env, stdout=output_log, stderr=output_log, preexec_fn=os.setsid)
@@ -287,9 +306,10 @@ def start_instance_process(db: Session, instance: models.Instance):
     instance.status = "starting"
     db.commit()
 
+    # Launch Monitor Thread with correct port arguments
     monitor = threading.Thread(
         target=monitor_instance_thread,
-        args=(instance.id, instance.pid, instance.port, instance.persistent_display, instance_slug),
+        args=(instance.id, instance.pid, port_to_monitor, internal_app_port, instance.persistent_display, instance_slug),
         daemon=True
     )
     monitor.start()

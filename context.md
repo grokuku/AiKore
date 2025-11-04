@@ -11,7 +11,7 @@
 *   **Partenariat Actif** : Je me positionne comme un partenaire de développement qui analyse et propose, et non comme un simple exécutant.
 *   **Gestion des Ambiguïtés** : Si une demande est ambiguë ou si des informations nécessaires à sa bonne exécution sont manquantes, je demanderai des clarifications avant de proposer une solution.
 
-#### **AXIOME 2 : ANALYSE ET SÉCURITÉ (Aucune Action Aveugle)**
+#### **AXIOME 2 : ANALYSE ET SÉCURITÉ (Aucune Action Avele)**
 
 *   **Hiérarchie de la Vérité** : Le code source est la seule et unique source de vérité. Ce fichier, `project_context.md`, sert de guide de haut niveau et de mémoire de session. Ses informations peuvent manquer de précision ou être en léger décalage avec l'état réel du code. Il doit être utilisé comme un outil de contextualisation et non comme une spécification infaillible.
 *   **Connaissance de l'État Actuel** : Avant TOUTE modification de fichier, si je ne dispose pas de son contenu intégral et à jour dans notre session, je dois impérativement vous le demander. Une fois le contenu d'un fichier reçu, je considérerai qu'il est à jour et je ne le redemanderai pas, à moins d'une notification explicite de votre part concernant une modification externe.
@@ -62,9 +62,10 @@ L'objectif principal est de fournir un panneau de contrôle unique, simple et pu
 2.  **Gestion Dynamique par Instances :** Le système est passé d'une configuration statique (un dossier par application) à un modèle dynamique où les utilisateurs peuvent créer, configurer et gérer de multiples "instances" indépendantes de n'importe quelle application via des "blueprints".
 3.  **Interface Web Centralisée :** Toutes les opérations de gestion courantes sont effectuées via l'interface web. Aucune modification manuelle de fichiers de configuration n'est requise pour l'utilisation standard.
 4.  **Base de Données pour la Persistance :** Les configurations des instances sont stockées dans une base de données SQLite, garantissant leur persistance entre les redémarrages du conteneur.
-5.  **Reverse Proxy Intégré :** NGINX agit comme reverse proxy, écoutant sur le port principal du conteneur. Il sert l'interface d'AiKore et route les requêtes API vers le backend FastAPI, ainsi que les requêtes vers les terminaux WebSocket.
-6.  **Accès Direct aux Instances :** Les instances d'application sont directement exposées sur des ports dédiés du conteneur, définis par la variable d'environnement `AIKORE_INSTANCE_PORT_RANGE`. L'interface web gère intelligemment quel port utiliser (le port de l'application ou le port de la session persistante).
-7.  **Mode d'Interface Persistante (Selkies) :** Pour les applications nécessitant une session de bureau graphique persistante, AiKore utilise **Selkies**. Il lance une pile WebRTC/bureau complète (Xvfb, Openbox, PipeWire) de manière isolée pour chaque instance concernée, permettant un accès distant via un navigateur web.
+5.  **Accès aux Instances :**
+    *   **Mode Normal :** NGINX agit comme reverse proxy, routant les requêtes ` /instance/<nom_instance>/` vers le port interne de l'application correspondante.
+    *   **Mode Persistant (Selkies) :** L'instance est directement exposée sur un port dédié du conteneur (ex: 19001), défini par `AIKORE_INSTANCE_PORT_RANGE`. NGINX n'est pas utilisé pour ces instances.
+6.  **Mode d'Interface Persistante (Selkies) :** Pour les applications nécessitant une session de bureau graphique persistante, AiKore utilise **Selkies**. Il lance une pile WebRTC/bureau complète de manière isolée pour chaque instance concernée, permettant un accès distant via un navigateur web.
 
 ---
 
@@ -72,7 +73,7 @@ L'objectif principal est de fournir un panneau de contrôle unique, simple et pu
 
 *   **Orchestration :** Docker, s6-overlay
 *   **Backend API :** FastAPI (Python)
-*   **Serveur Applicatif :** Uvicorn (pour FastAPI), NGINX (comme reverse proxy pour l'API et les WebSockets)
+*   **Serveur Applicatif :** Uvicorn (pour FastAPI), NGINX (comme reverse proxy)
 *   **Frontend :** SPA (Single Page Application) en HTML, CSS, JavaScript (vanilla)
 *   **Base de Données :** SQLite (via SQLAlchemy)
 *   **Gestion des Processus :** Le module `subprocess` de Python, géré par `process_manager.py`.
@@ -93,7 +94,7 @@ L'objectif principal est de fournir un panneau de contrôle unique, simple et pu
 | `persistent_mode`    | BOOLEAN         | Si `true`, l'instance est lancée dans une session de bureau Selkies.        |
 | `status`             | STRING          | État actuel : 'stopped', 'starting', 'stalled', 'started', 'error'.         |
 | `pid`                | INTEGER         | Process ID du processus principal de l'instance.                            |
-| `port`               | INTEGER         | Port interne de l'application. Exposé à l'utilisateur si `persistent_mode` est faux. |
+| `port`               | INTEGER         | Port interne de l'application (toujours utilisé, souvent éphémère).         |
 | `persistent_port`    | INTEGER         | Port exposé à l'utilisateur pour l'interface Selkies. Utilisé si `persistent_mode` est vrai. |
 | `persistent_display` | INTEGER         | Numéro de l'affichage X11 virtuel utilisé par la session Selkies.           |
 
@@ -102,22 +103,67 @@ L'objectif principal est de fournir un panneau de contrôle unique, simple et pu
 ## 5. Arborescence du Projet
 
 ```
-📁 aikore/             # Application backend FastAPI.
-📁 blueprints/         # Scripts modèles ("blueprints") pour chaque application gérée.
-📁 docker/             # Configuration de NGINX et des services s6-overlay.
-📁 scripts/            # Scripts utilitaires, comme le lanceur Selkies.
-📄 .gitignore          # Fichiers et dossiers à ignorer par Git.
-📄 docker-compose.yml  # Fichier de déploiement standard.
-📄 docker-compose.dev.yml # Fichier pour le développement local.
-📄 Dockerfile          # Construit l'image principale de l'application AiKore.
-📄 Dockerfile.buildbase# Construit l'image de base avec les dépendances lourdes.
-📄 entry.sh            # Point d'entrée pour le service applicatif AiKore.
-📄 features.md         # Suivi de l'implémentation des fonctionnalités.
-📄 functions.sh        # Fonctions shell partagées utilisées par les blueprints.
-📄 GEMINI.md           # Historique des sessions de développement avec Gemini.
-📄 Makefile            # Raccourcis pour les commandes Docker Compose.
-📄 plan.md             # Document de vision et de planification initial du projet.
-📄 project_context.md  # Ce fichier, source de vérité du projet.
+📁 aikore/
+    📁 api/
+    📄 __init__.py
+    📄 instances.py
+    📄 system.py
+    📁 core/
+    📄 __init__.py
+    📄 process_manager.py
+    📁 database/
+    📄 __init__.py
+    📄 crud.py
+    📄 models.py
+    📄 session.py
+    📁 schemas/
+    📄 __init__.py
+    📄 instance.py
+    📁 static/
+    📁 welcome/
+        📁 js/
+        📄 effects.js
+        📄 main.js
+        📄 renderer.js
+        📁 logos/
+        📄 ... (fichiers logo)
+        📄 index.html
+        📄 style.css
+    📄 app.js
+    📄 index.html
+    📄 style.css
+    📄 main.py
+    📄 requirements.txt
+📁 blueprints/
+    📁 legacy/
+    📄 ... (anciens blueprints)
+    📄 ComfyUI.sh
+    📄 FluxGym.sh
+📁 docker/
+    📁 root/
+    📁 etc/
+        📁 nginx/
+        📁 conf.d/
+            📄 aikore.conf
+        📁 s6-overlay/
+        📁 s6-rc.d/
+            📄 ... (services s6)
+        📁 sudoers.d/
+        📄 aikore-sudo
+📁 scripts/
+    📄 selkies_launcher.sh
+📄 .gitignore
+📄 docker-compose.dev.yml
+📄 docker-compose.yml
+📄 Dockerfile
+📄 Dockerfile.buildbase
+📄 entry.sh
+📄 features.md
+📄 functions.sh
+📄 GEMINI.md
+📄 Makefile
+📄 plan.md
+📄 project_context.md
 ```
 
 ---
@@ -128,52 +174,37 @@ L'objectif principal est de fournir un panneau de contrôle unique, simple et pu
 
 Le projet est dans une phase avancée, avec un socle fonctionnel robuste. Les fonctionnalités clés incluent :
 *   **Gestion CRUD d'Instances :** Création, lecture et suppression d'instances via l'interface web.
-*   **Lancement de Processus :** Démarrage et arrêt des instances, qui tournent comme des sous-processus isolés.
-*   **Interface Web Réactive :** Un tableau de bord multi-panneaux redimensionnable qui interroge le backend pour afficher l'état des instances et les statistiques système en temps réel.
-*   **Intégration de Selkies :** Remplacement complet de KasmVNC par Selkies pour les sessions de bureau persistantes.
+*   **Lancement de Processus :** Démarrage et arrêt des instances.
+*   **Interface Web Réactive :** Tableau de bord multi-panneaux avec état et statistiques en temps réel.
+*   **Intégration de Selkies :** Les instances persistantes lancent un serveur Selkies autonome.
+*   **Accès Direct aux Instances Persistantes :** L'architecture est en place pour que les instances Selkies soient accessibles directement sur leur `persistent_port`, en contournant NGINX.
 *   **Outils Avancés :** Visionneuse de Logs, Éditeur de Script, Terminal Intégré, Vue Embarquée.
 *   **Fonctionnalités UX :** Menu d'Outils Contextuel, Corbeille, Persistance de l'UI.
 
 ### 6.2. Problèmes Connus et Points en Attente
 
 *   **Fonctionnalité de Mise à Jour Non Implémentée :** Le bouton "Update" sur chaque ligne d'instance est actuellement un placeholder.
+*   **Erreur de Connexion aux Instances Persistantes :** La fonctionnalité est presque complète, mais un bug dans le code frontend empêche l'accès correct.
 
-*   **Échec du Lancement des Instances Selkies (En cours d'investigation) :** Les instances en mode persistant ne démarrent pas correctement, résultant en une erreur `NS_ERROR_CONNECTION_REFUSED` dans le navigateur.
+### 6.3. Journal d'Investigation
 
-### 6.3. Journal d'Investigation : Échec Selkies
+*   **2025-11-03 :** Résolution des problèmes de dépendances et de `PATH` pour le lanceur Selkies. Le serveur Selkies démarre maintenant correctement, sans erreur dans les logs, et écoute sur le bon port.
 
-*   **2025-11-03 (Test 1) :**
-    *   **Symptôme :** Erreur de connexion.
-    *   **Analyse du log :** Révèle des erreurs `command not found` pour `openbox`, `dbus-run-session` et une `ModuleNotFoundError` pour `gi` (liaisons Python GObject).
-    *   **Conclusion :** Des paquets système essentiels à l'environnement de bureau sont manquants dans l'image Docker.
-    *   **Action :** Le fichier `Dockerfile.buildbase` a été modifié pour ajouter les paquets `openbox`, `dbus-x11`, `python3-gi`, et les dépendances `gir1.2-*` de GStreamer via `apt`.
-
-*   **2025-11-03 (Test 2 - État Actuel) :**
-    *   **Symptôme :** Erreur de connexion persistante.
-    *   **Analyse du log :** Les erreurs `openbox` et `gi` sont résolues. De nouvelles erreurs apparaissent :
-        1.  `failed to exec '/usr/bin/pipewire'`: L'exécutable de la pile audio n'est pas trouvé à son chemin absolu.
-        2.  `ModuleNotFoundError: No module named 'selkies'`: L'interpréteur Python système (`/usr/bin/python3`) ne trouve pas le module Selkies.
-    *   **Conclusion :** La cause racine est une **incohérence d'environnement** entre la construction de l'image et l'exécution. Les composants sont installés, mais le script `selkies_launcher.sh` ne les trouve pas, probablement à cause de `PATH` incorrects ou de conflits entre les environnements Python (système vs. conda).
+*   **2025-11-04 (État Actuel) :**
+    *   **Symptôme 1 :** Cliquer sur "Open" pour une instance persistante redirige vers une URL incorrecte (ex: `http://<host>:19000/instance/test8/`), provoquant une erreur `404 Not Found`. L'URL devrait être `http://<host>:19001/`.
+    *   **Symptôme 2 :** En accédant manuellement à l'URL correcte, une erreur de connexion WebSocket se produit, empêchant l'interface Selkies de se charger.
+    *   **Analyse :**
+        1.  Le **Symptôme 1** est causé par une logique obsolète dans `aikore/static/app.js`. Le code génère toujours une URL de type reverse proxy au lieu d'une URL d'accès direct utilisant le `persistent_port` de l'instance.
+        2.  Le **Symptôme 2** est probablement une conséquence du premier ou un problème distinct. Le fait que même l'accès direct échoue suggère que l'interaction entre le client web Selkies et son serveur est perturbée. La priorité absolue est de corriger la génération de l'URL pour éliminer la première source d'erreur.
+    *   **Correction Critique Identifiée :** Il a été découvert que le thread de monitoring (`monitor_instance_thread` dans `process_manager.py`) lançait le navigateur Firefox interne en le faisant pointer sur le port de Selkies au lieu du port de l'application. Cela a été corrigé.
 
 ### 6.4. Plan d'Action pour la Prochaine Session
 
-*   **Priorité 1 : Résoudre le problème d'environnement de Selkies.**
-    *   Investiguer et corriger les chemins d'accès dans `selkies_launcher.sh` pour les exécutables de la pile audio.
-    *   Assurer que le module Python `selkies` est installé et accessible par l'interpréteur Python appelé dans le script de lancement.
+*   **Priorité 1 : Corriger la génération d'URL dans le frontend.**
+    *   Modifier les fonctions `renderInstanceRow` et `updateInstanceRow` dans `aikore/static/app.js` pour qu'elles construisent l'URL d'accès direct (`//<hostname>:<persistent_port>/`) pour les instances où `persistent_mode` est `true`.
 
-*   **Priorité 2 : Implémenter la fonctionnalité "Update".**
+*   **Priorité 2 : Re-tester la connexion de bout en bout.**
+    *   Après la correction du frontend, créer une nouvelle instance persistante et vérifier que le bouton "Open" redirige vers la bonne URL et que la connexion s'établit avec succès.
+
+*   **Priorité 3 : Implémenter la fonctionnalité "Update".**
     *   Créer l'endpoint API et la logique de base de données pour la mise à jour d'une instance existante.
-
-### 6.5. Journal d'Investigation (Suite) : Résolution Selkies
-
-*   **2025-11-03 (Session de débogage intensive) :**
-    *   **Hypothèse initiale :** Les erreurs (`command not found`, `ModuleNotFoundError`) proviennent d'un `PATH` incorrect ou d'un conflit d'environnement Python (système vs. Conda).
-    *   **Découverte majeure :** L'analyse du `Dockerfile` principal révèle que l'image de base `aikore-buildbase:latest` est tirée d'un registre (`ghcr.io`) et n'est pas construite à partir du `Dockerfile.buildbase` local. Les modifications apportées à ce dernier étaient donc ignorées.
-    *   **Correction du processus de build :** L'utilisateur a corrigé son pipeline de build pour que l'image `aikore-buildbase:latest` soit désormais construite à partir du `Dockerfile.buildbase` local, qui utilise la véritable image `ghcr.io/linuxserver/baseimage-selkies:ubuntunoble` comme base.
-    *   **Analyse de la nouvelle image :** Une fois la bonne image de base en place, une commande `find` a permis de confirmer deux points cruciaux :
-        1.  Le module Python `selkies` **est bien présent**, mais dans un environnement virtuel dédié (`/lsiopy`), et non dans l'environnement Conda.
-        2.  L'exécutable `xset` est également présent.
-    *   **Correction du `selkies_launcher.sh` :** Le script a été modifié pour utiliser le chemin absolu vers l'exécutable de Selkies (`/lsiopy/bin/selkies`), résolvant ainsi le conflit de `PATH` avec Conda.
-    *   **Correction de l'accès réseau :** L'erreur `NS_ERROR_CONNECTION_REFUSED` persistait. L'analyse a montré que le serveur HTTP interne de Selkies n'écoutait que sur `localhost`. L'ajout de l'argument `--host 0.0.0.0` à la commande de lancement dans `selkies_launcher.sh` a résolu ce problème.
-    *   **État actuel (Fin de session) :** Le serveur Selkies démarre maintenant avec succès, sans erreur dans les logs, et écoute sur le bon port et la bonne interface. Le problème de lancement est **résolu**.
-    *   **Prochain point :** L'utilisateur observe une erreur `Failed to open a WebSocket connection`. Cela est dû à une tentative de connexion directe au port WebSocket via HTTP. Ce point sera traité dans une session future.

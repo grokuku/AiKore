@@ -387,7 +387,6 @@ body {
 }
 
 /* --- TOOLS / LOGS PANE --- */
-#welcome-screen-container,
 #log-viewer-container {
     flex-grow: 1;
     /* Take up available space */
@@ -414,13 +413,6 @@ body {
     margin: 0;
     white-space: pre-wrap;
     word-wrap: break-word;
-}
-
-#welcome-screen-container pre {
-    color: #17a2b8;
-    /* A nice cyan for the logo */
-    text-align: center;
-    padding-top: 2rem;
 }
 
 .log-error {
@@ -475,13 +467,15 @@ body {
 }
 
 /* --- Instance View (iframe) --- */
-#instance-view-container {
+#instance-view-container,
+#welcome-screen-container {
     flex-grow: 1;
     width: 100%;
     min-height: 0;
 }
 
-#instance-iframe {
+#instance-iframe,
+#welcome-iframe {
     width: 100%;
     height: 100%;
     border: none;
