@@ -1,7 +1,7 @@
 # STAGE 1: The Builder
 # This stage installs all build-time dependencies, copies the KasmVNC source, 
 # and compiles everything.
-FROM linuxserver/baseimage-ubuntu:jammy AS builder
+FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy AS builder
 
 # Install essential build tools and KasmVNC dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -68,7 +68,7 @@ RUN builder/build.sh
 
 # STAGE 2: The Final Image
 # This stage starts from a clean base and copies only the necessary runtime artifacts.
-FROM linuxserver/baseimage-ubuntu:jammy
+FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy
 
 # Install only RUNTIME dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
