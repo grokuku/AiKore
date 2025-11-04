@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const toolsPaneTitle = document.getElementById('tools-pane-title');
     const welcomeScreenContainer = document.getElementById('welcome-screen-container');
+    const welcomeIframe = document.getElementById('welcome-iframe');
     const logViewerContainer = document.getElementById('log-viewer-container');
     const logContentArea = document.getElementById('log-content-area');
     const editorContainer = document.getElementById('editor-container');
@@ -24,18 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const overwriteModal = document.getElementById('overwrite-modal');
     let instanceToDeleteId = null;
 
-    const ASCII_LOGO = `                                                       
-    @@@@@@   @@@  @@@  @@@   @@@@@@   @@@@@@@   @@@@@@@@  
-@@@@@@@@  @@@  @@@  @@@  @@@@@@@@  @@@@@@@@  @@@@@@@@  
-@@!  @@@  @@!  @@!  !@@  @@!  @@@  @@!  @@@  @@!       
-!@!  @!@  !@!  !@!  @!!  !@!  @!@  !@!  @!@  !@!       
-@!@!@!@!  !!@  @!@@!@!   @!@  !@!  @!@!!@!   @!!!:!    
-!!!@!!!!  !!!  !!@!!!    !@!  !!!  !!@!@!    !!!!!:    
-!!:  !!!  !!:  !!: :!!   !!:  !!!  !!: :!!   !!:       
-:!:  !:!  :!:  :!:  !:!  :!:  !:!  :!:  !:!  :!:       
-::   :::   ::   ::  :::  ::::: ::  ::   :::   :: ::::  
-    :   : :  :     :   :::   : :  :    :   : :  : :: ::   
-                                                        `;
+
 
     let activeLogInstanceId = null;
     let activeLogInterval = null;
@@ -72,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
         instanceViewContainer.classList.add('hidden');
         terminalViewContainer.classList.add('hidden');
         instanceIframe.src = 'about:blank';
+        welcomeIframe.src = 'about:blank';
         clearInterval(activeLogInterval);
         activeLogInstanceId = null;
         closeTerminal();
@@ -80,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function showWelcomeScreen() {
         hideAllToolViews();
         welcomeScreenContainer.classList.remove('hidden');
-        welcomeScreenContainer.innerHTML = `<pre>${ASCII_LOGO}</pre>`;
+        welcomeIframe.src = '/static/welcome/index.html';
         toolsPaneTitle.textContent = 'Tools / Welcome';
     }
 
