@@ -1,69 +1,26 @@
-# Phase 1: KasmVNC Build Environment
-# This buildbase is responsible for creating an environment capable of compiling KasmVNC.
+# STAGE 1: The Builder
+# This stage installs all build-time dependencies, copies the KasmVNC source, 
+# and compiles everything.
+FROM linuxserver/baseimage-ubuntu:jammy AS builder
 
-FROM ubuntu:jammy
-
-# Prevent interactive prompts during build
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install essential build tools and KasmVNC dependencies from Ubuntu repositories
+# Install essential build tools and KasmVNC dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Build Tools
-    build-essential \
-    cmake \
-    ninja-build \
-    nasm \
-    git \
-    wget \
-    curl \
-    autoconf \
-    automake \
-    libtool \
-    pkg-config \
-    xutils-dev \
-    dos2unix \
-    \
-    # NodeJS for frontend build
-    nodejs \
-    npm \
-    \
-    # KasmVNC Runtime & Build Dependencies
-    libgnutls28-dev \
-    libpng-dev \
-    libtiff-dev \
-    libgif-dev \
-    libavformat-dev \
-    libavcodec-dev \
-    libswscale-dev \
-    libssl-dev \
-    libxrandr-dev \
-    libxcursor-dev \
-    libfreetype6-dev \
-    libxtst-dev \
-    libpixman-1-dev \
-    libxshmfence-dev \
-    libxcvt-dev \
-    libxkbfile-dev \
-    x11proto-dev \
-    libgbm-dev \
-    libxfont-dev \
-    \
-    # Other utilities that are useful
-    sudo \
-    htop \
-    vim \
-    socat \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential cmake ninja-build nasm git wget curl autoconf automake libtool pkg-config xutils-dev dos2unix \
+    libgnutls28-dev libpng-dev libtiff-dev libgif-dev libavformat-dev libavcodec-dev libswscale-dev libssl-dev \
+    libxrandr-dev libxcursor-dev libfreetype6-dev libxtst-dev libpixman-1-dev libxshmfence-dev libxcvt-dev \
+    libxkbfile-dev x11proto-dev libgbm-dev libxfont-dev
 
-# The original KasmVNC dev dockerfile uses Node 20.x
-# The default in Ubuntu Jammy is 12.x. We need to upgrade it.
-RUN npm install -g n && \
+# Install a modern version of Node.js for the web frontend build
+RUN apt-get install -y npm && \
+    npm install -g n && \
     n 20 && \
     apt-get purge -y nodejs npm
 
-# --- Compile and install dependencies from source ---
+# Copy KasmVNC source code into the builder
+WORKDIR /src
+COPY reference_read_only/kasmvnc/ .
 
-# libjpeg-turbo
+# Compile and install dependencies from source (libjpeg-turbo, webp, tbb, cpuid)
 RUN \
     JPEG_TURBO_RELEASE=$(curl -sX GET "https://api.github.com/repos/libjpeg-turbo/libjpeg-turbo/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
     mkdir -p /tmp/build/libjpeg-turbo && \
@@ -73,7 +30,6 @@ RUN \
     ninja -C build install && \
     rm -rf /tmp/build/libjpeg-turbo
 
-# libwebp
 RUN \
     WEBP_RELEASE=$(curl -sX GET "https://api.github.com/repos/webmproject/libwebp/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
     mkdir -p /tmp/build/libwebp && \
@@ -85,7 +41,6 @@ RUN \
     make install && \
     rm -rf /tmp/build/libwebp
 
-# TBB (oneTBB)
 RUN \
     TBB_RELEASE=$(curl -sX GET "https://api.github.com/repos/oneapi-src/oneTBB/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
     mkdir -p /tmp/build/oneTBB && \
@@ -95,7 +50,6 @@ RUN \
     ninja -C build install && \
     rm -rf /tmp/build/oneTBB
 
-# cpuid
 RUN \
     CPUID_RELEASE=$(curl -sX GET "https://api.github.com/repos/anrieff/libcpuid/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
     mkdir -p /tmp/build/libcpuid && \
@@ -105,6 +59,39 @@ RUN \
     ninja -C build install && \
     rm -rf /tmp/build/libcpuid
 
+# Build KasmVNC web frontend
+RUN cd kasmweb && npm install && npm run build
+
+# Build KasmVNC server
+RUN builder/build.sh
+
+
+# STAGE 2: The Final Image
+# This stage starts from a clean base and copies only the necessary runtime artifacts.
+FROM linuxserver/baseimage-ubuntu:jammy
+
+# Install only RUNTIME dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgnutls30 libpng16-16 libtiff5 libgif7 libavformat58 libavcodec58 libswscale5 libssl3 \
+    libxrandr2 libxcursor1 libfreetype6 libxtst6 libpixman-1-0 libxshmfence1 libxcvt0 libxkbfile1 \
+    libgbm1 libxfont2 \
+    # Runtime environment for the launcher script
+    xvfb \
+    openbox \
+    socat \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy compiled KasmVNC artifacts from the builder stage
+COPY --from=builder /src/xorg.build/bin/Xvnc /usr/local/bin/
+COPY --from=builder /src/kasmweb/dist /usr/local/share/kasmvnc/www/
+
+# Copy compiled libraries from /usr/local in the builder stage
+COPY --from=builder /usr/local/lib/ /usr/local/lib/
+COPY --from=builder /usr/local/include/ /usr/local/include/
+COPY --from=builder /usr/local/share/ /usr/local/share/
+
+# Ensure the dynamic linker finds the new libraries
+RUN ldconfig
 
 # Set up a non-root user, similar to the previous setup
 RUN useradd -m -u 1000 -s /bin/bash abc && \
