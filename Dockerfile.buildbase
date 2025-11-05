@@ -1,105 +1,77 @@
-# STAGE 1: The Builder
-# This stage installs all build-time dependencies, copies the KasmVNC source, 
-# and compiles everything.
-FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy AS builder
+# --- Builder Stage ---
+# Using the correct Ubuntu 24.04 base image with CUDA 13.0
+FROM nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 AS builder
 
-# --- Pinned versions for build stability ---
-ENV LIBJPEG_TURBO_VERSION="3.1.2"
-ENV LIBWEBP_VERSION="v1.4.0"
-ENV ONETBB_VERSION="v2022.2.0"
-ENV LIBCPUID_VERSION="v0.8.1"
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+# As per your original file, setting TORCH_CUDA_ARCH_LIST for compilations
+ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12"
+ENV MAX_JOBS=8
+WORKDIR /build
 
-# Install essential build tools and KasmVNC dependencies
+# --- System Dependencies ---
+# The CUDA toolkit is already included in the 'devel' base image
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential cmake ninja-build nasm git wget curl autoconf automake libtool pkg-config xutils-dev dos2unix \
-    libgnutls28-dev libpng-dev libtiff-dev libgif-dev libavformat-dev libavcodec-dev libswscale-dev libssl-dev \
-    libxrandr-dev libxcursor-dev libfreetype6-dev libxtst-dev libpixman-1-dev libxshmfence-dev libxcvt-dev \
-    libxkbfile-dev x11proto-dev libgbm-dev libxfont-dev
+    build-essential wget curl git cmake gnupg bc rsync ffmpeg ninja-build \
+    libxft2 xvfb \
+    python3.12 python3.12-dev python3.12-venv python3-setuptools \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install a modern version of Node.js for the web frontend build
-RUN apt-get install -y npm && \
-    npm install -g n && \
-    n 20 && \
-    apt-get purge -y nodejs npm
+# Add CUDA to PATH to ensure build tools find it
+ENV PATH="/usr/local/cuda/bin:${PATH}"
+ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 
-# Copy KasmVNC source code into the builder
-WORKDIR /src
-COPY reference_read_only/KasmVNC/ .
+# --- Python Packages ---
+# Using the exact PyTorch version you specified
+RUN python3.12 -m pip install --no-cache-dir wheel packaging \
+    && python3.12 -m pip install --no-cache-dir torch==2.9.0 torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cu130 \
+    && python3.12 -m pip install --no-cache-dir cython==0.29.37
 
-# Compile and install dependencies from source (libjpeg-turbo, webp, tbb, cpuid)
-RUN \
-    mkdir -p /tmp/build/libjpeg-turbo && \
-    wget -qO- "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/${LIBJPEG_TURBO_VERSION}.tar.gz" | tar xz -C /tmp/build/libjpeg-turbo --strip-components=1 && \
-    cd /tmp/build/libjpeg-turbo && \
-    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -GNinja . && \
-    ninja -C build install && \
-    rm -rf /tmp/build/libjpeg-turbo
+# --- Wheel Compilation ---
 
-RUN \
-    mkdir -p /tmp/build/libwebp && \
-    wget -qO- "https://github.com/webmproject/libwebp/archive/refs/tags/${LIBWEBP_VERSION}.tar.gz" | tar xz -C /tmp/build/libwebp --strip-components=1 && \
-    cd /tmp/build/libwebp && \
-    ./autogen.sh && \
-    ./configure --prefix=/usr/local --enable-libwebpmux --enable-libwebpdemux && \
-    make && \
-    make install && \
-    rm -rf /tmp/build/libwebp
+# flash-attention
+RUN git clone https://github.com/Dao-AILab/flash-attention --recurse-submodules \
+    && cd flash-attention \
+    && python3.12 setup.py bdist_wheel \
+    && cp dist/*.whl /build/
 
-RUN \
-    mkdir -p /tmp/build/oneTBB && \
-    wget -qO- "https://github.com/oneapi-src/oneTBB/archive/refs/tags/${ONETBB_VERSION}.tar.gz" | tar xz -C /tmp/build/oneTBB --strip-components=1 && \
-    cd /tmp/build/oneTBB && \
-    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DTBB_TEST=OFF -GNinja . && \
-    ninja -C build install && \
-    rm -rf /tmp/build/oneTBB
+# diso
+RUN git clone https://github.com/SarahWeiii/diso --recurse-submodules \
+    && cd diso \
+    && python3.12 setup.py bdist_wheel \
+    && cp dist/*.whl /build/
 
-RUN \
-    mkdir -p /tmp/build/libcpuid && \
-    wget -qO- "https://github.com/anrieff/libcpuid/archive/refs/tags/${LIBCPUID_VERSION}.tar.gz" | tar xz -C /tmp/build/libcpuid --strip-components=1 && \
-    cd /tmp/build/libcpuid && \
-    cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -GNinja . && \
-    ninja -C build install && \
-    rm -rf /tmp/build/libcpuid
+# nvdiffrast
+RUN git clone https://github.com/NVlabs/nvdiffrast.git \
+    && cd nvdiffrast \
+    && python3.12 setup.py bdist_wheel \
+    && cp dist/*.whl /build/
 
-# Build KasmVNC web frontend
-RUN cd kasmweb && npm install && npm run build
+# kaolin
+RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git \
+    && cd kaolin_5090 \
+    && python3.12 setup.py bdist_wheel \
+    && cp dist/*.whl /build/
 
-# Build KasmVNC server
-RUN builder/build.sh
+# mip-splatting / diff-gaussian-rasterization
+RUN git clone https://github.com/autonomousvision/mip-splatting --recurse-submodules \
+    && cd mip-splatting/submodules/diff-gaussian-rasterization \
+    && python3.12 setup.py bdist_wheel \
+    && cp dist/*.whl /build/
 
+# vox2seq / TRELLIS
+RUN git clone https://github.com/microsoft/TRELLIS --recurse-submodules \
+    && cd TRELLIS/extensions/vox2seq \
+    && python3.12 setup.py bdist_wheel \
+    && cp dist/*.whl /build/
 
-#
-# STAGE 2: The Final Image
-# This stage starts from a clean base and copies only the necessary runtime artifacts.
-#FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy
-#
-# Install only RUNTIME dependencies
-#RUN apt-get update && apt-get install -y --no-install-recommends \
-#    libgnutls30 libpng16-16 libtiff5 libgif7 libavformat58 libavcodec58 libswscale5 libssl3 \
-#    libxrandr2 libxcursor1 libfreetype6 libxtst6 libpixman-1-0 libxshmfence1 libxcvt0 libxkbfile1 \
-#    libgbm1 libxfont2 \
-#    # Runtime environment for the launcher script
-#    xvfb \
-#    openbox \
-#    rsync \
-#    socat \
-#    && rm -rf /var/lib/apt/lists/*
-#
-# Copy compiled KasmVNC artifacts from the builder stage
-#COPY --from=builder /src/xorg.build/bin/Xvnc /usr/local/bin/
-#COPY --from=builder /src/kasmweb/dist /usr/local/share/kasmvnc/www/
-#
-# Copy compiled libraries from /usr/local in the builder stage
-#COPY --from=builder /usr/local/lib/ /usr/local/lib/
-#COPY --from=builder /usr/local/include/ /usr/local/include/
-#COPY --from=builder /usr/local/share/ /usr/local/share/
-#
-# Ensure the dynamic linker finds the new libraries
-#RUN ldconfig
-#
-# Set up a non-root user, similar to the previous setup
-#RUN useradd -m -u 1000 -s /bin/bash abc && \
-#    echo "abc  ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-#
-#USER abc
-#WORKDIR /home/abc
+# --- Final Stage ---
+# This ensures the final image is also based on Ubuntu 24.04 (noble)
+FROM ghcr.io/linuxserver/baseimage-kasmvnc:ubuntunoble
+
+COPY --from=builder /build/*.whl /wheels/
