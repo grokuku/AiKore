@@ -1,21 +1,16 @@
-# The final image, starting from the buildbase which contains compiled artifacts.
+# The final image, starting from the buildbase which now contains KasmVNC and our compiled Python wheels.
 FROM ghcr.io/grokuku/aikore-buildbase:latest
 
 # --- Runtime System Dependencies ---
-# Install only RUNTIME dependencies, moved from the buildbase image.
-RUN apt-get update && apt-get install -y --no-install-recommends 
-    libgnutls30 libpng16-16 libtiff5 libgif7 libavformat58 libavcodec58 libswscale5 libssl3 
-    libxrandr2 libxcursor1 libfreetype6 libxtst6 libpixman-1-0 libxshmfence1 libxcvt0 libxkbfile1 
-    libgbm1 libxfont2 
-    # Runtime environment for launcher scripts
-    xvfb 
-    openbox 
-    rsync 
-    socat 
+# The base image already contains most graphical and runtime libs for KasmVNC.
+# We only add tools that are specific to our application's needs.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    rsync \
+    socat \
     && rm -rf /var/lib/apt/lists/*
 
 # --- s6-overlay & Sudoers Configuration ---
-# Copy s6-overlay and custom service configuration
+# Copy our custom s6-overlay services and sudoers configuration
 COPY docker/root/ /
 
 # Secure the sudoers file (Sudo ignores files with insecure permissions)
@@ -23,21 +18,15 @@ RUN chown root:root /etc/sudoers.d/aikore-sudo && \
     chmod 0440 /etc/sudoers.d/aikore-sudo
 
 # --- Environment Variables ---
-ENV DEBIAN_FRONTEND=noninteractive
 ENV BASE_DIR=/config \
     SD_INSTALL_DIR=/opt/sd-install \
     XDG_CACHE_HOME=/config/temp
 
-# Set compiler and Torch/CUDA architecture for any potential runtime compilations
+# Set compiler and Torch/CUDA architecture for any potential runtime compilations by Python
+# This is kept in case a Python library needs to compile a small extension at install time.
 ENV CC=/usr/bin/gcc-13
 ENV CXX=/usr/bin/g++-13
 ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12"
-
-# --- s6-overlay Script Cleanup ---
-# Convert all s6 scripts to Unix line endings and ensure they are executable.
-RUN find /etc/s6-overlay -type f -print0 | xargs -0 dos2unix --
-RUN find /etc/s6-overlay -type f -name "run" -exec chmod +x {} +
-RUN find /etc/s6-overlay -type f -name "finish" -exec chmod +x {} + || true
 
 # --- Application Setup ---
 # Create application directories
@@ -60,7 +49,6 @@ RUN find ${SD_INSTALL_DIR} -type f -name "*.sh" -print0 | xargs -0 dos2unix -- &
 
 # --- User and Environment Setup ---
 # The user 'abc' with UID 1000 is created by the base image.
-# We ensure its home directory and environment are set up correctly.
 ENV XDG_CONFIG_HOME=/home/abc
 ENV HOME=/home/abc
 
@@ -78,6 +66,11 @@ RUN cd /tmp && \
     bash Miniforge3-Linux-x86_64.sh -b -p /home/abc/miniconda3 && \
     rm Miniforge3-Linux-x86_64.sh
 
+# Activate conda, install Python dependencies from pre-compiled wheels and then requirements.txt
+RUN . /home/abc/miniconda3/bin/activate && \
+    pip install --no-cache-dir /wheels/*.whl && \
+    pip install --no-cache-dir -r ${SD_INSTALL_DIR}/aikore/requirements.txt
+
 # --- Final Ownership & Permissions ---
 # Switch back to root temporarily to set final ownership.
 USER root
@@ -90,5 +83,5 @@ RUN \
 USER abc
 WORKDIR /home/abc
 
-# Expose default ports
+# Expose AiKore's default port
 EXPOSE 9000/tcp
