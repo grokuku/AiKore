@@ -7,18 +7,18 @@
 ### AIKORE-METADATA-END ###
 
 #!/bin/bash
+# Exit immediately if a command exits with a non-zero status.
+set -e
+
 source /opt/sd-install/functions.sh
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
-# Clean up conda cache and packages to prevent metadata errors
-conda clean -ya
-
 # The following variables are provided by the process manager:
-# - INSTANCE_NAME: The unique user-defined name for this instance (e.g., "MyTestUI").
-# - INSTANCE_CONF_DIR: The dedicated directory for this instance's configuration, repos, and venv.
+# - INSTANCE_NAME: The unique user-defined name for this instance.
+# - INSTANCE_CONF_DIR: The dedicated directory for this instance's configuration.
 # - INSTANCE_OUTPUT_DIR: The dedicated directory for this instance's generated outputs.
-# - BLUEPRINT_ID: The base name of the original blueprint script (e.g., "05-comfyui").
+# - BLUEPRINT_ID: The base name of this blueprint script.
 
 echo "--- Starting Blueprint: ${BLUEPRINT_ID} for Instance: ${INSTANCE_NAME} ---"
 
@@ -26,104 +26,96 @@ echo "--- Starting Blueprint: ${BLUEPRINT_ID} for Instance: ${INSTANCE_NAME} ---
 mkdir -p "${INSTANCE_CONF_DIR}"
 mkdir -p "${INSTANCE_OUTPUT_DIR}"
 
+COMFYUI_DIR="${INSTANCE_CONF_DIR}/ComfyUI"
+MANAGER_DIR="${COMFYUI_DIR}/custom_nodes/ComfyUI-Manager"
+VENV_DIR="${INSTANCE_CONF_DIR}/env"
+
 # Install or update the main ComfyUI repository
-if [ ! -d "${INSTANCE_CONF_DIR}/ComfyUI/.git" ]; then
+if [ ! -d "${COMFYUI_DIR}/.git" ]; then
     echo "Cloning ComfyUI repository..."
-    git clone https://github.com/comfyanonymous/ComfyUI.git "${INSTANCE_CONF_DIR}/ComfyUI"
-    cd "${INSTANCE_CONF_DIR}/ComfyUI"
+    git clone https://github.com/comfyanonymous/ComfyUI.git "${COMFYUI_DIR}"
 else
     echo "Existing ComfyUI repository found. Synchronizing..."
-    cd "${INSTANCE_CONF_DIR}/ComfyUI"
+    cd "${COMFYUI_DIR}"
     check_remote "GIT_REF"
 fi
 
 # Install or update the ComfyUI-Manager custom node
-mkdir -p "${INSTANCE_CONF_DIR}/ComfyUI/custom_nodes"
-if [ ! -d "${INSTANCE_CONF_DIR}/ComfyUI/custom_nodes/ComfyUI-Manager/.git" ]; then
+if [ ! -d "${MANAGER_DIR}/.git" ]; then
     echo "Cloning ComfyUI-Manager repository..."
-    git clone https://github.com/Comfy-Org/ComfyUI-Manager.git "${INSTANCE_CONF_DIR}/ComfyUI/custom_nodes/ComfyUI-Manager"
-    cd "${INSTANCE_CONF_DIR}/ComfyUI/custom_nodes/ComfyUI-Manager"
+    git clone https://github.com/ltdrdata/ComfyUI-Manager.git "${MANAGER_DIR}"
 else
     echo "Existing ComfyUI-Manager repository found. Synchronizing..."
-    cd "${INSTANCE_CONF_DIR}/ComfyUI/custom_nodes/ComfyUI-Manager"
+    cd "${MANAGER_DIR}"
     check_remote "GIT_REF"
 fi
 
-# Clean the Conda environment if required
-clean_env "${INSTANCE_CONF_DIR}/env"
+# --- Environment Setup ---
+echo "--- Setting up Conda environment ---"
+
+# Clean up conda cache to prevent metadata errors
+conda clean -ya
+
+# Clean the Conda environment if required by user
+clean_env "${VENV_DIR}"
 
 # Create the Conda environment if it doesn't exist
-if [ ! -d "${INSTANCE_CONF_DIR}/env" ]; then
-    conda create -p "${INSTANCE_CONF_DIR}/env" -y
+if [ ! -d "${VENV_DIR}" ]; then
+    conda create -p "${VENV_DIR}" python=3.11 -y
 fi
 
-# Activate the environment and install base packages
-source activate "${INSTANCE_CONF_DIR}/env"
-conda install -n base conda-libmamba-solver -y
-conda install -c conda-forge python=3.12 pip --solver=libmamba -y # CORRECTED SYNTAX
-pip install --upgrade pip
-pip install torch==2.8.0 torchvision toraudio --extra-index-url https://download.pytorch.org/whl/cu128
-conda install -c conda-forge git gxx libcurand --solver=libmamba -y
-conda install -c nvidia cuda-cudart --solver=libmamba -y
-pip install --no-deps flash-attn
+# Activate the environment
+source activate "${VENV_DIR}"
 
-# Install ComfyUI's Python requirements
-cd "${INSTANCE_CONF_DIR}/ComfyUI"
-pip install -r requirements.txt
-cd "${INSTANCE_CONF_DIR}/ComfyUI/custom_nodes/ComfyUI-Manager"
-pip install -r requirements.txt
+# --- Dependency Installation ---
+echo "--- Installing dependencies ---"
 
-# Install custom user requirements if specified
+# 1. Install PyTorch first, as many packages depend on it for their build process.
+#    This is the recommended way for ComfyUI.
+pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
+
+# 2. Install dependencies from ComfyUI's requirements file.
+#    This ensures all versions are compatible as tested by the ComfyUI developers.
+pip install -r "${COMFYUI_DIR}/requirements.txt"
+
+# 3. Install dependencies for ComfyUI-Manager.
+pip install -r "${MANAGER_DIR}/requirements.txt"
+
+# 4. Install custom user requirements if specified
 if [ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then
     pip install -r "${INSTANCE_CONF_DIR}/requirements.txt"
 fi
 
-# Install pre-compiled wheels and other specific packages
-pip install /wheels/*.whl
-pip install plyfile \
-    tqdm \
-    spconv-cu124 \
-    llama-cpp-python \
-    logger \
-    sageattention
-pip install --upgrade diffusers[torch]
+echo "--- Dependency installation complete ---"
 
-# Install dependencies for custom nodes if a full clean was performed
-if [ "$active_clean" = "1" ]; then
-    echo "-------------------------------------"
-    echo "Install Custom Nodes Dependencies"
-    install_requirements "${INSTANCE_CONF_DIR}/ComfyUI/custom_nodes"
-    echo "Done!"
-    echo -e "-------------------------------------\n"
-fi
-
+# --- Symlink Setup ---
+echo "--- Setting up model and output symlinks ---"
 # Symlink shared models folders into the ComfyUI directory
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "checkpoints" "/config/models/stable-diffusion"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "hypernetworks" "/config/models/hypernetwork"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "loras" "/config/models/lora"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "vae" "/config/models/vae"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "vae_approx" "/config/models/vae_approx"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "embeddings" "/config/models/embeddings"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "upscale_models" "/config/models/upscale"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "clip_vision" "/config/models/clip_vision"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "clip" "/config/models/clip"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "controlnet" "/config/models/controlnet"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "t5" "/config/models/t5"
-sl_folder "${INSTANCE_CONF_DIR}/ComfyUI/models" "unet" "/config/models/unet"
+sl_folder "${COMFYUI_DIR}/models" "checkpoints" "/config/models/stable-diffusion"
+sl_folder "${COMFYUI_DIR}/models" "hypernetworks" "/config/models/hypernetwork"
+sl_folder "${COMFYUI_DIR}/models" "loras" "/config/models/lora"
+sl_folder "${COMFYUI_DIR}/models" "vae" "/config/models/vae"
+sl_folder "${COMFYUI_DIR}/models" "vae_approx" "/config/models/vae_approx"
+sl_folder "${COMFYUI_DIR}/models" "embeddings" "/config/models/embeddings"
+sl_folder "${COMFYUI_DIR}/models" "upscale_models" "/config/models/upscale"
+sl_folder "${COMFYUI_DIR}/models" "clip_vision" "/config/models/clip_vision"
+sl_folder "${COMFYUI_DIR}/models" "clip" "/config/models/clip"
+sl_folder "${COMFYUI_DIR}/models" "controlnet" "/config/models/controlnet"
+sl_folder "${COMFYUI_DIR}/models" "t5" "/config/models/t5"
+sl_folder "${COMFYUI_DIR}/models" "unet" "/config/models/unet"
 
 # Symlink the output directory to the instance-specific output folder
-# This ensures ComfyUI writes to /outputs/<instance_name>/ by default
-ln -sfn "${INSTANCE_OUTPUT_DIR}" "${INSTANCE_CONF_DIR}/ComfyUI/output"
+ln -sfn "${INSTANCE_OUTPUT_DIR}" "${COMFYUI_DIR}/output"
 
-# Launch ComfyUI
-cd "${INSTANCE_CONF_DIR}/ComfyUI"
+# --- Launch ---
+cd "${COMFYUI_DIR}"
 
-# Construct the final command.
-# --listen: crucial for reverse proxy compatibility.
-# --enable-cors-header: crucial for API write access (save, load, etc.) via reverse proxy.
-CMD="python3 main.py --listen --enable-cors-header"
-if [ -n "$WEBUI_PORT" ]; then
-    CMD+=" --port ${WEBUI_PORT}"
+CMD="python main.py --listen --port ${WEBUI_PORT}"
+
+# Add any user-defined launch arguments
+if [ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
+    USER_ARGS=$(cat "${INSTANCE_CONF_DIR}/launch_args.txt")
+    CMD+=" ${USER_ARGS}"
 fi
 
 echo "---"

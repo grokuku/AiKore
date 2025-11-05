@@ -59,6 +59,7 @@ conda install -c conda-forge python=3.10 pip gfortran --solver=libmamba -y
 # Install Python requirements
 echo "--- Installing Python dependencies ---"
 pip install --upgrade pip
+pip install python-slugify
 pip install gradio==3.50.2
 cd "${APP_DIR}/sd-scripts"
 pip install -r requirements.txt

@@ -78,6 +78,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Runtime environment for the launcher script
     xvfb \
     openbox \
+    rsync \
     socat \
     && rm -rf /var/lib/apt/lists/*
 

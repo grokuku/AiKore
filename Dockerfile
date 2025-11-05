@@ -64,16 +64,12 @@ RUN cd /tmp && \
     bash Miniforge3-Linux-x86_64.sh -b -p /home/abc/miniconda3 && \
     rm Miniforge3-Linux-x86_64.sh
 
-# Copy the modified Selkies web frontend from the local project
-COPY reference_read_only/selkies-project/addons/gst-web/src/ /opt/selkies-web/
-
 RUN \
     # Set final ownership for application folders
     chown -R abc:abc /root && \
     chown -R abc:abc ${SD_INSTALL_DIR} && \
     chown -R abc:abc /home/abc && \
-    chown -R abc:abc ${BASE_DIR} && \
-    chown -R abc:abc /opt/selkies-web
+    chown -R abc:abc ${BASE_DIR}
 
 # Expose default ports
 EXPOSE 9000/tcp
