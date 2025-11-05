@@ -18,7 +18,7 @@ RUN apt-get install -y npm && \
 
 # Copy KasmVNC source code into the builder
 WORKDIR /src
-COPY reference_read_only/kasmvnc/ .
+COPY reference_read_only/KasmVNC/ .
 
 # Compile and install dependencies from source (libjpeg-turbo, webp, tbb, cpuid)
 RUN \
