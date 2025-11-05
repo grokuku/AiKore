@@ -3,6 +3,12 @@
 # and compiles everything.
 FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy AS builder
 
+# --- Pinned versions for build stability ---
+ENV LIBJPEG_TURBO_VERSION="3.1.2"
+ENV LIBWEBP_VERSION="v1.4.0"
+ENV ONETBB_VERSION="v2022.2.0"
+ENV LIBCPUID_VERSION="v0.8.1"
+
 # Install essential build tools and KasmVNC dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build nasm git wget curl autoconf automake libtool pkg-config xutils-dev dos2unix \
@@ -22,18 +28,16 @@ COPY reference_read_only/KasmVNC/ .
 
 # Compile and install dependencies from source (libjpeg-turbo, webp, tbb, cpuid)
 RUN \
-    JPEG_TURBO_RELEASE=$(curl -sX GET "https://api.github.com/repos/libjpeg-turbo/libjpeg-turbo/releases/latest" | awk -F'"' '/"tag_name"/ {print $(NF-1); exit}') && \
     mkdir -p /tmp/build/libjpeg-turbo && \
-    wget -qO- "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/${JPEG_TURBO_RELEASE}.tar.gz" | tar xz -C /tmp/build/libjpeg-turbo --strip-components=1 && \
+    wget -qO- "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/${LIBJPEG_TURBO_VERSION}.tar.gz" | tar xz -C /tmp/build/libjpeg-turbo --strip-components=1 && \
     cd /tmp/build/libjpeg-turbo && \
     cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -GNinja . && \
     ninja -C build install && \
     rm -rf /tmp/build/libjpeg-turbo
 
 RUN \
-    WEBP_RELEASE=$(curl -sX GET "https://api.github.com/repos/webmproject/libwebp/releases/latest" | awk -F'"' '/"tag_name"/ {print $(NF-1); exit}') && \
     mkdir -p /tmp/build/libwebp && \
-    wget -qO- "https://github.com/webmproject/libwebp/archive/${WEBP_RELEASE}.tar.gz" | tar xz -C /tmp/build/libwebp --strip-components=1 && \
+    wget -qO- "https://github.com/webmproject/libwebp/archive/refs/tags/${LIBWEBP_VERSION}.tar.gz" | tar xz -C /tmp/build/libwebp --strip-components=1 && \
     cd /tmp/build/libwebp && \
     ./autogen.sh && \
     ./configure --prefix=/usr/local --enable-libwebpmux --enable-libwebpdemux && \
@@ -42,18 +46,16 @@ RUN \
     rm -rf /tmp/build/libwebp
 
 RUN \
-    TBB_RELEASE=$(curl -sX GET "https://api.github.com/repos/oneapi-src/oneTBB/releases/latest" | awk -F'"' '/"tag_name"/ {print $(NF-1); exit}') && \
     mkdir -p /tmp/build/oneTBB && \
-    wget -qO- "https://github.com/oneapi-src/oneTBB/archive/${TBB_RELEASE}.tar.gz" | tar xz -C /tmp/build/oneTBB --strip-components=1 && \
+    wget -qO- "https://github.com/oneapi-src/oneTBB/archive/refs/tags/${ONETBB_VERSION}.tar.gz" | tar xz -C /tmp/build/oneTBB --strip-components=1 && \
     cd /tmp/build/oneTBB && \
     cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DTBB_TEST=OFF -GNinja . && \
     ninja -C build install && \
     rm -rf /tmp/build/oneTBB
 
 RUN \
-    CPUID_RELEASE=$(curl -sX GET "https://api.github.com/repos/anrieff/libcpuid/releases/latest" | awk -F'"' '/"tag_name"/ {print $(NF-1); exit}') && \
     mkdir -p /tmp/build/libcpuid && \
-    wget -qO- "https://github.com/anrieff/libcpuid/archive/${CPUID_RELEASE}.tar.gz" | tar xz -C /tmp/build/libcpuid --strip-components=1 && \
+    wget -qO- "https://github.com/anrieff/libcpuid/archive/refs/tags/${LIBCPUID_VERSION}.tar.gz" | tar xz -C /tmp/build/libcpuid --strip-components=1 && \
     cd /tmp/build/libcpuid && \
     cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_POSITION_INDEPENDENT_CODE=ON -GNinja . && \
     ninja -C build install && \
