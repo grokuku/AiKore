@@ -22,7 +22,7 @@ COPY reference_read_only/KasmVNC/ .
 
 # Compile and install dependencies from source (libjpeg-turbo, webp, tbb, cpuid)
 RUN \
-    JPEG_TURBO_RELEASE=$(curl -sX GET "https://api.github.com/repos/libjpeg-turbo/libjpeg-turbo/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
+    JPEG_TURBO_RELEASE=$(curl -sX GET "https://api.github.com/repos/libjpeg-turbo/libjpeg-turbo/releases/latest" | grep 'tag_name' | awk '{print $4;exit}' FS='[",]') && \
     mkdir -p /tmp/build/libjpeg-turbo && \
     wget -qO- "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/${JPEG_TURBO_RELEASE}.tar.gz" | tar xz -C /tmp/build/libjpeg-turbo --strip-components=1 && \
     cd /tmp/build/libjpeg-turbo && \
@@ -31,7 +31,7 @@ RUN \
     rm -rf /tmp/build/libjpeg-turbo
 
 RUN \
-    WEBP_RELEASE=$(curl -sX GET "https://api.github.com/repos/webmproject/libwebp/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
+    WEBP_RELEASE=$(curl -sX GET "https://api.github.com/repos/webmproject/libwebp/releases/latest" | grep 'tag_name' | awk '{print $4;exit}' FS='[",]') && \
     mkdir -p /tmp/build/libwebp && \
     wget -qO- "https://github.com/webmproject/libwebp/archive/${WEBP_RELEASE}.tar.gz" | tar xz -C /tmp/build/libwebp --strip-components=1 && \
     cd /tmp/build/libwebp && \
@@ -42,7 +42,7 @@ RUN \
     rm -rf /tmp/build/libwebp
 
 RUN \
-    TBB_RELEASE=$(curl -sX GET "https://api.github.com/repos/oneapi-src/oneTBB/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
+    TBB_RELEASE=$(curl -sX GET "https://api.github.com/repos/oneapi-src/oneTBB/releases/latest" | grep 'tag_name' | awk '{print $4;exit}' FS='[",]') && \
     mkdir -p /tmp/build/oneTBB && \
     wget -qO- "https://github.com/oneapi-src/oneTBB/archive/${TBB_RELEASE}.tar.gz" | tar xz -C /tmp/build/oneTBB --strip-components=1 && \
     cd /tmp/build/oneTBB && \
@@ -51,7 +51,7 @@ RUN \
     rm -rf /tmp/build/oneTBB
 
 RUN \
-    CPUID_RELEASE=$(curl -sX GET "https://api.github.com/repos/anrieff/libcpuid/releases/latest" | grep 'tag_name' | awk '{print $2;exit}' FS='[",]') && \
+    CPUID_RELEASE=$(curl -sX GET "https://api.github.com/repos/anrieff/libcpuid/releases/latest" | grep 'tag_name' | awk '{print $4;exit}' FS='[",]') && \
     mkdir -p /tmp/build/libcpuid && \
     wget -qO- "https://github.com/anrieff/libcpuid/archive/${CPUID_RELEASE}.tar.gz" | tar xz -C /tmp/build/libcpuid --strip-components=1 && \
     cd /tmp/build/libcpuid && \
