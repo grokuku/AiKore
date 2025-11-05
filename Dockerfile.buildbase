@@ -22,7 +22,7 @@ COPY reference_read_only/KasmVNC/ .
 
 # Compile and install dependencies from source (libjpeg-turbo, webp, tbb, cpuid)
 RUN \
-    JPEG_TURBO_RELEASE=$(curl -sX GET "https://api.github.com/repos/libjpeg-turbo/libjpeg-turbo/releases/latest" | grep 'tag_name' | awk '{print $4;exit}' FS='[",]') && \
+    JPEG_TURBO_RELEASE=$(curl -sX GET "https://api.github.com/repos/libjpeg-turbo/libjpeg-turbo/releases/latest" | awk -F'"' '/"tag_name"/ {print $(NF-1); exit}') && \
     mkdir -p /tmp/build/libjpeg-turbo && \
     wget -qO- "https://github.com/libjpeg-turbo/libjpeg-turbo/archive/${JPEG_TURBO_RELEASE}.tar.gz" | tar xz -C /tmp/build/libjpeg-turbo --strip-components=1 && \
     cd /tmp/build/libjpeg-turbo && \
@@ -31,7 +31,7 @@ RUN \
     rm -rf /tmp/build/libjpeg-turbo
 
 RUN \
-    WEBP_RELEASE=$(curl -sX GET "https://api.github.com/repos/webmproject/libwebp/releases/latest" | grep 'tag_name' | awk '{print $4;exit}' FS='[",]') && \
+    WEBP_RELEASE=$(curl -sX GET "https://api.github.com/repos/webmproject/libwebp/releases/latest" | awk -F'"' '/"tag_name"/ {print $(NF-1); exit}') && \
     mkdir -p /tmp/build/libwebp && \
     wget -qO- "https://github.com/webmproject/libwebp/archive/${WEBP_RELEASE}.tar.gz" | tar xz -C /tmp/build/libwebp --strip-components=1 && \
     cd /tmp/build/libwebp && \
@@ -42,7 +42,7 @@ RUN \
     rm -rf /tmp/build/libwebp
 
 RUN \
-    TBB_RELEASE=$(curl -sX GET "https://api.github.com/repos/oneapi-src/oneTBB/releases/latest" | grep 'tag_name' | awk '{print $4;exit}' FS='[",]') && \
+    TBB_RELEASE=$(curl -sX GET "https://api.github.com/repos/oneapi-src/oneTBB/releases/latest" | awk -F'"' '/"tag_name"/ {print $(NF-1); exit}') && \
     mkdir -p /tmp/build/oneTBB && \
     wget -qO- "https://github.com/oneapi-src/oneTBB/archive/${TBB_RELEASE}.tar.gz" | tar xz -C /tmp/build/oneTBB --strip-components=1 && \
     cd /tmp/build/oneTBB && \
@@ -51,7 +51,7 @@ RUN \
     rm -rf /tmp/build/oneTBB
 
 RUN \
-    CPUID_RELEASE=$(curl -sX GET "https://api.github.com/repos/anrieff/libcpuid/releases/latest" | grep 'tag_name' | awk '{print $4;exit}' FS='[",]') && \
+    CPUID_RELEASE=$(curl -sX GET "https://api.github.com/repos/anrieff/libcpuid/releases/latest" | awk -F'"' '/"tag_name"/ {print $(NF-1); exit}') && \
     mkdir -p /tmp/build/libcpuid && \
     wget -qO- "https://github.com/anrieff/libcpuid/archive/${CPUID_RELEASE}.tar.gz" | tar xz -C /tmp/build/libcpuid --strip-components=1 && \
     cd /tmp/build/libcpuid && \
@@ -66,37 +66,38 @@ RUN cd kasmweb && npm install && npm run build
 RUN builder/build.sh
 
 
+#
 # STAGE 2: The Final Image
 # This stage starts from a clean base and copies only the necessary runtime artifacts.
-FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy
-
+#FROM ghcr.io/linuxserver/baseimage-ubuntu:jammy
+#
 # Install only RUNTIME dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgnutls30 libpng16-16 libtiff5 libgif7 libavformat58 libavcodec58 libswscale5 libssl3 \
-    libxrandr2 libxcursor1 libfreetype6 libxtst6 libpixman-1-0 libxshmfence1 libxcvt0 libxkbfile1 \
-    libgbm1 libxfont2 \
-    # Runtime environment for the launcher script
-    xvfb \
-    openbox \
-    rsync \
-    socat \
-    && rm -rf /var/lib/apt/lists/*
-
+#RUN apt-get update && apt-get install -y --no-install-recommends \
+#    libgnutls30 libpng16-16 libtiff5 libgif7 libavformat58 libavcodec58 libswscale5 libssl3 \
+#    libxrandr2 libxcursor1 libfreetype6 libxtst6 libpixman-1-0 libxshmfence1 libxcvt0 libxkbfile1 \
+#    libgbm1 libxfont2 \
+#    # Runtime environment for the launcher script
+#    xvfb \
+#    openbox \
+#    rsync \
+#    socat \
+#    && rm -rf /var/lib/apt/lists/*
+#
 # Copy compiled KasmVNC artifacts from the builder stage
-COPY --from=builder /src/xorg.build/bin/Xvnc /usr/local/bin/
-COPY --from=builder /src/kasmweb/dist /usr/local/share/kasmvnc/www/
-
+#COPY --from=builder /src/xorg.build/bin/Xvnc /usr/local/bin/
+#COPY --from=builder /src/kasmweb/dist /usr/local/share/kasmvnc/www/
+#
 # Copy compiled libraries from /usr/local in the builder stage
-COPY --from=builder /usr/local/lib/ /usr/local/lib/
-COPY --from=builder /usr/local/include/ /usr/local/include/
-COPY --from=builder /usr/local/share/ /usr/local/share/
-
+#COPY --from=builder /usr/local/lib/ /usr/local/lib/
+#COPY --from=builder /usr/local/include/ /usr/local/include/
+#COPY --from=builder /usr/local/share/ /usr/local/share/
+#
 # Ensure the dynamic linker finds the new libraries
-RUN ldconfig
-
+#RUN ldconfig
+#
 # Set up a non-root user, similar to the previous setup
-RUN useradd -m -u 1000 -s /bin/bash abc && \
-    echo "abc  ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-
-USER abc
-WORKDIR /home/abc
+#RUN useradd -m -u 1000 -s /bin/bash abc && \
+#    echo "abc  ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+#
+#USER abc
+#WORKDIR /home/abc
