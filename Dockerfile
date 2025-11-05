@@ -2,11 +2,25 @@
 FROM ghcr.io/grokuku/aikore-buildbase:latest
 
 # --- Runtime System Dependencies ---
-# The base image already contains most graphical and runtime libs for KasmVNC.
-# We only add tools that are specific to our application's needs.
+# We add common utilities and a full build toolchain for runtime flexibility,
+# allowing blueprints or users to compile dependencies if needed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core application tools
     rsync \
     socat \
+    # Compilation tools for runtime user needs
+    cmake \
+    build-essential \
+    gcc-13 \
+    g++-13 \
+    git \
+    # Common utility tools for debugging and scripting
+    curl \
+    wget \
+    gnupg \
+    mc \
+    bc \
+    nano \
     && rm -rf /var/lib/apt/lists/*
 
 # --- s6-overlay & Sudoers Configuration ---
