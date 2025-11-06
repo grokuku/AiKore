@@ -25,6 +25,7 @@ class Instance(Base):
     autostart = Column(Boolean, default=False, nullable=False)
     persistent_mode = Column(Boolean, default=False, nullable=False)
     hostname = Column(String, nullable=True) # Schema V2 field
+    use_custom_hostname = Column(Boolean, default=False, nullable=False, server_default='0')
     
     # Possible statuses: 'stopped', 'starting', 'stalled', 'started'
     status = Column(String, default="stopped", nullable=False)

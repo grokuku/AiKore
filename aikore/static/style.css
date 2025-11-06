@@ -761,3 +761,67 @@ body {
     cursor: grabbing;
 
 }
+/* Custom Hostname Styles */
+.hostname-container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    justify-content: flex-start; 
+    height: 100%; 
+}
+
+.switch-label {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    color: #ccc;
+}
+
+.switch-label input[type="checkbox"] {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 34px;
+    height: 20px;
+    background-color: #444;
+    border-radius: 20px;
+    transition: background-color 0.2s;
+    /* No margin-right needed when using gap */
+}
+
+.switch::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.switch-label input:checked + .switch {
+    background-color: #28a745; /* Green when on */
+}
+
+.switch-label input:checked + .switch::before {
+    transform: translateX(14px);
+}
+
+.hostname-container input[type="text"] {
+    flex-grow: 1; /* Let the input field take the remaining space */
+    margin-top: 0;
+}
+
+.switch-label::after {
+    content: ''; /* Text is now in the table header */
+}

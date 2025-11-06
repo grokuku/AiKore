@@ -9,6 +9,7 @@ class InstanceBase(BaseModel):
     autostart: bool = False
     persistent_mode: bool = False
     hostname: str | None = None # NEW: Add hostname field
+    use_custom_hostname: bool = False
 
 # --- Creation Schema ---
 # Inherits from Base and is used specifically when creating a new instance via the API.
@@ -22,6 +23,7 @@ class InstanceUpdate(BaseModel):
     gpu_ids: str | None = None
     autostart: bool | None = None
     hostname: str | None = None
+    use_custom_hostname: bool | None = None
 
 # --- Read Schema ---
 # This schema is used when returning instance data from the API.

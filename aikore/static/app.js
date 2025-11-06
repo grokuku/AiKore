@@ -131,6 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const nameField = row.querySelector('input[data-field="name"]');
         const autostartField = row.querySelector('input[data-field="autostart"]');
         const hostnameField = row.querySelector('input[data-field="hostname"]');
+        const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
 
         const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
 
@@ -139,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedGpuIds !== row.dataset.originalGpuIds) changed = true;
         if (autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
         if ((hostnameField.value || '') !== (row.dataset.originalHostname || '')) changed = true;
+        if (useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) changed = true;
 
         updateButton.disabled = !changed;
     }
@@ -147,12 +149,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const isStarted = row.dataset.status === 'started';
         if (!isStarted) return '#';
 
+        const useCustomHostname = row.dataset.useCustomHostname === 'true';
         const customHostname = row.dataset.hostname;
         const isPersistent = row.dataset.persistentMode === 'true';
         const port = isPersistent ? row.dataset.persistentPort : row.dataset.port;
 
         let baseUrl = '';
-        if (customHostname) {
+        if (useCustomHostname && customHostname) {
             baseUrl = customHostname.startsWith('http') ? customHostname : `http://${customHostname}`;
         } else {
             baseUrl = `${window.location.protocol}//${window.location.hostname}:${port}`;
@@ -176,13 +179,19 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.persistentMode = String(instance.persistent_mode);
         row.dataset.name = instance.name;
         row.dataset.hostname = instance.hostname || '';
+        row.dataset.useCustomHostname = String(instance.use_custom_hostname);
 
         const statusSpan = row.querySelector('.status');
         statusSpan.textContent = instance.status;
         statusSpan.className = `status status-${instance.status.toLowerCase()}`;
 
+        const useHostnameCheckbox = row.querySelector('[data-field="use_custom_hostname"]');
+        if (useHostnameCheckbox) useHostnameCheckbox.checked = instance.use_custom_hostname;
+
         const hostnameInput = row.querySelector('[data-field="hostname"]');
-        if (hostnameInput) hostnameInput.value = instance.hostname || '';
+        if (hostnameInput) {
+            hostnameInput.value = instance.hostname || '';
+        }
 
         const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
         row.cells[8].textContent = displayPort || 'N/A';
@@ -214,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.originalAutostart = String(instance.autostart);
         row.dataset.originalPersistentMode = String(instance.persistent_mode);
         row.dataset.originalHostname = instance.hostname || '';
+        row.dataset.originalUseCustomHostname = String(instance.use_custom_hostname);
 
         row.dataset.status = instance.status;
         row.dataset.name = instance.name || '';
@@ -221,6 +231,7 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.persistentPort = instance.persistent_port || '';
         row.dataset.persistentMode = String(instance.persistent_mode);
         row.dataset.hostname = instance.hostname || '';
+        row.dataset.useCustomHostname = String(instance.use_custom_hostname);
 
         const isStarted = instance.status === 'started';
         const isStopped = instance.status === 'stopped';
@@ -281,12 +292,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
 
+        const hostnameCell = row.insertCell();
+        const hostnameContainer = document.createElement('div');
+        hostnameContainer.className = 'hostname-container';
+
+        const useHostnameLabel = document.createElement('label');
+        useHostnameLabel.className = 'switch-label';
+        
+        const useHostnameCheckbox = document.createElement('input');
+        useHostnameCheckbox.type = 'checkbox';
+        useHostnameCheckbox.checked = instance.use_custom_hostname;
+        useHostnameCheckbox.dataset.field = 'use_custom_hostname';
+        
+        const switchSpan = document.createElement('span');
+        switchSpan.className = 'switch';
+
+        useHostnameLabel.appendChild(useHostnameCheckbox);
+        useHostnameLabel.appendChild(switchSpan);
+
         const hostnameInput = document.createElement('input');
         hostnameInput.type = 'text';
         hostnameInput.value = instance.hostname || '';
         hostnameInput.placeholder = 'e.g., my-app.local';
         hostnameInput.dataset.field = 'hostname';
-        row.insertCell().appendChild(hostnameInput);
+
+        hostnameContainer.appendChild(useHostnameLabel);
+        hostnameContainer.appendChild(hostnameInput);
+        hostnameCell.appendChild(hostnameContainer);
 
         const portCell = row.insertCell();
         if (isNew) {
@@ -346,6 +378,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchAndRenderInstances() {
         try {
+            // --- UX IMPROVEMENT: Don't refresh table if user is editing something in it ---
+            if (document.activeElement && document.activeElement.closest('#instances-tbody')) {
+                return;
+            }
+
             // --- CRITICAL FIX: Preserve the "new instance" row during polling ---
             const newInstanceRow = instancesTbody.querySelector('tr[data-is-new="true"]');
 
@@ -559,6 +596,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 autostart: row.querySelector('input[data-field="autostart"]').checked,
                 persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
                 hostname: row.querySelector('input[data-field="hostname"]').value || null,
+                use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
                 port: portValue ? parseInt(portValue, 10) : null
             };
             try {
@@ -573,6 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
                 autostart: row.querySelector('input[data-field="autostart"]').checked,
                 hostname: row.querySelector('input[data-field="hostname"]').value || null,
+                use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
             };
             target.textContent = 'Updating...'; target.disabled = true;
             try {
@@ -583,6 +622,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.dataset.originalGpuIds = updatedInstance.gpu_ids || '';
                 row.dataset.originalAutostart = String(updatedInstance.autostart);
                 row.dataset.originalHostname = updatedInstance.hostname || '';
+                row.dataset.originalUseCustomHostname = String(updatedInstance.use_custom_hostname);
                 await fetchAndRenderInstances();
             } catch (error) { alert(`Error: ${error.message}`); }
             finally { target.textContent = 'Update'; }
