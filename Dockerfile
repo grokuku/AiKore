@@ -38,8 +38,12 @@ RUN apt-get install -y --no-install-recommends \
 # --- s6-overlay & Sudoers Configuration ---
 # Copy our custom s6-overlay services and sudoers configuration
 COPY docker/root/ /
-# Convert s6-overlay scripts to Unix line endings to prevent execution errors
-RUN find /etc/s6-overlay/s6-rc.d/ -type f -print0 | xargs -0 dos2unix --
+
+# --- NOUVELLE INSTRUCTION CRITIQUE ---
+# Ensure all s6-overlay scripts are executable and have correct line endings.
+# This must be done right after copying them.
+RUN find /etc/s6-overlay/ -type f -print0 | xargs -0 dos2unix -- && \
+    find /etc/s6-overlay/ -type f -print0 | xargs -0 chmod +x
 
 # Secure the sudoers file (Sudo ignores files with insecure permissions)
 RUN chown root:root /etc/sudoers.d/aikore-sudo && \
