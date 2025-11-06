@@ -168,11 +168,11 @@ def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, in
     
     while psutil.pid_exists(pid):
         try:
-            # Poll the port that is supposed to be ready (either app port or selkies port)
-            response = requests.get(f"http://127.0.0.1:{port_to_monitor}", timeout=2)
+            # Poll the internal application port to confirm it's truly ready
+            response = requests.get(f"http://127.0.0.1:{internal_app_port}", timeout=2)
             
             if response.status_code < 500:
-                print(f"[Monitor-{instance_id}] Instance is RUNNING on port {port_to_monitor}.")
+                print(f"[Monitor-{instance_id}] Instance is RUNNING on port {internal_app_port}.")
                 with SessionLocal() as db:
                     db.query(models.Instance).filter(models.Instance.id == instance_id).update({"status": "started"})
                     db.commit()
@@ -185,9 +185,6 @@ def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, in
                     ff_env = os.environ.copy()
                     ff_env["DISPLAY"] = f":{persistent_display}"
                     
-                    # --- THIS IS THE FIX ---
-                    # Firefox, running inside the container, must connect to the INTERNAL application port,
-                    # not the external Selkies port that is being monitored.
                     target_url = f'http://127.0.0.1:{internal_app_port}'
                     print(f"[Monitor-{instance_id}] Pointing internal Firefox to {target_url}")
                     
@@ -232,12 +229,8 @@ def start_instance_process(db: Session, instance: models.Instance):
     os.makedirs(instance_output_dir, exist_ok=True)
     os.makedirs(NGINX_SITES_AVAILABLE, exist_ok=True)
 
-    # --- GLOBAL TMPDIR FIX ---
-    # Ensure a tmp directory exists on the same filesystem as /config
-    # to prevent "Invalid cross-device link" errors with pip.
     global_tmp_dir = "/config/tmp"
     os.makedirs(global_tmp_dir, exist_ok=True)
-    # --- END FIX ---
 
     dest_script_path = os.path.join(instance_conf_dir, "launch.sh")
     source_script_path = os.path.join(BLUEPRINTS_DIR, instance.base_blueprint)
@@ -249,7 +242,7 @@ def start_instance_process(db: Session, instance: models.Instance):
     os.chmod(dest_script_path, os.stat(dest_script_path).st_mode | stat.S_IEXEC)
 
     env = os.environ.copy()
-    env["TMPDIR"] = global_tmp_dir # Set TMPDIR for the subprocess
+    env["TMPDIR"] = global_tmp_dir
     if instance.gpu_ids:
         env["CUDA_VISIBLE_DEVICES"] = instance.gpu_ids
     
@@ -260,7 +253,6 @@ def start_instance_process(db: Session, instance: models.Instance):
     env["BLUEPRINT_ID"] = os.path.splitext(instance.base_blueprint)[0]
     env["SUBFOLDER"] = f"/instance/{instance_slug}/"
     
-    # Determine which port to monitor and which is the internal app port
     port_to_monitor = instance.port
     internal_app_port = instance.port
 
@@ -274,12 +266,14 @@ def start_instance_process(db: Session, instance: models.Instance):
             dest_script_path
         ]
         port_to_monitor = instance.persistent_port
-        # The internal app port remains instance.port
+        
+        # --- CRITICAL FIX ---
+        # Pass the determined display number to the launcher script.
+        env["DISPLAY"] = f":{instance.persistent_display}"
 
         print(f"[Manager] Persistent mode: Bypassing NGINX proxy. Instance will be directly accessible on port {instance.persistent_port}.")
 
     else:
-        # For normal instances, use reverse proxy
         main_cmd = ['bash', dest_script_path]
         
         nginx_conf_path = os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf")
@@ -297,7 +291,6 @@ def start_instance_process(db: Session, instance: models.Instance):
             f.write(nginx_conf)
         _reload_nginx()
 
-    # Launch Process
     output_log_path = os.path.join(instance_conf_dir, "output.log")
     with open(output_log_path, 'w') as output_log:
         main_process = subprocess.Popen(main_cmd, cwd=instance_conf_dir, env=env, stdout=output_log, stderr=output_log, preexec_fn=os.setsid)
@@ -306,7 +299,6 @@ def start_instance_process(db: Session, instance: models.Instance):
     instance.status = "starting"
     db.commit()
 
-    # Launch Monitor Thread with correct port arguments
     monitor = threading.Thread(
         target=monitor_instance_thread,
         args=(instance.id, instance.pid, port_to_monitor, internal_app_port, instance.persistent_display, instance_slug),

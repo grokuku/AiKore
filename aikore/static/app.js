@@ -156,11 +156,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isStarted) {
             if (instance.persistent_mode) {
                 openHref = `//${window.location.hostname}:${instance.persistent_port}/`;
-                viewDisabled = false;
             } else if (instance.port) {
-                openHref = `//${window.location.hostname}:${instance.port}/`;
-                viewDisabled = false;
+                // For non-persistent, use the reverse proxy path for Open, and direct port for View
+                const slug = slugify(instance.name);
+                openHref = `/instance/${slug}/`;
             }
+            viewDisabled = false; // View is enabled for any started instance
         }
 
         openButton.href = openHref;
@@ -187,6 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.originalPersistentMode = String(instance.persistent_mode);
         row.dataset.port = instance.port || '';
         row.dataset.persistentPort = instance.persistent_port || '';
+        row.dataset.persistentMode = String(instance.persistent_mode);
 
         const isStarted = instance.status === 'started';
         const isStopped = instance.status === 'stopped';
@@ -220,23 +222,8 @@ document.addEventListener('DOMContentLoaded', () => {
         row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
         const portCell = row.insertCell();
         if (isNew) {
-            const portSelect = document.createElement('select');
-            portSelect.dataset.field = 'port';
-            if (availablePorts.length === 0) {
-                const option = document.createElement('option');
-                option.value = '';
-                option.textContent = 'No ports available';
-                portSelect.appendChild(option);
-                portSelect.disabled = true;
-            } else {
-                availablePorts.forEach(p => {
-                    const option = document.createElement('option');
-                    option.value = p;
-                    option.textContent = p;
-                    portSelect.appendChild(option);
-                });
-            }
-            portCell.appendChild(portSelect);
+            // This logic is simplified as port selection is now handled differently
+            portCell.textContent = 'Auto';
         } else {
             const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
             portCell.textContent = displayPort || 'N/A';
@@ -257,13 +244,13 @@ document.addEventListener('DOMContentLoaded', () => {
             let openHref = '#';
             let viewDisabled = true;
             if (isStarted) {
-                if (instance.persistent_mode) {
+                    if (instance.persistent_mode) {
                     openHref = `//${window.location.hostname}:${instance.persistent_port}/`;
-                    viewDisabled = false;
-                } else if (instance.port) {
-                    openHref = `//${window.location.hostname}:${instance.port}/`;
-                    viewDisabled = false;
+                } else {
+                    const slug = slugify(instance.name);
+                    openHref = `/instance/${slug}/`;
                 }
+                viewDisabled = false;
             }
 
             actionsCell.innerHTML = `
@@ -336,15 +323,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function addNewInstanceRow() {
         if (document.querySelector('tr[data-is-new="true"]')) return;
-        const availablePorts = await fetchAvailablePorts();
-        if (availablePorts.length === 0) {
-            alert("Cannot add a new instance: No available ports in the configured range.");
-            return;
-        }
+        // Port selection is now automatic on the backend
         const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
         if (noInstancesRow) noInstancesRow.remove();
         const newInstance = { id: 'new', autostart: false, persistent_mode: false, status: 'stopped' };
-        const newRow = renderInstanceRow(newInstance, true, availablePorts);
+        const newRow = renderInstanceRow(newInstance, true, []); // Pass empty ports array
         instancesTbody.appendChild(newRow);
         newRow.querySelector('input[data-field="name"]').focus();
     }
@@ -515,7 +498,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 gpu_ids: row.querySelector('input[data-field="gpu_ids"]').value || null,
                 autostart: row.querySelector('input[data-field="autostart"]').checked,
                 persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
-                port: parseInt(row.querySelector('select[data-field="port"]').value, 10)
+                // Backend now handles port allocation
             };
             try {
                 const response = await fetch('/api/instances/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
@@ -567,13 +550,15 @@ document.addEventListener('DOMContentLoaded', () => {
             let url = null;
             if (isStarted) {
                 if (isPersistent) {
-                    const slug = slugify(instanceName);
-                    url = `/instance/${slug}/`;
-                } else {
-                    const targetPort = row.dataset.port;
+                    // --- CORRECTED LOGIC ---
+                    const targetPort = row.dataset.persistentPort;
                     if (targetPort) {
                         url = `//${window.location.hostname}:${targetPort}/`;
                     }
+                } else {
+                    // --- CORRECTED LOGIC FOR IFRAME ---
+                    const slug = slugify(instanceName);
+                    url = `/instance/${slug}/`;
                 }
             }
             openInstanceView(instanceName, url);

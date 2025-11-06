@@ -1,9 +1,7 @@
 #!/bin/bash
 
-# This script is responsible for launching the KasmVNC server and the
-# target application inside the pre-configured desktop environment.
-
-set -e
+# This script is responsible for launching and supervising the KasmVNC server
+# and the target application inside a dedicated desktop environment.
 
 echo "--- KasmVNC Launcher Initializing ---"
 
@@ -18,56 +16,60 @@ if [ -z "$INSTANCE_NAME" ] || [ -z "$INSTANCE_PORT" ] || [ -z "$BLUEPRINT_SCRIPT
 fi
 
 # --- Environment Setup ---
-# KasmVNC expects an X server to be running. We'll use Xvfb.
-# We also need a window manager, Openbox is lightweight.
-export DISPLAY=":1"
+if [ -z "$DISPLAY" ]; then
+    echo "[ERROR] DISPLAY environment variable not set. This must be provided by AiKore."
+    exit 1
+fi
 
 echo "[INFO] Instance Name: ${INSTANCE_NAME}"
 echo "[INFO] Instance Port: ${INSTANCE_PORT}"
 echo "[INFO] Blueprint Script: ${BLUEPRINT_SCRIPT}"
 echo "[INFO] DISPLAY: ${DISPLAY}"
 
+# --- Cleanup function ---
+cleanup() {
+    echo "[INFO] Cleaning up KasmVNC services..."
+    # Kill all child processes of this script
+    pkill -P $$
+}
+
+# Trap SIGTERM and SIGINT to call the cleanup function
+trap cleanup SIGTERM SIGINT
+
 # --- Service Launching ---
 
-# 1. Start Xvfb (X Virtual Framebuffer)
-echo "[INFO] Starting Xvfb..."
-Xvfb ${DISPLAY} -screen 0 1920x1080x24 -ac +extension GLX +render -noreset & 
-XVFB_PID=$!
-export XVFB_PID
-
-# 2. Start a lightweight window manager (Openbox)
-echo "[INFO] Starting Openbox..."
-openbox & 
-OPENBOX_PID=$!
-export OPENBOX_PID
-
-# 3. Start KasmVNC Server
-echo "[INFO] Starting KasmVNC server on port ${INSTANCE_PORT}..."
-# The KasmVNC server binary will be in /usr/local/bin after installation
-# The web client files will be in /usr/local/share/kasmvnc/www
+# 1. Start KasmVNC Server in the BACKGROUND.
+# The native AcceptSetDesktopSize=1 option should handle resizing.
+echo "[INFO] Starting KasmVNC server on port ${INSTANCE_PORT} for display ${DISPLAY}..."
 /usr/local/bin/Xvnc \
     -interface 0.0.0.0 \
     -PublicIP 127.0.0.1 \
     -disableBasicAuth \
-    -RectThreads 0 \
     -Log *:stdout:100 \
     -httpd /usr/local/share/kasmvnc/www \
     -sslOnly 0 \
     -SecurityTypes None \
     -websocketPort ${INSTANCE_PORT} \
-    -FreeKeyMappings ${DISPLAY} & 
-KASMVNC_PID=$!
-export KASMVNC_PID
+    -depth 24 \
+    ${DISPLAY} &
 
-# 4. Run the Blueprint Application
+# Store the PID of the Xvnc process
+XVNC_PID=$!
+
+# Wait a moment for the X server to initialize
+sleep 2
+
+# 2. Start a lightweight window manager (Openbox) in the background
+# It now has a display to connect to.
+echo "[INFO] Starting Openbox..."
+openbox &
+
+# 3. Run the Blueprint Application in the background
 echo "[INFO] Launching blueprint: ${BLUEPRINT_SCRIPT}"
-# The blueprint script will inherit the DISPLAY environment variable.
-/bin/bash "${BLUEPRINT_SCRIPT}" & 
-BLUEPRINT_PID=$!
-export BLUEPRINT_PID
+/bin/bash "${BLUEPRINT_SCRIPT}" &
 
 echo "--- KasmVNC Launcher Setup Complete ---"
 
-# Wait for all background processes to exit
-wait ${BLUEPRINT_PID}
-kill ${KASMVNC_PID} ${OPENBOX_PID} ${XVFB_PID}
+# 4. Wait for the Xvnc process to exit.
+# This keeps the script alive and allows 'trap' to function correctly.
+wait ${XVNC_PID}
