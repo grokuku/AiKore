@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const instanceIframe = document.getElementById('instance-iframe');
     const terminalViewContainer = document.getElementById('terminal-view-container');
     const terminalContent = document.getElementById('terminal-content');
+    const toolsCloseBtn = document.getElementById('tools-close-btn');
 
     const toolsContextMenu = document.getElementById('tools-context-menu');
     let currentMenuInstance = null;
@@ -63,6 +64,8 @@ document.addEventListener('DOMContentLoaded', () => {
         editorContainer.classList.add('hidden');
         instanceViewContainer.classList.add('hidden');
         terminalViewContainer.classList.add('hidden');
+        toolsCloseBtn.classList.add('hidden'); // Hide close button
+
         instanceIframe.src = 'about:blank';
         welcomeIframe.src = 'about:blank';
         clearInterval(activeLogInterval);
@@ -145,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Display the correct user-facing port in the table
         const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
-        row.cells[6].textContent = displayPort || 'N/A';
+        row.cells[7].textContent = displayPort || 'N/A';
 
         // Enable/disable buttons based on status
         row.querySelector('[data-action="start"]').disabled = isActive;
@@ -198,6 +201,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const isStarted = instance.status === 'started';
         const isStopped = instance.status === 'stopped';
         const isActive = !isStopped;
+
+        // Add the handle as the very first cell
+        const handleCell = row.insertCell();
+        if (!isNew) { // Don't add handle to the "new instance" row
+            handleCell.classList.add('drag-handle');
+            handleCell.innerHTML = '&#x2630;';
+        }
 
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
@@ -282,34 +292,58 @@ document.addEventListener('DOMContentLoaded', () => {
         return row;
     }
 
+    const INSTANCE_ORDER_KEY = 'aikoreInstanceOrder';
+
     async function fetchAndRenderInstances() {
         try {
             const response = await fetch('/api/instances/');
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const instances = await response.json();
+            let instances = await response.json();
+
+            // Reorder instances based on localStorage
+            const savedOrder = JSON.parse(localStorage.getItem(INSTANCE_ORDER_KEY) || '[]');
+            if (savedOrder.length > 0) {
+                instances.sort((a, b) => {
+                    const indexA = savedOrder.indexOf(String(a.id));
+                    const indexB = savedOrder.indexOf(String(b.id));
+                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                    if (indexA !== -1) return -1;
+                    if (indexB !== -1) return 1;
+                    return 0;
+                });
+            }
+
             const existingRows = new Map([...instancesTbody.querySelectorAll('tr[data-id]')].map(row => [row.dataset.id, row]));
-            const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
-            if (noInstancesRow) noInstancesRow.remove();
+            const fragment = document.createDocumentFragment();
+
             instances.forEach(instance => {
                 const instanceIdStr = String(instance.id);
-                if (existingRows.has(instanceIdStr)) {
-                    updateInstanceRow(existingRows.get(instanceIdStr), instance);
-                    existingRows.delete(instanceIdStr);
+                let row = existingRows.get(instanceIdStr);
+                if (row) {
+                    updateInstanceRow(row, instance);
+                    existingRows.delete(instanceIdStr); // Remove from map as it's been handled
                 } else {
-                    const newRow = renderInstanceRow(instance);
-                    instancesTbody.appendChild(newRow);
+                    row = renderInstanceRow(instance);
                 }
+                fragment.appendChild(row);
             });
+
+            // At this point, any rows left in existingRows are ones that should be removed.
             for (const row of existingRows.values()) {
                 if (row.dataset.isNew !== 'true') row.remove();
             }
+
+            // Efficiently update the DOM
+            instancesTbody.innerHTML = ''; // Clear only when ready to append
+            instancesTbody.appendChild(fragment);
+
             if (instancesTbody.childElementCount === 0 && !document.querySelector('tr[data-is-new="true"]')) {
-                instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="8" style="text-align: center;">No instances created yet.</td></tr>`;
+                instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="9" style="text-align: center;">No instances created yet.</td></tr>`;
             }
         } catch (error) {
             console.error("Failed to fetch instances:", error);
             if (instancesPollInterval) clearInterval(instancesPollInterval);
-            instancesTbody.innerHTML = `<tr><td colspan="8" style="text-align:center;">Error loading data. Check console.</td></tr>`;
+            instancesTbody.innerHTML = `<tr><td colspan="9" style="text-align:center;">Error loading data. Check console.</td></tr>`;
         }
     }
 
@@ -346,6 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function openEditor(instanceId, instanceName, fileType) {
         hideAllToolViews();
         editorContainer.classList.remove('hidden');
+        toolsCloseBtn.classList.remove('hidden');
         const fileTypeName = fileType.charAt(0).toUpperCase() + fileType.slice(1);
         toolsPaneTitle.textContent = `Editing ${fileTypeName} for: ${instanceName}`;
         fileEditorTextarea.value = `Loading ${fileType} content...`;
@@ -381,6 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function openInstanceView(instanceName, url) {
         hideAllToolViews();
         instanceViewContainer.classList.remove('hidden');
+        toolsCloseBtn.classList.remove('hidden');
         toolsPaneTitle.textContent = `View: ${instanceName}`;
         if (!url) {
             instanceIframe.src = 'about:blank';
@@ -394,6 +430,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function openTerminal(instanceId, instanceName) {
         hideAllToolViews();
         terminalViewContainer.classList.remove('hidden');
+        toolsCloseBtn.classList.remove('hidden');
         toolsPaneTitle.textContent = `Terminal: ${instanceName}`;
         currentTerminal = new Terminal({
             cursorBlink: true,
@@ -522,6 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (action === 'logs') {
             hideAllToolViews();
             logViewerContainer.classList.remove('hidden');
+            toolsCloseBtn.classList.remove('hidden');
             toolsPaneTitle.textContent = `Logs: ${row.querySelector('[data-field="name"]').value || row.dataset.originalName}`;
             logContentArea.textContent = 'Loading logs...';
             activeLogInstanceId = instanceId;
@@ -655,6 +693,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (instancesPollInterval) clearInterval(instancesPollInterval);
         instancesPollInterval = setInterval(fetchAndRenderInstances, 2000);
         setInterval(updateSystemStats, 2000);
+
+        // Add listener for the close button in the tools pane
+        toolsCloseBtn.addEventListener('click', showWelcomeScreen);
+
+        // Initialize SortableJS for drag-and-drop reordering
+        new Sortable(instancesTbody, {
+            animation: 150,
+            handle: '.drag-handle', // The class of the handle
+            ghostClass: 'sortable-ghost', // Class for the drop placeholder
+            dragClass: 'sortable-drag', // Class for the item being dragged
+            onEnd: function (evt) {
+                const rows = instancesTbody.querySelectorAll('tr[data-id]');
+                const newOrder = Array.from(rows)
+                    .map(row => row.dataset.id)
+                    .filter(id => id && id !== 'new'); // Filter out invalid or new rows
+
+                localStorage.setItem(INSTANCE_ORDER_KEY, JSON.stringify(newOrder));
+            },
+        });
     }
 
     const cpuProgress = document.getElementById('cpu-progress');

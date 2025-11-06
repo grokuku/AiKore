@@ -364,4 +364,8 @@ async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db:
             pass
         
         if websocket.client_state != "DISCONNECTED":
-            await websocket.close()
+            try:
+                await websocket.close()
+            except RuntimeError:
+                # This can happen if the socket is already in the process of closing, which is fine.
+                pass
