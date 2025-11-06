@@ -43,6 +43,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let instancesPollInterval = null;
 
+    let viewResizeObserver = null;
+
     function closeTerminal() {
         if (currentTerminalSocket) {
             currentTerminalSocket.close();
@@ -66,6 +68,9 @@ document.addEventListener('DOMContentLoaded', () => {
         clearInterval(activeLogInterval);
         activeLogInstanceId = null;
         closeTerminal();
+        if (viewResizeObserver) {
+            viewResizeObserver.disconnect();
+        }
     }
 
     function showWelcomeScreen() {
@@ -137,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusSpan = row.querySelector('.status');
         statusSpan.textContent = instance.status;
         statusSpan.className = `status status-${instance.status.toLowerCase()}`;
-        
+
         // Display the correct user-facing port in the table
         const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
         row.cells[6].textContent = displayPort || 'N/A';
@@ -146,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
         row.querySelector('[data-action="start"]').disabled = isActive;
         row.querySelector('[data-action="stop"]').disabled = isStopped;
         row.querySelector('[data-action="delete"]').disabled = isActive;
-        
+
         const openButton = row.querySelector('[data-action="open"]');
         const viewButton = row.querySelector('[data-action="view"]');
 
@@ -155,9 +160,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (isStarted) {
             if (instance.persistent_mode) {
+                // --- CORRECTION "OPEN": No resize parameter ---
                 openHref = `//${window.location.hostname}:${instance.persistent_port}/`;
             } else if (instance.port) {
-                // For non-persistent, use the reverse proxy path for Open, and direct port for View
                 const slug = slugify(instance.name);
                 openHref = `/instance/${slug}/`;
             }
@@ -222,7 +227,6 @@ document.addEventListener('DOMContentLoaded', () => {
         row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
         const portCell = row.insertCell();
         if (isNew) {
-            // This logic is simplified as port selection is now handled differently
             portCell.textContent = 'Auto';
         } else {
             const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
@@ -244,7 +248,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let openHref = '#';
             let viewDisabled = true;
             if (isStarted) {
-                    if (instance.persistent_mode) {
+                if (instance.persistent_mode) {
+                    // --- CORRECTION "OPEN": No resize parameter ---
                     openHref = `//${window.location.hostname}:${instance.persistent_port}/`;
                 } else {
                     const slug = slugify(instance.name);
@@ -323,11 +328,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function addNewInstanceRow() {
         if (document.querySelector('tr[data-is-new="true"]')) return;
-        // Port selection is now automatic on the backend
         const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
         if (noInstancesRow) noInstancesRow.remove();
         const newInstance = { id: 'new', autostart: false, persistent_mode: false, status: 'stopped' };
-        const newRow = renderInstanceRow(newInstance, true, []); // Pass empty ports array
+        const newRow = renderInstanceRow(newInstance, true, []);
         instancesTbody.appendChild(newRow);
         newRow.querySelector('input[data-field="name"]').focus();
     }
@@ -384,6 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         instanceIframe.src = url;
+        viewResizeObserver.observe(instanceViewContainer);
     }
 
     function openTerminal(instanceId, instanceName) {
@@ -498,7 +503,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 gpu_ids: row.querySelector('input[data-field="gpu_ids"]').value || null,
                 autostart: row.querySelector('input[data-field="autostart"]').checked,
                 persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
-                // Backend now handles port allocation
             };
             try {
                 const response = await fetch('/api/instances/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
@@ -550,13 +554,12 @@ document.addEventListener('DOMContentLoaded', () => {
             let url = null;
             if (isStarted) {
                 if (isPersistent) {
-                    // --- CORRECTED LOGIC ---
                     const targetPort = row.dataset.persistentPort;
                     if (targetPort) {
-                        url = `//${window.location.hostname}:${targetPort}/`;
+                        // --- CORRECTION "VIEW": Use resize=remote ---
+                        url = `//${window.location.hostname}:${targetPort}/vnc.html?resize=remote`;
                     }
                 } else {
-                    // --- CORRECTED LOGIC FOR IFRAME ---
                     const slug = slugify(instanceName);
                     url = `/instance/${slug}/`;
                 }
@@ -638,9 +641,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function slugify(value) {
         if (!value) return '';
         value = value.toString().toLowerCase();
-        value = value.replace(/[^a-z0-9\s-]/g, ''); // Remove characters that are not alphanumeric, whitespace, or hyphen.
-        value = value.replace(/[\s_-]+/g, '-'); // Replace whitespace, underscore, or hyphen with a single hyphen.
-        value = value.replace(/^-+|-+$/g, ''); // Trim leading/trailing hyphens.
+        value = value.replace(/[^a-z0-9\s-]/g, '');
+        value = value.replace(/[\s_-]+/g, '-');
+        value = value.replace(/^-+|-+$/g, '');
         return value;
     }
 
@@ -661,7 +664,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const gpuStatsContainer = document.getElementById('gpu-stats-container');
     const gpuStatTemplate = document.getElementById('gpu-stat-template');
     function formatBytes(bytes, decimals = 2) { if (bytes === 0) return '0 Bytes'; const k = 1024; const dm = decimals < 0 ? 0 : decimals; const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']; const i = Math.floor(Math.log(bytes) / Math.log(k)); return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]; }
-    async function updateSystemStats() { try { const response = await fetch('/api/system/stats'); if (!response.ok) return; const stats = await response.json(); cpuProgress.style.width = `${stats.cpu_percent}%`; cpuPercentText.textContent = `${stats.cpu_percent.toFixed(1)}%`; ramProgress.style.width = `${stats.ram.percent}%`; ramUsageText.textContent = `${formatBytes(stats.ram.used)} / ${formatBytes(stats.ram.total)}`; gpuStatsContainer.innerHTML = ''; if (stats.gpus && stats.gpus.length > 0) { stats.gpus.forEach(gpu => { const gpuEl = gpuStatTemplate.content.cloneNode(true); gpuEl.querySelector('.gpu-name').textContent = `GPU ${gpu.id}: ${gpu.name}`; gpuEl.querySelector('.vram-progress').style.width = `${gpu.vram.percent}%`; gpuEl.querySelector('.vram-usage-text').textContent = `${formatBytes(gpu.vram.used)} / ${formatBytes(gpu.vram.total)}`; gpuEl.querySelector('.util-progress').style.width = `${gpu.utilization_percent}%`; gpuEl.querySelector('.util-percent-text').textContent = `${gpu.utilization_percent}%`; gpuStatsContainer.appendChild(gpuEl); }); } else { gpuStatsContainer.innerHTML = '<p style="text-align:center;color:#aaa;">No NVIDIA GPUs detected.</p>'; } } catch (error) { console.warn("Could not fetch system stats:", error); } } 
+    async function updateSystemStats() { try { const response = await fetch('/api/system/stats'); if (!response.ok) return; const stats = await response.json(); cpuProgress.style.width = `${stats.cpu_percent}%`; cpuPercentText.textContent = `${stats.cpu_percent.toFixed(1)}%`; ramProgress.style.width = `${stats.ram.percent}%`; ramUsageText.textContent = `${formatBytes(stats.ram.used)} / ${formatBytes(stats.ram.total)}`; gpuStatsContainer.innerHTML = ''; if (stats.gpus && stats.gpus.length > 0) { stats.gpus.forEach(gpu => { const gpuEl = gpuStatTemplate.content.cloneNode(true); gpuEl.querySelector('.gpu-name').textContent = `GPU ${gpu.id}: ${gpu.name}`; gpuEl.querySelector('.vram-progress').style.width = `${gpu.vram.percent}%`; gpuEl.querySelector('.vram-usage-text').textContent = `${formatBytes(gpu.vram.used)} / ${formatBytes(gpu.vram.total)}`; gpuEl.querySelector('.util-progress').style.width = `${gpu.utilization_percent}%`; gpuEl.querySelector('.util-percent-text').textContent = `${gpu.utilization_percent}%`; gpuStatsContainer.appendChild(gpuEl); }); } else { gpuStatsContainer.innerHTML = '<p style="text-align:center;color:#aaa;">No NVIDIA GPUs detected.</p>'; } } catch (error) { console.warn("Could not fetch system stats:", error); } }
 
     initializeApp();
 
@@ -698,6 +701,12 @@ document.addEventListener('DOMContentLoaded', () => {
         onDragEnd: function (sizes) {
             savedSizes.horizontal = sizes;
             localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes));
+        }
+    });
+
+    viewResizeObserver = new ResizeObserver(() => {
+        if (instanceIframe && instanceIframe.contentWindow) {
+            instanceIframe.contentWindow.dispatchEvent(new Event('resize'));
         }
     });
 

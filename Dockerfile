@@ -86,7 +86,8 @@ ENV HOME=/home/abc
 
 # --- CRITICAL REORDERING ---
 # Set final ownership of all key directories BEFORE switching to the user.
-RUN chown -R abc:abc /home/abc && \
+RUN mkdir -p /home/abc && \
+    chown -R abc:abc /home/abc && \
     chown -R abc:abc ${SD_INSTALL_DIR} && \
     chown -R abc:abc ${BASE_DIR} && \
     mkdir -p /run/aikore && \
