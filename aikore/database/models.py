@@ -1,6 +1,17 @@
 from sqlalchemy import Boolean, Column, Integer, String
 from .session import Base
 
+# NEW: Model for storing application metadata, such as schema version.
+class AikoreMeta(Base):
+    """
+    SQLAlchemy model for storing key-value metadata.
+    """
+    __tablename__ = "aikore_meta"
+
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String, nullable=False)
+
+
 class Instance(Base):
     """
     SQLAlchemy model representing a configurable WebUI instance.
@@ -13,6 +24,7 @@ class Instance(Base):
     gpu_ids = Column(String, nullable=True)
     autostart = Column(Boolean, default=False, nullable=False)
     persistent_mode = Column(Boolean, default=False, nullable=False)
+    hostname = Column(String, nullable=True) # Schema V2 field
     
     # Possible statuses: 'stopped', 'starting', 'stalled', 'started'
     status = Column(String, default="stopped", nullable=False)

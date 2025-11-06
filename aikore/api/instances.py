@@ -6,7 +6,8 @@ import shutil
 import asyncio
 import psutil
 import json
-from pydantic import BaseModel # NEW: Import BaseModel directly
+import subprocess # NEW
+from pydantic import BaseModel
 
 from ..database import crud
 from ..database.session import SessionLocal
@@ -19,12 +20,16 @@ class DeleteOptions(BaseModel):
     overwrite: bool = False
 
 router = APIRouter(
-    prefix="/api/instances",
+    prefix="/api", # UPDATED: Common prefix for system info
     tags=["Instances"]
 )
 
-class FileContent(BaseModel): # CORRECTED: Inherit from the imported BaseModel
+class FileContent(BaseModel):
     content: str
+
+# NEW: System Information Schema
+class SystemInfo(BaseModel):
+    gpu_count: int
 
 def get_db():
     db = SessionLocal()
@@ -40,7 +45,28 @@ def get_instance_file_path(db_instance):
     blueprint_file_path = os.path.join(BLUEPRINTS_DIR, base_script_name)
     return instance_file_path, blueprint_file_path
 
-@router.post("/", response_model=schemas.Instance)
+# NEW: Endpoint to provide system information like GPU count
+@router.get("/system/info", response_model=SystemInfo, tags=["System"])
+def get_system_info():
+    """
+    Provides general system information, such as the number of available GPUs.
+    """
+    gpu_count = 0
+    try:
+        # Using nvidia-smi to get the count of GPUs
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        gpu_count = int(result.stdout.strip())
+    except (FileNotFoundError, subprocess.CalledProcessError, ValueError):
+        # Handle cases where nvidia-smi is not found or fails
+        gpu_count = 0
+    return {"gpu_count": gpu_count}
+
+@router.post("/instances/", response_model=schemas.Instance)
 def create_new_instance(instance: schemas.InstanceCreate, db: Session = Depends(get_db)):
     db_instance = crud.get_instance_by_name(db, name=instance.name)
     if db_instance:
@@ -120,12 +146,46 @@ def create_new_instance(instance: schemas.InstanceCreate, db: Session = Depends(
         persistent_display=persistent_display
     )
 
-@router.get("/", response_model=List[schemas.Instance])
+@router.get("/instances/", response_model=List[schemas.Instance])
 def read_all_instances(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     instances = crud.get_instances(db, skip=skip, limit=limit)
     return instances
 
-@router.post("/{instance_id}/start", response_model=schemas.Instance, tags=["Instance Actions"])
+# NEW: Endpoint to update an instance's details
+@router.put("/instances/{instance_id}", response_model=schemas.Instance)
+def update_instance_details(
+    instance_id: int, 
+    instance_update: schemas.InstanceUpdate, 
+    db: Session = Depends(get_db)
+):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    
+    # Proactive check: Disallow updates on a running instance to prevent inconsistencies
+    if db_instance.status != "stopped":
+        raise HTTPException(status_code=400, detail="Instance must be stopped to be updated.")
+
+    # Check if the name is being changed and if the new name already exists
+    if instance_update.name and instance_update.name != db_instance.name:
+        existing_instance = crud.get_instance_by_name(db, name=instance_update.name)
+        if existing_instance:
+            raise HTTPException(status_code=400, detail="An instance with the new name already exists.")
+        # NOTE: Renaming the instance directory is a side-effect that needs careful handling.
+        # For now, we focus on DB change. Frontend should be aware.
+        # A more robust solution would handle the rename in a transaction.
+        try:
+            old_dir = os.path.join(INSTANCES_DIR, db_instance.name)
+            new_dir = os.path.join(INSTANCES_DIR, instance_update.name)
+            if os.path.isdir(old_dir):
+                os.rename(old_dir, new_dir)
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=f"Failed to rename instance directory: {e}")
+
+    updated_instance = crud.update_instance(db, instance_id, instance_update)
+    return updated_instance
+
+@router.post("/instances/{instance_id}/start", response_model=schemas.Instance, tags=["Instance Actions"])
 def start_instance(instance_id: int, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
@@ -143,7 +203,7 @@ def start_instance(instance_id: int, db: Session = Depends(get_db)):
         db.commit()
         raise HTTPException(status_code=500, detail=f"Failed to start instance: {str(e)}")
 
-@router.post("/{instance_id}/stop", response_model=schemas.Instance, tags=["Instance Actions"])
+@router.post("/instances/{instance_id}/stop", response_model=schemas.Instance, tags=["Instance Actions"])
 def stop_instance(instance_id: int, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
@@ -159,7 +219,7 @@ def stop_instance(instance_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stop instance: {str(e)}")
 
-@router.delete("/{instance_id}", status_code=200, tags=["Instance Actions"])
+@router.delete("/instances/{instance_id}", status_code=200, tags=["Instance Actions"])
 def delete_instance(instance_id: int, options: DeleteOptions, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
@@ -211,7 +271,7 @@ def delete_instance(instance_id: int, options: DeleteOptions, db: Session = Depe
 
     else:
         raise HTTPException(status_code=400, detail=f"Invalid delete mode: {options.mode}")
-@router.get("/{instance_id}/logs", tags=["Instance Actions"])
+@router.get("/instances/{instance_id}/logs", tags=["Instance Actions"])
 def get_instance_logs(
     instance_id: int, 
     db: Session = Depends(get_db),
@@ -243,7 +303,7 @@ def get_instance_logs(
         "size": size,
     }
 
-@router.get("/{instance_id}/file", response_model=FileContent, tags=["Instance Actions"])
+@router.get("/instances/{instance_id}/file", response_model=FileContent, tags=["Instance Actions"])
 def get_instance_file(instance_id: int, file_type: str, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
@@ -263,7 +323,7 @@ def get_instance_file(instance_id: int, file_type: str, db: Session = Depends(ge
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
         
-@router.put("/{instance_id}/file", status_code=200, tags=["Instance Actions"])
+@router.put("/instances/{instance_id}/file", status_code=200, tags=["Instance Actions"])
 def update_instance_file(instance_id: int, file_type: str, file_content: FileContent, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
@@ -281,7 +341,7 @@ def update_instance_file(instance_id: int, file_type: str, file_content: FileCon
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error writing file: {str(e)}")
 
-@router.websocket("/{instance_id}/terminal", name="Instance Terminal")
+@router.websocket("/instances/{instance_id}/terminal", name="Instance Terminal")
 async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:

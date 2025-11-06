@@ -7,12 +7,21 @@ class InstanceBase(BaseModel):
     base_blueprint: str
     gpu_ids: str | None = None
     autostart: bool = False
-    persistent_mode: bool = False # <-- VÉRIFIEZ CETTE LIGNE
+    persistent_mode: bool = False
+    hostname: str | None = None # NEW: Add hostname field
 
 # --- Creation Schema ---
 # Inherits from Base and is used specifically when creating a new instance via the API.
 class InstanceCreate(InstanceBase):
     port: int | None = None
+
+# --- Update Schema ---
+# Defines the fields that are allowed to be updated on an existing instance.
+class InstanceUpdate(BaseModel):
+    name: str | None = None
+    gpu_ids: str | None = None
+    autostart: bool | None = None
+    hostname: str | None = None
 
 # --- Read Schema ---
 # This schema is used when returning instance data from the API.

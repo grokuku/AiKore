@@ -68,6 +68,20 @@ def update_instance_status(
         db.refresh(db_instance)
     return db_instance
 
+# NEW: Function to update an instance's configurable fields
+def update_instance(db: Session, instance_id: int, instance_update: schemas.InstanceUpdate):
+    """
+    Update an instance's details in the database.
+    """
+    db_instance = db.query(models.Instance).filter(models.Instance.id == instance_id).first()
+    if db_instance:
+        update_data = instance_update.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_instance, key, value)
+        db.commit()
+        db.refresh(db_instance)
+    return db_instance
+
 def get_instance(db: Session, instance_id: int):
     """
     Retrieve a single instance by its ID.
