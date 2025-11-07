@@ -7,6 +7,8 @@ jobs:
   build_wheels:
     name: Build for SM_${{ matrix.arch }}
     runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04
     strategy:
       fail-fast: false # Ensures all jobs run even if one fails
       matrix:
@@ -17,15 +19,10 @@ jobs:
       - name: Set up build environment
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
       - name: Install Build Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build
+          apt-get update
+          apt-get install -y ninja-build python3-pip
           pip install wheel packaging
 
       - name: Install PyTorch for CUDA 13.0
