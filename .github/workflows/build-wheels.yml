@@ -1,0 +1,88 @@
+name: Build Performance Wheels
+
+on:
+  workflow_dispatch: # Allows manual triggering from the Actions tab
+
+jobs:
+  build_wheels:
+    name: Build for SM_${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Ensures all jobs run even if one fails
+      matrix:
+        # User-provided list of all target CUDA architectures.
+        arch: ["8.0", "8.6", "8.7", "8.9", "9.0", "9.0a", "10", "12"]
+    
+    steps:
+      - name: Set up build environment
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          pip install wheel
+
+      - name: Install PyTorch for CUDA 13.0
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+
+      - name: Build flash-attn for SM_${{ matrix.arch }}
+        env:
+          TORCH_CUDA_ARCH_LIST: ${{ matrix.arch }}
+        run: |
+          echo "Building flash-attn for SM_${{ matrix.arch }}"
+          git clone https://github.com/Dao-AILab/flash-attention.git
+          cd flash-attention
+          python setup.py bdist_wheel
+          cd ..
+          # Move wheel to a common directory
+          mkdir -p wheels
+          mv flash-attention/dist/*.whl wheels/
+
+      - name: Build xformers for SM_${{ matrix.arch }}
+        env:
+          TORCH_CUDA_ARCH_LIST: ${{ matrix.arch }}
+          XFORMERS_BUILD_TYPE: "Release"
+        run: |
+          echo "Building xformers for SM_${{ matrix.arch }}"
+          git clone https://github.com/facebookresearch/xformers.git
+          cd xformers
+          # xformers has submodules
+          git submodule update --init --recursive
+          python setup.py bdist_wheel
+          cd ..
+          mv xformers/dist/*.whl wheels/
+
+      - name: Upload Wheels as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sm-${{ matrix.arch }}
+          path: wheels/
+
+  publish_release:
+    name: Publish Wheels to Release
+    runs-on: ubuntu-latest
+    needs: build_wheels # This job runs after all matrix jobs are successful
+    
+    steps:
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-wheels/ # The final slash is important
+
+      - name: List downloaded files
+        run: ls -R all-wheels/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # This will create a release with a tag like 'wheels-build-123'
+          tag_name: wheels-build-${{ github.run_number }}
+          name: "Pre-compiled Wheels - Build ${{ github.run_number }}"
+          body: "Pre-compiled wheels for flash-attn and xformers for various architectures."
+          files: all-wheels/**/*.whl
