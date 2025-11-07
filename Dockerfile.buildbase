@@ -26,9 +26,8 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 
 # --- Python Packages ---
-# Uninstall any existing torch and install the correct nightly build for CUDA 13.0 to ensure a clean build environment.
+# Install the correct nightly build for CUDA 13.0 to ensure a clean build environment.
 RUN python3.12 -m pip install --no-cache-dir wheel packaging \
-    && python3.12 -m pip uninstall -y torch torchvision torchaudio \
     && python3.12 -m pip install --no-cache-dir --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu130 \
     && python3.12 -m pip install --no-cache-dir cython==0.29.37
 
