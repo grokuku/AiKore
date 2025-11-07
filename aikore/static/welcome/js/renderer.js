@@ -6,7 +6,7 @@ class Renderer {
 
         this.fontFamily = options.fontFamily || '"Courier New", Courier, monospace';
         this.charColor = options.charColor || '#e0e0e0';
-        
+
         this.particles = [];
         // init() is now called externally by the scene manager
     }
@@ -14,8 +14,14 @@ class Renderer {
     init() {
         // Set canvas dimensions
         const dpr = window.devicePixelRatio || 1;
-        this.canvas.width = this.canvas.offsetWidth * dpr;
-        this.canvas.height = this.canvas.offsetHeight * dpr;
+
+        // --- FIX ---
+        // Use Math.floor() to prevent fractional pixel values when calculating
+        // the canvas's bitmap size. This avoids rendering glitches and clipping
+        // on the right/bottom edges caused by browser rounding errors.
+        this.canvas.width = Math.floor(this.canvas.offsetWidth * dpr);
+        this.canvas.height = Math.floor(this.canvas.offsetHeight * dpr);
+
         this.ctx.scale(dpr, dpr);
 
         this.ctx.textAlign = 'center';
@@ -60,7 +66,8 @@ class Renderer {
                         y: startY + yIndex * charHeight,
                         originalY: startY + yIndex * charHeight, // For idle effect
                         originalX: startX + xIndex * charWidth, // For idle effect
-                        size: finalFontSize
+                        size: finalFontSize,
+                        cellWidth: charWidth // Store cell width for accurate background rendering
                     });
                 }
             }
@@ -78,14 +85,17 @@ class Renderer {
             // Draw pixel background
             this.ctx.globalAlpha = p.pixelAlpha;
             this.ctx.fillStyle = color;
-            this.ctx.fillRect(-p.size * 0.4, -p.size * 0.4, p.size * 0.8, p.size * 0.8);
+
+            const rectWidth = p.cellWidth * 0.8;
+            const rectHeight = p.size * 0.8;
+            this.ctx.fillRect(-rectWidth / 2, -rectHeight / 2, rectWidth, rectHeight);
 
             // Draw character
             this.ctx.globalAlpha = p.charAlpha;
             this.ctx.fillStyle = this.charColor;
             this.ctx.font = `${p.size}px ${this.fontFamily}`;
             this.ctx.fillText(p.char, 0, 0);
-            
+
             this.ctx.restore();
         });
 
