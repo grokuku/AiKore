@@ -26,7 +26,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build
-          pip install wheel
+          pip install wheel packaging
 
       - name: Install PyTorch for CUDA 13.0
         run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
