@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const instancesTbody = document.getElementById('instances-tbody');
     const addInstanceBtn = document.querySelector('.add-new-btn');
     let availableBlueprints = [];
+    let availablePorts = [];
     let systemInfo = { gpu_count: 0 };
 
     const toolsPaneTitle = document.getElementById('tools-pane-title');
@@ -101,6 +102,18 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error("Failed to fetch blueprints:", error);
             availableBlueprints = ["Error loading blueprints"];
+        }
+    }
+
+    async function fetchAvailablePorts() {
+        try {
+            const response = await fetch('/api/system/available-ports');
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
+            availablePorts = data.available_ports;
+        } catch (error) {
+            console.error("Failed to fetch available ports:", error);
+            availablePorts = [];
         }
     }
 
@@ -322,13 +335,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const portCell = row.insertCell();
         if (isNew) {
-            const portInput = document.createElement('input');
-            portInput.type = 'number';
-            portInput.placeholder = 'Auto';
-            portInput.dataset.field = 'port';
-            portInput.min = '1';
-            portInput.max = '65535';
-            portCell.appendChild(portInput);
+            const portSelect = document.createElement('select');
+            portSelect.dataset.field = 'port';
+
+            const autoOption = document.createElement('option');
+            autoOption.value = '';
+            autoOption.textContent = 'Auto';
+            portSelect.appendChild(autoOption);
+
+            availablePorts.forEach(port => {
+                const option = document.createElement('option');
+                option.value = port;
+                option.textContent = port;
+                portSelect.appendChild(option);
+            });
+            portCell.appendChild(portSelect);
         } else {
             const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
             portCell.textContent = displayPort || 'N/A';
@@ -438,13 +459,42 @@ document.addEventListener('DOMContentLoaded', () => {
         if (document.querySelector('tr[data-is-new="true"]')) return;
         const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
         if (noInstancesRow) noInstancesRow.remove();
-        const newInstance = { id: 'new', autostart: false, persistent_mode: false, status: 'stopped' };
+
+        // Fetch stats to find best GPU
+        let bestGpuId = null;
+        try {
+            const response = await fetch('/api/system/stats');
+            if (response.ok) {
+                const stats = await response.json();
+                if (stats.gpus && stats.gpus.length > 0) {
+                    let maxFreeVram = -1;
+                    stats.gpus.forEach(gpu => {
+                        const freeVram = gpu.vram.total - gpu.vram.used;
+                        if (freeVram > maxFreeVram) {
+                            maxFreeVram = freeVram;
+                            bestGpuId = gpu.id;
+                        }
+                    });
+                }
+            }
+        } catch (error) {
+            console.error("Could not fetch system stats for default GPU selection:", error);
+        }
+
+        const newInstance = {
+            id: 'new',
+            autostart: false,
+            persistent_mode: false,
+            status: 'stopped',
+            gpu_ids: bestGpuId !== null ? String(bestGpuId) : ''
+        };
+
         const newRow = renderInstanceRow(newInstance, true);
         instancesTbody.appendChild(newRow);
         newRow.querySelector('input[data-field="name"]').focus();
     }
 
-    addInstanceBtn.addEventListener('click', addNewInstanceRow);
+    addInstanceBtn.addEventListener('click', () => addNewInstanceRow());
 
     function exitEditor() {
         editorState = { instanceId: null, instanceName: null, fileType: null };
@@ -588,7 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await fetchAndRenderInstances();
             } catch (error) { alert(`Error: ${error.message}`); await fetchAndRenderInstances(); }
         } else if (action === 'save') {
-            const portValue = row.querySelector('input[data-field="port"]').value;
+            const portValue = row.querySelector('[data-field="port"]').value;
             const data = {
                 name: row.querySelector('input[data-field="name"]').value,
                 base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
@@ -718,6 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initializeApp() {
         await fetchSystemInfo();
         await fetchAndStoreBlueprints();
+        await fetchAvailablePorts();
         await fetchAndRenderInstances();
         updateSystemStats();
         showWelcomeScreen();

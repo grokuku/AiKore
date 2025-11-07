@@ -29,6 +29,20 @@ def get_available_blueprints():
         # In a real app, you'd want to log this error.
         return {"blueprints": [], "error": str(e)}
 
+@router.get("/info")
+def get_system_info():
+    """
+    Retrieves basic system information, like GPU count.
+    """
+    info = {}
+    try:
+        nvmlInit()
+        info["gpu_count"] = nvmlDeviceGetCount()
+        nvmlShutdown()
+    except NVMLError:
+        info["gpu_count"] = 0
+    return info
+
 @router.get("/stats")
 def get_system_stats():
     """
