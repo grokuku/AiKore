@@ -854,3 +854,35 @@ body {
 .gpu-checkbox-container input[type="checkbox"] {
     margin-right: 5px; /* Space between checkbox and number */
 }
+
+/* --- VERSION CHECK TOOL --- */
+#version-check-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 1rem;
+    box-sizing: border-box;
+    gap: 1rem; /* Space between the two boxes */
+}
+
+#version-check-container .terminal-style {
+    height: auto; /* Override the 100% height */
+    flex: 1; /* Make them share space equally */
+    display: flex; /* Use flex to make the pre/code fill the space */
+    flex-direction: column;
+    padding: 0; /* Remove padding from terminal-style itself */
+}
+
+#version-check-container .terminal-style h3 {
+    margin: 0 0 0.5rem 0;
+    padding: 0.5rem 1rem;
+    background-color: #252545;
+    border-bottom: 1px solid #3b3b6b;
+}
+
+#version-check-container .terminal-style pre {
+    flex: 1;
+    overflow: auto; /* Add scrolling to each pre block */
+    padding: 0.5rem 1rem;
+    background-color: #111;
+}

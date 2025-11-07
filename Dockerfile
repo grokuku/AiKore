@@ -5,13 +5,19 @@ FROM ghcr.io/grokuku/aikore-buildbase:latest
 # We add common utilities and a full build toolchain for runtime flexibility,
 # allowing blueprints or users to compile dependencies if needed.
 
-# --- Add Mozilla PPA to install Firefox without snap ---
-RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common && \
+# --- Add Mozilla PPA & NVIDIA CUDA Repo ---
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common wget gnupg && \
     add-apt-repository ppa:mozillateam/ppa && \
     printf "Package: firefox*\\nPin: release o=LP-PPA-mozillateam\\nPin-Priority: 1001\\n" > /etc/apt/preferences.d/mozilla-firefox && \
+    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
+    dpkg -i cuda-keyring_1.1-1_all.deb && \
+    rm cuda-keyring_1.1-1_all.deb && \
     apt-get update
 
+# --- Install All System Dependencies ---
 RUN apt-get install -y --no-install-recommends \
+    # CUDA Toolkit
+    cuda-toolkit-13-0 \
     # Core application tools
     rsync \
     dos2unix \
@@ -24,8 +30,6 @@ RUN apt-get install -y --no-install-recommends \
     git \
     # Common utility tools for debugging and scripting
     curl \
-    wget \
-    gnupg \
     mc \
     bc \
     nano \
@@ -66,6 +70,7 @@ ENV BASE_DIR=/config \
 ENV CC=/usr/bin/gcc-13
 ENV CXX=/usr/bin/g++-13
 ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12"
+ENV CUDA_HOME=/usr/local/cuda
 
 # --- Application Setup ---
 # Create application directories

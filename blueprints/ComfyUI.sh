@@ -61,7 +61,7 @@ clean_env "${VENV_DIR}"
 
 # Create the Conda environment if it doesn't exist
 if [ ! -d "${VENV_DIR}" ]; then
-    conda create -p "${VENV_DIR}" python=3.11 -y
+    conda create -p "${VENV_DIR}" python=3.12 -y
 fi
 
 # Activate the environment
@@ -71,19 +71,26 @@ source activate "${VENV_DIR}"
 echo "--- Installing dependencies ---"
 
 # 1. Install PyTorch first, as many packages depend on it for their build process.
-#    This is the recommended way for ComfyUI.
-pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
+#    We use a nightly build to ensure compatibility with the CUDA 13.x toolkit in the container.
+pip install --no-cache-dir --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu131
 
 # 2. Install dependencies from ComfyUI's requirements file.
 #    This ensures all versions are compatible as tested by the ComfyUI developers.
-pip install -r "${COMFYUI_DIR}/requirements.txt"
+pip install --no-cache-dir -r "${COMFYUI_DIR}/requirements.txt"
 
 # 3. Install dependencies for ComfyUI-Manager.
-pip install -r "${MANAGER_DIR}/requirements.txt"
+pip install --no-cache-dir -r "${MANAGER_DIR}/requirements.txt"
 
-# 4. Install custom user requirements if specified
+# 4. Install additional performance and utility libraries
+echo "--- Installing additional libraries (xformers, flash-attn, etc.) ---"
+# Install packages that require --no-build-isolation because they depend on torch being present for their setup.
+pip install --no-cache-dir --no-build-isolation --no-deps flash-attn xformers
+# Install other packages
+pip install --no-cache-dir sage-attention bitsandbytes peft opencv-python
+
+# 5. Install custom user requirements if specified
 if [ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then
-    pip install -r "${INSTANCE_CONF_DIR}/requirements.txt"
+    pip install --no-cache-dir -r "${INSTANCE_CONF_DIR}/requirements.txt"
 fi
 
 echo "--- Dependency installation complete ---"

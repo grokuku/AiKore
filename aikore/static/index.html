@@ -83,6 +83,18 @@
                         <div id="terminal-view-container" class="hidden">
                             <div id="terminal-content"></div>
                         </div>
+
+                        <!-- NEW: Container for the Version Check tool (hidden by default) -->
+                        <div id="version-check-container" class="hidden">
+                            <div class="terminal-style">
+                                <h3>Version Information</h3>
+                                <pre><code id="version-check-versions-area"></code></pre>
+                            </div>
+                            <div class="terminal-style" style="margin-top: 20px;">
+                                <h3>Dependency Conflicts</h3>
+                                <pre><code id="version-check-conflicts-area"></code></pre>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <!-- Colonne de droite : Monitoring -->
@@ -148,6 +160,7 @@
     <div id="tools-context-menu" class="context-menu">
         <button class="context-item" data-action="terminal">Terminal</button>
         <button class="context-item" data-action="script">Edit Script</button>
+        <button class="context-item" data-action="version-check">Versions Check</button>
         <button class="context-item" data-action="clone" disabled>Clone</button>
         <button class="context-item" data-action="instantiate" disabled>Instantiate</button>
         <button class="context-item" data-action="output_viewer" disabled>Output Viewer</button>

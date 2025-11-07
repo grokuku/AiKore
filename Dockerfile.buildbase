@@ -26,19 +26,15 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 
 # --- Python Packages ---
-# Using the exact PyTorch version you specified
+# Uninstall any existing torch and install the correct nightly build for CUDA 13.0 to ensure a clean build environment.
 RUN python3.12 -m pip install --no-cache-dir wheel packaging \
-    && python3.12 -m pip install --no-cache-dir torch==2.9.0 torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cu130 \
+    && python3.12 -m pip uninstall -y torch torchvision torchaudio \
+    && python3.12 -m pip install --no-cache-dir --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu130 \
     && python3.12 -m pip install --no-cache-dir cython==0.29.37
 
 # --- Wheel Compilation ---
-
-# flash-attention
-#RUN git clone https://github.com/Dao-AILab/flash-attention --recurse-submodules \
-#    && cd flash-attention \
-#    && python3.12 setup.py bdist_wheel \
-#    && cp dist/*.whl /build/
+# Pre-compile performance libraries to speed up runtime installation.
+RUN python3.12 -m pip wheel --no-cache-dir --wheel-dir=/build --no-build-isolation flash-attn xformers
 
 # diso
 RUN git clone https://github.com/SarahWeiii/diso --recurse-submodules \

@@ -219,6 +219,30 @@ def stop_instance(instance_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stop instance: {str(e)}")
 
+@router.post("/instances/{instance_id}/version-check", tags=["Instance Actions"])
+def version_check(instance_id: int, db: Session = Depends(get_db)):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    # The version check can run whether the instance is running or not,
+    # as long as the environment exists.
+
+    try:
+        output = process_manager.run_version_check(instance=db_instance)
+        
+        parts = output.split("---AIKORE-SEPARATOR---", 1)
+        versions = parts[0].strip()
+        conflicts = parts[1].strip() if len(parts) > 1 else "No conflict check output."
+        
+        # Check if pip check found issues. "No broken requirements found." is the success message.
+        if "No broken requirements found." in conflicts:
+            conflicts = "No dependency conflicts found."
+
+        return {"versions": versions, "conflicts": conflicts}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to run version check: {str(e)}")
+
 @router.delete("/instances/{instance_id}", status_code=200, tags=["Instance Actions"])
 def delete_instance(instance_id: int, options: DeleteOptions, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)

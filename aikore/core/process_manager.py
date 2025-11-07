@@ -340,3 +340,46 @@ def stop_instance_process(db: Session, instance: models.Instance):
     instance.pid = None
     db.commit()
     print(f"[Manager] Instance {instance.name} stopped and cleaned up.")
+
+
+def run_version_check(instance: models.Instance) -> str:
+    """
+    Runs the version check script within the instance's environment.
+    """
+    instance_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
+    metadata = parse_blueprint_metadata(instance.base_blueprint)
+    
+    venv_type = metadata.get('venv_type')
+    venv_path = metadata.get('venv_path')
+    
+    script_path = os.path.join(SCRIPTS_DIR, "version_check.sh")
+    command = ['/bin/bash', script_path] # Default command
+
+    if venv_type and venv_path:
+        full_venv_path = os.path.join(instance_conf_dir, venv_path)
+        if venv_type == 'conda' and os.path.isdir(full_venv_path):
+            # Command to activate conda env and then run the script
+            activate_and_run_cmd = f"source /home/abc/miniconda3/bin/activate {full_venv_path} && bash {script_path}"
+            command = ['/bin/bash', '-c', activate_and_run_cmd]
+        elif venv_type == 'python' and os.path.exists(os.path.join(full_venv_path, 'bin', 'activate')):
+            # For standard python venv, we can source it in a subshell
+            activate_and_run_cmd = f"source {os.path.join(full_venv_path, 'bin', 'activate')} && bash {script_path}"
+            command = ['/bin/bash', '-c', activate_and_run_cmd]
+
+    try:
+        result = subprocess.run(
+            command,
+            cwd=instance_conf_dir,
+            capture_output=True,
+            text=True,
+            timeout=120 # 120-second timeout for safety
+        )
+        if result.returncode != 0:
+            # Combine stdout and stderr for better error diagnosis
+            error_output = f"Error running version check:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+            return error_output
+        return result.stdout
+    except subprocess.TimeoutExpired:
+        return "Error: The version check script timed out."
+    except Exception as e:
+        return f"An unexpected error occurred while running version check: {e}"

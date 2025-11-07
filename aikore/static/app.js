@@ -18,6 +18,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const instanceIframe = document.getElementById('instance-iframe');
     const terminalViewContainer = document.getElementById('terminal-view-container');
     const terminalContent = document.getElementById('terminal-content');
+    const versionCheckContainer = document.getElementById('version-check-container');
+    const versionCheckVersionsArea = document.getElementById('version-check-versions-area');
+    const versionCheckConflictsArea = document.getElementById('version-check-conflicts-area');
     const toolsCloseBtn = document.getElementById('tools-close-btn');
 
     const toolsContextMenu = document.getElementById('tools-context-menu');
@@ -63,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         editorContainer.classList.add('hidden');
         instanceViewContainer.classList.add('hidden');
         terminalViewContainer.classList.add('hidden');
+        versionCheckContainer.classList.add('hidden');
         toolsCloseBtn.classList.add('hidden');
 
         instanceIframe.src = 'about:blank';
@@ -72,6 +76,37 @@ document.addEventListener('DOMContentLoaded', () => {
         closeTerminal();
         if (viewResizeObserver) {
             viewResizeObserver.disconnect();
+        }
+    }
+
+    async function showVersionCheckView(instanceId, instanceName) {
+        hideAllToolViews();
+        versionCheckContainer.classList.remove('hidden');
+        toolsCloseBtn.classList.remove('hidden');
+        toolsPaneTitle.textContent = `Versions Check: ${instanceName}`;
+
+        versionCheckVersionsArea.textContent = 'Running version checks...';
+        versionCheckConflictsArea.textContent = 'Running dependency checks...';
+
+        try {
+            const response = await fetch(`/api/instances/${instanceId}/version-check`, {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            versionCheckVersionsArea.textContent = data.versions;
+            versionCheckConflictsArea.textContent = data.conflicts;
+
+        } catch (error) {
+            const errorMessage = `[ERROR] Could not perform version check: ${error.message}`;
+            versionCheckVersionsArea.textContent = errorMessage;
+            versionCheckConflictsArea.textContent = '';
+            console.error(errorMessage);
         }
     }
 
@@ -723,6 +758,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 openEditor(currentMenuInstance.id, currentMenuInstance.name, 'script');
             } else if (action === 'terminal') {
                 openTerminal(currentMenuInstance.id, currentMenuInstance.name);
+            } else if (action === 'version-check') {
+                showVersionCheckView(currentMenuInstance.id, currentMenuInstance.name);
             }
         }
         hideToolsMenu();
