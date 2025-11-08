@@ -29,8 +29,8 @@ jobs:
             -e MAX_JOBS=8 \
             nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 \
             sh -c '
-              set -e
-              
+              set -ex
+
               echo "--- Installing Build Dependencies ---"
               apt-get update
               apt-get install -y ninja-build python3-pip git
@@ -44,7 +44,18 @@ jobs:
               cd xformers
               git submodule update --init --recursive
               python3 setup.py bdist_wheel
-              mv dist/*.whl /output_wheels/
+
+              echo "--- Build finished. Listing current directory and dist/: ---"
+              pwd
+              ls -lR
+
+              echo "--- Attempting to move wheel file... ---"
+              # Find the wheel file and move it. This is more robust than a simple glob.
+              find dist -type f -name "*.whl" -exec mv {} /output_wheels/ \;
+
+              echo "--- Listing contents of output directory: ---"
+              ls -lR /output_wheels/
+              
               cd ..
             '
       

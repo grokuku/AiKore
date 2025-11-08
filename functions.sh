@@ -46,14 +46,20 @@ sl_folder() {
     echo "------------------------------------------------"
 }
 
-clean_env()     {
-if [ "$active_clean" = "1" ]; then
-    echo "-------------------------------------"
-    echo "Cleaning venv"
-    rm -rf ${1}
-    echo "Done!"
-    echo -e "-------------------------------------\n"
-fi
+clean_env() {
+    local venv_dir="$1"
+    # The venv_dir is typically '${INSTANCE_CONF_DIR}/env'. We want the parent.
+    local conf_dir=$(dirname "$venv_dir")
+    local trigger_file="${conf_dir}/.rebuild-env"
+
+    if [ -f "$trigger_file" ]; then
+        echo "-------------------------------------"
+        echo "Rebuild trigger found. Cleaning environment at ${venv_dir}..."
+        rm -rf "$venv_dir"
+        rm -f "$trigger_file" # Consume the trigger file
+        echo "Environment cleaned."
+        echo -e "-------------------------------------\n"
+    fi
 }
 
 # Fonction pour mettre à jour un dépôt Git vers une référence spécifique

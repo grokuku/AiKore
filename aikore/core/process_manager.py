@@ -214,6 +214,35 @@ def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, in
 
 # --- PROCESS MANAGEMENT INTERFACE ---
 
+def rebuild_instance_env(db: Session, instance: models.Instance):
+    """
+    Triggers a rebuild of the instance's Conda environment.
+    Stops the instance, creates a trigger file, and restarts it.
+    """
+    print(f"[Manager] Rebuild requested for instance {instance.name} (ID: {instance.id}).")
+
+    # 1. Stop the instance if it's running
+    if instance.status != "stopped":
+        print(f"[Manager] Stopping instance {instance.name} before rebuild...")
+        stop_instance_process(db, instance)
+        # Refresh instance object after stopping
+        db.refresh(instance) 
+        print(f"[Manager] Instance {instance.name} stopped.")
+
+    # 2. Create the trigger file
+    instance_conf_dir = Path(INSTANCES_DIR) / instance.name
+    rebuild_trigger_file = instance_conf_dir / ".rebuild-env"
+    try:
+        rebuild_trigger_file.touch()
+        print(f"[Manager] Created rebuild trigger file: {rebuild_trigger_file}")
+    except Exception as e:
+        raise Exception(f"Failed to create rebuild trigger file for {instance.name}: {e}")
+
+    # 3. Restart the instance
+    print(f"[Manager] Restarting instance {instance.name} to trigger environment rebuild...")
+    start_instance_process(db, instance)
+    print(f"[Manager] Instance {instance.name} restarted. Environment rebuild will occur on next blueprint execution.")
+
 def start_instance_process(db: Session, instance: models.Instance):
     """
     Starts the instance process and its associated monitoring thread.

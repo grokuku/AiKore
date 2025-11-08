@@ -185,6 +185,19 @@ def update_instance_details(
     updated_instance = crud.update_instance(db, instance_id, instance_update)
     return updated_instance
 
+@router.post("/instances/{instance_id}/rebuild", response_model=schemas.Instance, tags=["Instance Actions"])
+def rebuild_instance_environment(instance_id: int, db: Session = Depends(get_db)):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+    
+    try:
+        process_manager.rebuild_instance_env(db=db, instance=db_instance)
+        # The process manager handles status updates, so we just return the instance
+        return db_instance
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to rebuild instance environment: {str(e)}")
+
 @router.post("/instances/{instance_id}/start", response_model=schemas.Instance, tags=["Instance Actions"])
 def start_instance(instance_id: int, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)

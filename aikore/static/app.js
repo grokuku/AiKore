@@ -760,6 +760,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 openTerminal(currentMenuInstance.id, currentMenuInstance.name);
             } else if (action === 'version-check') {
                 showVersionCheckView(currentMenuInstance.id, currentMenuInstance.name);
+            } else if (action === 'rebuild-env') {
+                if (confirm(`Are you sure you want to rebuild the environment for instance "${currentMenuInstance.name}"?\n\nThis will stop the instance, delete its virtual environment, and reinstall all dependencies (which can take a long time).`)) {
+                    try {
+                        const response = await fetch(`/api/instances/${currentMenuInstance.id}/rebuild`, { method: 'POST' });
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+                        }
+                        alert(`Environment rebuild initiated for "${currentMenuInstance.name}". The instance will restart shortly.`);
+                        fetchAndRenderInstances(); // Refresh instance list to show status change
+                    } catch (error) {
+                        alert(`Error initiating environment rebuild: ${error.message}`);
+                    }
+                }
             }
         }
         hideToolsMenu();
