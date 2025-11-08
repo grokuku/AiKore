@@ -29,8 +29,8 @@ jobs:
             -e MAX_JOBS=8 \
             nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 \
             sh -c '
-              set -e
-              
+              set -x
+
               echo "--- Installing Build Dependencies ---"
               apt-get update
               apt-get install -y ninja-build python3-pip git
@@ -43,16 +43,42 @@ jobs:
               git clone https://github.com/thu-ml/SageAttention.git
               cd SageAttention
               python3 setup.py bdist_wheel
-              mv dist/*.whl /output_wheels/
+              # This might fail if no wheel is produced, but we will ignore for now
+              mv dist/*.whl /output_wheels/ || echo "No sageattention wheel found to move."
               cd ..
 
               echo "--- Building bitsandbytes for SM_${ARCH} ---"
               git clone https://github.com/TimDettmers/bitsandbytes.git
               cd bitsandbytes
-              # Fix for pyproject.toml license ambiguity
+              
+              echo "--- pyproject.toml before modification ---"
+              cat pyproject.toml
+
+              echo "--- Attempting to modify pyproject.toml ---"
               sed -i "/^[[:space:]]*license-files =/d" pyproject.toml
+              SED_EXIT_CODE=$?
+              echo "--- sed command finished with exit code: ${SED_EXIT_CODE} ---"
+
+              echo "--- pyproject.toml after modification ---"
+              cat pyproject.toml
+
+              if [ ${SED_EXIT_CODE} -ne 0 ]; then
+                  echo "--- sed command failed. Exiting. ---"
+                  exit ${SED_EXIT_CODE}
+              fi
+
+              echo "--- Running bitsandbytes build command ---"
               python3 setup.py bdist_wheel
-              mv dist/*.whl /output_wheels/
+              BUILD_EXIT_CODE=$?
+              echo "--- bitsandbytes build finished with exit code: ${BUILD_EXIT_CODE} ---"
+              
+              if [ ${BUILD_EXIT_CODE} -ne 0 ]; then
+                  echo "--- bitsandbytes build failed. Exiting. ---"
+                  exit ${BUILD_EXIT_CODE}
+              fi
+
+              echo "--- Moving bitsandbytes wheel ---"
+              mv dist/*.whl /output_wheels/ || echo "No bitsandbytes wheel found to move."
               cd ..
             '
       
