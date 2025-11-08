@@ -7,57 +7,53 @@ jobs:
   build_wheels:
     name: Build for SM_${{ matrix.arch }}
     runs-on: self-hosted
-    container:
-      image: nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04
-      options: --security-opt seccomp=unconfined
     strategy:
-      fail-fast: false # Ensures all jobs run even if one fails
+      fail-fast: false
       matrix:
-        # User-provided list of all target CUDA architectures.
         arch: ["8.0", "8.6", "8.7", "8.9", "9.0", "9.0a", "10", "12"]
     
     steps:
-      - name: Set up build environment
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Build Dependencies
-        run: |
-          apt-get update
-          apt-get install -y ninja-build python3-pip git
-          pip install --break-system-packages wheel packaging
+      - name: Create wheels directory on host
+        run: mkdir -p wheels
 
-      - name: Install PyTorch for CUDA 13.0
-        run: pip install --break-system-packages torch torchvision --index-url https://download.pytorch.org/whl/cu130
-
-      - name: Build flash-attn for SM_${{ matrix.arch }}
+      - name: Build wheels in Docker
         env:
-          TORCH_CUDA_ARCH_LIST: ${{ matrix.arch }}
-          MAX_JOBS: "8"
+          ARCH: ${{ matrix.arch }}
         run: |
-          echo "Building flash-attn for SM_${{ matrix.arch }}"
-          git clone https://github.com/Dao-AILab/flash-attention.git
-          cd flash-attention
-          python3 setup.py bdist_wheel
-          cd ..
-          # Move wheel to a common directory
-          mkdir -p wheels
-          mv flash-attention/dist/*.whl wheels/
-
-      - name: Build xformers for SM_${{ matrix.arch }}
-        env:
-          TORCH_CUDA_ARCH_LIST: ${{ matrix.arch }}
-          XFORMERS_BUILD_TYPE: "Release"
-          MAX_JOBS: "8"
-        run: |
-          echo "Building xformers for SM_${{ matrix.arch }}"
-          git clone https://github.com/facebookresearch/xformers.git
-          cd xformers
-          # xformers has submodules
-          git submodule update --init --recursive
-          python3 setup.py bdist_wheel
-          cd ..
-          mv xformers/dist/*.whl wheels/
-
+          docker run --rm --gpus all \
+            -v "${{ github.workspace }}/wheels":/output_wheels \
+            -e TORCH_CUDA_ARCH_LIST=${ARCH} \
+            -e MAX_JOBS=8 \
+            nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 \
+            sh -c '
+              set -e
+              
+              echo "--- Installing Build Dependencies ---"
+              apt-get update
+              apt-get install -y ninja-build python3-pip git
+              pip install --break-system-packages wheel packaging
+              
+              echo "--- Installing PyTorch ---"
+              pip install --break-system-packages torch torchvision --index-url https://download.pytorch.org/whl/cu130
+              
+              echo "--- Building flash-attn for SM_${ARCH} ---"
+              git clone https://github.com/Dao-AILab/flash-attention.git
+              cd flash-attention
+              python3 setup.py bdist_wheel
+              mv dist/*.whl /output_wheels/
+              cd ..
+              
+              echo "--- Building xformers for SM_${ARCH} ---"
+              git clone https://github.com/facebookresearch/xformers.git
+              cd xformers
+              git submodule update --init --recursive
+              python3 setup.py bdist_wheel
+              mv dist/*.whl /output_wheels/
+            '
+      
       - name: Upload Wheels as Artifact
         uses: actions/upload-artifact@v4
         with:
