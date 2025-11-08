@@ -1,30 +1,30 @@
-name: Build Performance Wheels
+name: Build xformers Wheel
 
 on:
   workflow_dispatch: # Allows manual triggering from the Actions tab
 
 jobs:
-  build_wheels:
-    name: Build for SM_${{ matrix.arch }}
+  build_xformers_wheel:
+    name: Build xformers for SM_${{ matrix.arch }}
     runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
-        arch: ["8.0", "8.6", "8.7", "8.9", "9.0", "9.0a", "10", "12"]
+        arch: ["8.0", "8.6", "8.7", "8.9", "9.0", "9.0a", "10"]
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Create wheels directory on host
-        run: mkdir -p wheels
+        run: mkdir -p wheels_xformers
 
-      - name: Build wheels in Docker
+      - name: Build wheel in Docker
         env:
           ARCH: ${{ matrix.arch }}
         run: |
           docker run --rm --gpus all \
-            -v "${{ github.workspace }}/wheels":/output_wheels \
+            -v "${{ github.workspace }}/wheels_xformers":/output_wheels \
             -e TORCH_CUDA_ARCH_LIST=${ARCH} \
             -e MAX_JOBS=8 \
             nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 \
@@ -39,18 +39,10 @@ jobs:
               echo "--- Installing PyTorch ---"
               pip install --break-system-packages torch torchvision --index-url https://download.pytorch.org/whl/cu130
               
-              echo "--- Building sageattention for SM_${ARCH} ---"
-              git clone https://github.com/thu-ml/SageAttention.git
-              cd SageAttention
-              python3 setup.py bdist_wheel
-              mv dist/*.whl /output_wheels/
-              cd ..
-
-              echo "--- Building bitsandbytes for SM_${ARCH} ---"
-              git clone https://github.com/TimDettmers/bitsandbytes.git
-              cd bitsandbytes
-              # Fix for pyproject.toml license ambiguity
-              sed -i "/^[[:space:]]*license =/d" pyproject.toml
+              echo "--- Building xformers for SM_${ARCH} ---"
+              git clone https://github.com/facebookresearch/xformers.git
+              cd xformers
+              git submodule update --init --recursive
               python3 setup.py bdist_wheel
               mv dist/*.whl /output_wheels/
               cd ..
@@ -59,28 +51,27 @@ jobs:
       - name: Upload Wheels as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-sm-${{ matrix.arch }}
-          path: wheels/
+          name: xformers-wheel-sm-${{ matrix.arch }}
+          path: wheels_xformers/
 
-  publish_release:
-    name: Publish Wheels to Release
+  publish_xformers_release:
+    name: Publish xformers Wheel to Release
     runs-on: ubuntu-latest
-    needs: build_wheels # This job runs after all matrix jobs are successful
+    needs: build_xformers_wheel
     
     steps:
       - name: Download all wheel artifacts
         uses: actions/download-artifact@v4
         with:
-          path: all-wheels/ # The final slash is important
+          path: all-xformers-wheels/
 
       - name: List downloaded files
-        run: ls -R all-wheels/
+        run: ls -R all-xformers-wheels/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # This will create a release with a tag like 'wheels-build-123'
-          tag_name: wheels-build-${{ github.run_number }}
-          name: "Pre-compiled Wheels - Build ${{ github.run_number }}"
-          body: "Pre-compiled wheels for sageattention and bitsandbytes for various architectures."
-          files: all-wheels/**/*.whl
+          tag_name: xformers-wheels-build-${{ github.run_number }}
+          name: "Pre-compiled xformers Wheels - Build ${{ github.run_number }}"
+          body: "Pre-compiled wheels for xformers for various architectures (up to SM_10)."
+          files: all-xformers-wheels/**/*.whl
