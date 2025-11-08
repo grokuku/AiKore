@@ -54,17 +54,26 @@ jobs:
               echo "--- pyproject.toml before modification ---"
               cat pyproject.toml
 
-              echo "--- Attempting to modify pyproject.toml ---"
-              sed -i "/^[[:space:]]*license-files =/d" pyproject.toml
-              SED_EXIT_CODE=$?
-              echo "--- sed command finished with exit code: ${SED_EXIT_CODE} ---"
+              echo "--- Attempting to modify pyproject.toml using grep/mv ---"
+              # Create a temporary file
+              TMP_FILE=$(mktemp)
+              # Filter out the line and write to temp file
+              grep -v 'license-files = \["LICENSE"\]' pyproject.toml > "$TMP_FILE"
+              GREP_EXIT_CODE=$?
+              echo "--- grep command finished with exit code: ${GREP_EXIT_CODE} ---"
 
-              echo "--- pyproject.toml after modification ---"
-              cat pyproject.toml
+              # Replace original file with modified temp file
+              mv "$TMP_FILE" pyproject.toml
+              MV_EXIT_CODE=$?
+              echo "--- mv command finished with exit code: ${MV_EXIT_CODE} ---"
 
-              if [ ${SED_EXIT_CODE} -ne 0 ]; then
-                  echo "--- sed command failed. Exiting. ---"
-                  exit ${SED_EXIT_CODE}
+              if [ ${GREP_EXIT_CODE} -ne 0 ] && [ ${GREP_EXIT_CODE} -ne 1 ]; then # grep -v returns 1 if no lines are selected
+                  echo "--- grep command failed. Exiting. ---"
+                  exit ${GREP_EXIT_CODE}
+              fi
+              if [ ${MV_EXIT_CODE} -ne 0 ]; then
+                  echo "--- mv command failed. Exiting. ---"
+                  exit ${MV_EXIT_CODE}
               fi
 
               echo "--- Running bitsandbytes build command ---"
