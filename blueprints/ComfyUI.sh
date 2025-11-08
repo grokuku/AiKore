@@ -86,7 +86,7 @@ echo "--- Installing additional libraries (xformers, flash-attn, etc.) ---"
 # Install packages that require --no-build-isolation because they depend on torch being present for their setup.
 pip install --no-cache-dir --no-build-isolation --no-deps flash-attn xformers
 # Install other packages
-pip install --no-cache-dir sage-attention bitsandbytes peft opencv-python
+pip install --no-cache-dir sage-attention bitsandbytes peft opencv-python nunchaku
 
 # 5. Install custom user requirements if specified
 if [ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then

@@ -34,7 +34,7 @@ jobs:
               echo "--- Installing Build Dependencies ---"
               apt-get update
               apt-get install -y ninja-build python3-pip git
-              pip install --break-system-packages wheel packaging
+              pip install --break-system-packages wheel packaging scikit-build-core
               
               echo "--- Installing PyTorch ---"
               pip install --break-system-packages torch torchvision --index-url https://download.pytorch.org/whl/cu130
@@ -52,6 +52,21 @@ jobs:
               git submodule update --init --recursive
               python3 setup.py bdist_wheel
               mv dist/*.whl /output_wheels/
+              cd ..
+
+              echo "--- Building sageattention for SM_${ARCH} ---"
+              git clone https://github.com/thu-ml/SageAttention.git
+              cd SageAttention
+              python3 setup.py bdist_wheel
+              mv dist/*.whl /output_wheels/
+              cd ..
+
+              echo "--- Building bitsandbytes for SM_${ARCH} ---"
+              git clone https://github.com/TimDettmers/bitsandbytes.git
+              cd bitsandbytes
+              python3 setup.py bdist_wheel
+              mv dist/*.whl /output_wheels/
+              cd ..
             '
       
       - name: Upload Wheels as Artifact
