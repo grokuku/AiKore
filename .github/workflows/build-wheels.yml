@@ -6,7 +6,7 @@ on:
 jobs:
   build_wheels:
     name: Build for SM_${{ matrix.arch }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     container:
       image: nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04
     strategy:
