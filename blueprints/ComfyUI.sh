@@ -72,25 +72,26 @@ echo "--- Installing dependencies ---"
 
 # 1. Install PyTorch first, as many packages depend on it for their build process.
 #    We use a nightly build to ensure compatibility with the CUDA 13.x toolkit in the container.
-pip install --no-cache-dir --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu131
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu131
 
 # 2. Install dependencies from ComfyUI's requirements file.
 #    This ensures all versions are compatible as tested by the ComfyUI developers.
-pip install --no-cache-dir -r "${COMFYUI_DIR}/requirements.txt"
+pip install -r "${COMFYUI_DIR}/requirements.txt"
 
 # 3. Install dependencies for ComfyUI-Manager.
-pip install --no-cache-dir -r "${MANAGER_DIR}/requirements.txt"
+pip install -r "${MANAGER_DIR}/requirements.txt"
 
-# 4. Install additional performance and utility libraries
-echo "--- Installing additional libraries (xformers, flash-attn, etc.) ---"
-# Install packages that require --no-build-isolation because they depend on torch being present for their setup.
-pip install --no-cache-dir --no-build-isolation --no-deps flash-attn xformers
-# Install other packages
-pip install --no-cache-dir sage-attention bitsandbytes peft opencv-python nunchaku
+# 4. Install pre-built performance and utility libraries from wheels
+echo "--- Installing pre-built performance libraries from wheels ---"
+# The wheels are copied into /wheels/ by the Dockerfile
+pip install /wheels/*.whl
 
-# 5. Install custom user requirements if specified
+# 5. Install other packages
+pip install peft opencv-python nunchaku
+
+# 6. Install custom user requirements if specified
 if [ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then
-    pip install --no-cache-dir -r "${INSTANCE_CONF_DIR}/requirements.txt"
+    pip install -r "${INSTANCE_CONF_DIR}/requirements.txt"
 fi
 
 echo "--- Dependency installation complete ---"
