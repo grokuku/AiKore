@@ -22,7 +22,7 @@ jobs:
       - name: Install Build Dependencies
         run: |
           apt-get update
-          apt-get install -y ninja-build python3-pip
+          apt-get install -y ninja-build python3-pip git
           pip install --break-system-packages wheel packaging
 
       - name: Install PyTorch for CUDA 13.0
