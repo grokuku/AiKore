@@ -35,7 +35,7 @@ jobs:
           echo "Building flash-attn for SM_${{ matrix.arch }}"
           git clone https://github.com/Dao-AILab/flash-attention.git
           cd flash-attention
-          python setup.py bdist_wheel
+          python3 setup.py bdist_wheel
           cd ..
           # Move wheel to a common directory
           mkdir -p wheels
@@ -51,7 +51,7 @@ jobs:
           cd xformers
           # xformers has submodules
           git submodule update --init --recursive
-          python setup.py bdist_wheel
+          python3 setup.py bdist_wheel
           cd ..
           mv xformers/dist/*.whl wheels/
 
