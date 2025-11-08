@@ -50,7 +50,7 @@ jobs:
               git clone https://github.com/TimDettmers/bitsandbytes.git
               cd bitsandbytes
               # Fix for pyproject.toml license ambiguity
-              sed -i "/^[[:space:]]*license =/d" pyproject.toml
+              sed -i "/^[[:space:]]*license-files =/d" pyproject.toml
               python3 setup.py bdist_wheel
               mv dist/*.whl /output_wheels/
               cd ..
