@@ -45,9 +45,8 @@ jobs:
               git submodule update --init --recursive
               python3 setup.py bdist_wheel
 
-              echo "--- Build finished. Listing current directory and dist/: ---"
-              pwd
-              ls -lR
+              echo "--- Build finished. Listing contents of dist/ directory: ---"
+              ls -lR dist/
 
               echo "--- Attempting to move wheel file... ---"
               # Find the wheel file and move it. This is more robust than a simple glob.
