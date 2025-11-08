@@ -12,8 +12,8 @@ jobs:
     strategy:
       fail-fast: false # Ensures all jobs run even if one fails
       matrix:
-        # User-provided list of all target CUDA architectures.
-        arch: ["8.0", "8.6", "8.7", "8.9", "9.0", "9.0a", "10", "12"]
+        # Temporarily reduced to a single architecture for debugging resource limits.
+        arch: ["8.6"]
     
     steps:
       - name: Set up build environment
@@ -31,6 +31,7 @@ jobs:
       - name: Build flash-attn for SM_${{ matrix.arch }}
         env:
           TORCH_CUDA_ARCH_LIST: ${{ matrix.arch }}
+          MAX_JOBS: "1"
         run: |
           echo "Building flash-attn for SM_${{ matrix.arch }}"
           git clone https://github.com/Dao-AILab/flash-attention.git
@@ -45,6 +46,7 @@ jobs:
         env:
           TORCH_CUDA_ARCH_LIST: ${{ matrix.arch }}
           XFORMERS_BUILD_TYPE: "Release"
+          MAX_JOBS: "1"
         run: |
           echo "Building xformers for SM_${{ matrix.arch }}"
           git clone https://github.com/facebookresearch/xformers.git
