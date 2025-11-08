@@ -23,10 +23,10 @@ jobs:
         run: |
           apt-get update
           apt-get install -y ninja-build python3-pip
-          pip install wheel packaging
+          pip install --break-system-packages wheel packaging
 
       - name: Install PyTorch for CUDA 13.0
-        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+        run: pip install --break-system-packages torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
       - name: Build flash-attn for SM_${{ matrix.arch }}
         env:
