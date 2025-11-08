@@ -23,38 +23,47 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          docker run --rm --gpus all \
-            -v "${{ github.workspace }}/wheels":/output_wheels \
-            -e TORCH_CUDA_ARCH_LIST=${ARCH} \
-            -e MAX_JOBS=8 \
-            nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 \
-            sh -c '
-              set -ex
+          set -ex
 
-              echo "--- Installing Build Dependencies ---"
-              apt-get update
-              apt-get install -y ninja-build python3-pip git
-              pip install --break-system-packages wheel packaging scikit-build-core
-              
-              echo "--- Installing PyTorch ---"
-              pip install --break-system-packages torch torchvision --index-url https://download.pytorch.org/whl/cu130
-              
-              echo "--- Building sageattention for SM_${ARCH} ---"
-              git clone https://github.com/thu-ml/SageAttention.git
-              cd SageAttention
-              python3 setup.py bdist_wheel
-              mv dist/*.whl /output_wheels/ || echo "No sageattention wheel found to move."
-              cd ..
+          echo "--- Installing Build Dependencies ---"
+          apt-get update
+          apt-get install -y ninja-build python3-pip git
+          pip install --break-system-packages wheel packaging scikit-build-core
+          
+          echo "--- Installing PyTorch ---"
+          pip install --break-system-packages torch torchvision --index-url https://download.pytorch.org/whl/cu130
+          
+          # --- Building sageattention ---
+          echo "--- Building sageattention for SM_${ARCH} ---"
+          git clone https://github.com/thu-ml/SageAttention.git || { echo "Failed to clone SageAttention"; exit 1; }
+          cd SageAttention
+          python3 setup.py bdist_wheel
+          BUILD_SA_EXIT_CODE=$?
+          if [ ${BUILD_SA_EXIT_CODE} -ne 0 ]; then
+              echo "--- SageAttention build failed with exit code: ${BUILD_SA_EXIT_CODE}. Continuing to next build if possible. ---"
+          else
+              SA_WHEEL=$(find dist -name "*.whl" -print -quit)
+              if [ -n "$SA_WHEEL" ]; then
+                  echo "--- Moving SageAttention wheel: $SA_WHEEL ---"
+                  mv "$SA_WHEEL" /output_wheels/
+              else
+                  echo "--- No SageAttention wheel found in dist/. ---"
+              fi
+          fi
+          cd .. || { echo "Failed to change directory back from SageAttention"; exit 1; }
 
-              echo "--- Building bitsandbytes for SM_${ARCH} ---"
-              git clone https://github.com/TimDettmers/bitsandbytes.git
-              cd bitsandbytes
-              
-              echo "--- pyproject.toml before modification ---"
-              cat pyproject.toml
 
-              echo "--- Attempting to modify pyproject.toml using Python ---"
-              python3 -c "
+          # --- Building bitsandbytes ---
+          echo "--- Building bitsandbytes for SM_${ARCH} ---"
+          git clone https://github.com/TimDettmers/bitsandbytes.git || { echo "Failed to clone bitsandbytes"; exit 1; }
+          cd bitsandbytes
+          
+          echo "--- pyproject.toml before modification ---"
+          cat pyproject.toml
+
+          echo "--- Attempting to modify pyproject.toml using Python script directly ---"
+          # Using python3 -c to execute the script directly, avoiding YAML here-document issues.
+          python3 -c "
 import sys
 with open('pyproject.toml', 'r') as f:
     lines = f.readlines()
@@ -63,31 +72,35 @@ with open('pyproject.toml', 'w') as f:
         if 'license-files' not in line:
             f.write(line)
 "
-              PYTHON_EXIT_CODE=$?
-              echo "--- Python script finished with exit code: ${PYTHON_EXIT_CODE} ---"
+          PYTHON_EXIT_CODE=$?
+          echo "--- Python script finished with exit code: ${PYTHON_EXIT_CODE} ---"
 
-              if [ ${PYTHON_EXIT_CODE} -ne 0 ]; then
-                  echo "--- Python script failed. Exiting. ---"
-                  exit ${PYTHON_EXIT_CODE}
+          if [ ${PYTHON_EXIT_CODE} -ne 0 ]; then
+              echo "--- Python script failed. Exiting bitsandbytes build. ---"
+              exit ${PYTHON_EXIT_CODE}
+          fi
+
+          echo "--- pyproject.toml after modification ---"
+          cat pyproject.toml
+
+          echo "--- Running bitsandbytes build command ---"
+          python3 setup.py bdist_wheel
+          BUILD_BNB_EXIT_CODE=$?
+          echo "--- bitsandbytes build finished with exit code: ${BUILD_BNB_EXIT_CODE} ---"
+          
+          if [ ${BUILD_BNB_EXIT_CODE} -ne 0 ]; then
+              echo "--- bitsandbytes build failed with exit code: ${BUILD_BNB_EXIT_CODE}. ---"
+              exit ${BUILD_BNB_EXIT_CODE} # Exit if bitsandbytes fails, as it's critical
+          else
+              BNB_WHEEL=$(find dist -name "*.whl" -print -quit)
+              if [ -n "$BNB_WHEEL" ]; then
+                  echo "--- Moving bitsandbytes wheel: $BNB_WHEEL ---"
+                  mv "$BNB_WHEEL" /output_wheels/
+              else
+                  echo "--- No bitsandbytes wheel found in dist/. ---"
               fi
-
-              echo "--- pyproject.toml after modification ---"
-              cat pyproject.toml
-
-              echo "--- Running bitsandbytes build command ---"
-              python3 setup.py bdist_wheel
-              BUILD_EXIT_CODE=$?
-              echo "--- bitsandbytes build finished with exit code: ${BUILD_EXIT_CODE} ---"
-              
-              if [ ${BUILD_EXIT_CODE} -ne 0 ]; then
-                  echo "--- bitsandbytes build failed. Exiting. ---"
-                  exit ${BUILD_EXIT_CODE}
-              fi
-
-              echo "--- Moving bitsandbytes wheel ---"
-              mv dist/*.whl /output_wheels/ || echo "No bitsandbytes wheel found to move."
-              cd ..
-            '
+          fi
+          cd .. || { echo "Failed to change directory back from bitsandbytes"; exit 1; }
       
       - name: Upload Wheels as Artifact
         uses: actions/upload-artifact@v4
@@ -98,13 +111,13 @@ with open('pyproject.toml', 'w') as f:
   publish_release:
     name: Publish Wheels to Release
     runs-on: ubuntu-latest
-    needs: build_wheels # This job runs after all matrix jobs are successful
+    needs: build_wheels
     
     steps:
       - name: Download all wheel artifacts
         uses: actions/download-artifact@v4
         with:
-          path: all-wheels/ # The final slash is important
+          path: all-wheels/
 
       - name: List downloaded files
         run: ls -R all-wheels/
@@ -112,7 +125,6 @@ with open('pyproject.toml', 'w') as f:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          # This will create a release with a tag like 'wheels-build-123'
           tag_name: wheels-build-${{ github.run_number }}
           name: "Pre-compiled Wheels - Build ${{ github.run_number }}"
           body: "Pre-compiled wheels for sageattention and bitsandbytes for various architectures."

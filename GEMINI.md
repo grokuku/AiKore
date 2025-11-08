@@ -30,3 +30,40 @@
                 - Removed `vglrun` from the Openbox launch command.
                 - Ensured absolute paths (`/usr/bin/` for audio and Python) are used for system commands to prevent `PATH` conflicts.
     - **Next Step:** User to rebuild Docker images and test with a new persistent instance.
+- **Wheel Building Workflows Debugging Session (2025-11-08):**
+    - **Objective:** Fix multiple failing pre-compiled wheel build workflows.
+    - **Issue 1: `bitsandbytes` Build Failure:**
+        - **Initial Error:** `ValueError: invalid pyproject.toml config: project.license` with "2 matches found", indicating both `license` and `license-files` keys were present.
+        - **Troubleshooting:**
+            - Attempted to remove the `license` key via `sed`, which led to a new error: `project must not contain {'license-files'} properties`.
+            - Attempted to remove the `license-files` key via `sed`, which resulted in the original "2 matches found" error, indicating the `sed` command was failing silently.
+            - Added aggressive debugging (manual exit code checks, `cat`ing the file). Confirmed `sed` and `grep` commands were not working as expected inside the `sh -c` block.
+        - **Final Fix:** Replaced the shell-based file modification with a robust inline Python script (created via a `here-document` to avoid YAML syntax errors) that reads `pyproject.toml`, filters out the `license-files` line, and rewrites the file.
+    - **Issue 2: `xformers` Build Failure:**
+        - **Initial Error:** `AssertionError: Invalid sm version: 12`.
+        - **Actions Taken:**
+            - The `xformers` build was moved to a dedicated workflow file: `build-xformers-wheel.yml`.
+            - The architecture matrix was limited to stop at `10`, but this also failed (`Invalid sm version: 10`).
+            - The matrix was further limited to stop at `9.0a`.
+            - At the user's request to speed up iterations, `actions/cache` was implemented for the `xformers/build` directory to cache intermediate build files.
+    - **Issue 3: Long Build Times:**
+        - To speed up the main `build-wheels.yml` workflow, `flash-attention` was also moved to its own dedicated workflow file: `build-flash-attn-wheel.yml`.
+    - **Side Task: "Rebuild Environment" Feature:**
+        - **Goal:** Add a UI button to trigger a Conda environment reinstall for an instance.
+        - **Backend:**
+            - Modified `functions.sh`: `clean_env` now checks for a `.rebuild-env` trigger file, which it deletes after cleaning the environment.
+            - Modified `aikore/core/process_manager.py`: Added a `rebuild_instance_env` function that stops the instance, creates the trigger file, and restarts the instance.
+            - Modified `aikore/api/instances.py`: Added a `POST /api/instances/{id}/rebuild` endpoint.
+        - **Frontend:**
+            - Modified `aikore/static/index.html`: Added a "Rebuild Environment" button to the tools menu.
+            - Modified `aikore/static/app.js`: Implemented the click handler, confirmation dialog, and API call for the new button.
+- **Current State & Next Steps:**
+    - The `build-wheels.yml` workflow has been updated with the Python script fix for `bitsandbytes`.
+    - The `build-xformers-wheel.yml` workflow has been updated with caching and a limited architecture matrix.
+    - The `build-flash-attn-wheel.yml` workflow is ready for its first run.
+    - The "Rebuild Environment" feature is fully coded.
+    - **Next actions for the user:**
+        1. Run `build-wheels.yml` to test the `bitsandbytes` fix.
+        2. Run `build-xformers-wheel.yml` to test the architecture and caching fix.
+        3. Run `build-flash-attn-wheel.yml`.
+        4. Rebuild the main AiKore Docker image and test the "Rebuild Environment" button.
