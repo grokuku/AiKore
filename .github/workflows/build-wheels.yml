@@ -29,7 +29,7 @@ jobs:
             -e MAX_JOBS=8 \
             nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 \
             sh -c '
-              set -x
+              set -ex
 
               echo "--- Installing Build Dependencies ---"
               apt-get update
@@ -43,7 +43,6 @@ jobs:
               git clone https://github.com/thu-ml/SageAttention.git
               cd SageAttention
               python3 setup.py bdist_wheel
-              # This might fail if no wheel is produced, but we will ignore for now
               mv dist/*.whl /output_wheels/ || echo "No sageattention wheel found to move."
               cd ..
 
@@ -54,27 +53,26 @@ jobs:
               echo "--- pyproject.toml before modification ---"
               cat pyproject.toml
 
-              echo "--- Attempting to modify pyproject.toml using grep/mv ---"
-              # Create a temporary file
-              TMP_FILE=$(mktemp)
-              # Filter out the line and write to temp file
-              grep -v 'license-files = \["LICENSE"\]' pyproject.toml > "$TMP_FILE"
-              GREP_EXIT_CODE=$?
-              echo "--- grep command finished with exit code: ${GREP_EXIT_CODE} ---"
+              echo "--- Attempting to modify pyproject.toml using Python ---"
+              python3 -c "
+import sys
+with open('pyproject.toml', 'r') as f:
+    lines = f.readlines()
+with open('pyproject.toml', 'w') as f:
+    for line in lines:
+        if 'license-files' not in line:
+            f.write(line)
+"
+              PYTHON_EXIT_CODE=$?
+              echo "--- Python script finished with exit code: ${PYTHON_EXIT_CODE} ---"
 
-              # Replace original file with modified temp file
-              mv "$TMP_FILE" pyproject.toml
-              MV_EXIT_CODE=$?
-              echo "--- mv command finished with exit code: ${MV_EXIT_CODE} ---"
+              if [ ${PYTHON_EXIT_CODE} -ne 0 ]; then
+                  echo "--- Python script failed. Exiting. ---"
+                  exit ${PYTHON_EXIT_CODE}
+              fi
 
-              if [ ${GREP_EXIT_CODE} -ne 0 ] && [ ${GREP_EXIT_CODE} -ne 1 ]; then # grep -v returns 1 if no lines are selected
-                  echo "--- grep command failed. Exiting. ---"
-                  exit ${GREP_EXIT_CODE}
-              fi
-              if [ ${MV_EXIT_CODE} -ne 0 ]; then
-                  echo "--- mv command failed. Exiting. ---"
-                  exit ${MV_EXIT_CODE}
-              fi
+              echo "--- pyproject.toml after modification ---"
+              cat pyproject.toml
 
               echo "--- Running bitsandbytes build command ---"
               python3 setup.py bdist_wheel
