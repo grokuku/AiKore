@@ -28,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteModal = document.getElementById('delete-modal');
     const overwriteModal = document.getElementById('overwrite-modal');
     const rebuildModal = document.getElementById('rebuild-modal');
+    const restartConfirmModal = document.getElementById('restart-confirm-modal');
     const saveBlueprintModal = document.getElementById('save-blueprint-modal');
     const blueprintFilenameInput = document.getElementById('blueprint-filename-input');
 
@@ -579,22 +580,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function updateInstanceScript() {
+    async function updateInstanceScript(restart = false) {
         if (!editorState.instanceId || !editorState.fileType) return;
         const content = codeEditor.getValue();
         editorUpdateBtn.textContent = 'Updating...';
         editorUpdateBtn.disabled = true;
         try {
-            const response = await fetch(`/api/instances/${editorState.instanceId}/file?file_type=${editorState.fileType}`, {
+            const response = await fetch(`/api/instances/${editorState.instanceId}/file?file_type=${editorState.fileType}&restart=${restart}`, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
             });
             if (!response.ok) throw new Error((await response.json()).detail || 'Failed to save file.');
-            showToast('Instance script updated successfully.', 'success');
+            
+            if (restart) {
+                showToast('Instance script updated. Restarting instance...', 'success');
+                exitEditor(); // Close editor and go back to welcome screen
+            } else {
+                showToast('Instance script updated successfully.', 'success');
+            }
         } catch (error) {
             showToast(`Error updating script: ${error.message}`, 'error');
         } finally {
             editorUpdateBtn.textContent = 'Update Instance';
             editorUpdateBtn.disabled = false;
+            hideAllModals();
         }
     }
 
@@ -649,13 +657,26 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTerminalSocket.onerror = (error) => { currentTerminal.write('\r\n\x1b[31m[ERROR]\x1b[0m\r\n'); };
     }
 
-    editorUpdateBtn.addEventListener('click', updateInstanceScript);
+    editorUpdateBtn.addEventListener('click', () => {
+        const row = instancesTbody.querySelector(`tr[data-id="${editorState.instanceId}"]`);
+        if (!row) {
+            showToast('Could not find instance data. Please refresh.', 'error');
+            return;
+        }
+        const status = row.dataset.status;
+        const instanceName = row.dataset.name;
+
+        if (status !== 'stopped') {
+            document.getElementById('restart-modal-instance-name').textContent = instanceName;
+            restartConfirmModal.classList.remove('hidden');
+        } else {
+            updateInstanceScript(false);
+        }
+    });
 
     function showToolsMenu(buttonEl) {
         const row = buttonEl.closest('tr');
         const status = row.dataset.status;
-        const isStopped = status === 'stopped';
-        toolsContextMenu.querySelector('[data-action="script"]').disabled = !isStopped;
         const rect = buttonEl.getBoundingClientRect();
         toolsContextMenu.style.display = 'block';
         toolsContextMenu.style.left = `${rect.left}px`;
@@ -672,6 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
         deleteModal.classList.add('hidden');
         overwriteModal.classList.add('hidden');
         rebuildModal.classList.add('hidden');
+        restartConfirmModal.classList.add('hidden');
         saveBlueprintModal.classList.add('hidden');
         instanceToDeleteId = null;
         instanceToRebuild = null;
@@ -895,6 +917,15 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (error) {
                 showToast(error.message, 'error');
             }
+        }
+    });
+
+    restartConfirmModal.addEventListener('click', (e) => {
+        const action = e.target.id;
+        if (action === 'restart-btn-cancel') {
+            hideAllModals();
+        } else if (action === 'restart-btn-confirm') {
+            updateInstanceScript(true);
         }
     });
 

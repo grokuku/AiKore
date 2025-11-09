@@ -221,6 +221,19 @@
         </div>
     </div>
 
+    <!-- NEW: Modal for Restart Confirmation -->
+    <div id="restart-confirm-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Instance Restart Required</h2>
+            <p>To apply these script changes, the instance '<span id="restart-modal-instance-name"></span>' must be restarted.</p>
+            <p>Do you want to save and restart?</p>
+            <div class="modal-actions">
+                <button id="restart-btn-confirm" class="action-btn success-btn">Save & Restart</button>
+                <button id="restart-btn-cancel" class="action-btn danger-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- NEW: Modal for Save As Custom Blueprint -->
     <div id="save-blueprint-modal" class="modal-overlay hidden">
         <div class="modal-content">

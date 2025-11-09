@@ -370,7 +370,7 @@ def get_instance_file(instance_id: int, file_type: str, db: Session = Depends(ge
         raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
         
 @router.put("/instances/{instance_id}/file", status_code=200, tags=["Instance Actions"])
-def update_instance_file(instance_id: int, file_type: str, file_content: FileContent, db: Session = Depends(get_db)):
+def update_instance_file(instance_id: int, file_type: str, file_content: FileContent, restart: bool = False, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
         raise HTTPException(status_code=404, detail="Instance not found")
@@ -383,6 +383,26 @@ def update_instance_file(instance_id: int, file_type: str, file_content: FileCon
         os.makedirs(os.path.dirname(instance_file_path), exist_ok=True)
         with open(instance_file_path, 'w', encoding='utf-8') as f:
             f.write(file_content.content)
+        
+        # --- NEW: Restart logic ---
+        if restart and db_instance.status != "stopped":
+            try:
+                print(f"[API] Restarting instance {db_instance.name} after script update.")
+                # Stop the process. This updates status to 'stopped' in the DB.
+                process_manager.stop_instance_process(db=db, instance=db_instance)
+                
+                # The instance object in memory might be stale after stopping.
+                # Refresh it to get the latest state before starting again.
+                db.refresh(db_instance)
+
+                # Start the process again. This will update status to 'starting'.
+                process_manager.start_instance_process(db=db, instance=db_instance)
+                print(f"[API] Instance {db_instance.name} restart initiated.")
+            except Exception as e:
+                # Log the error but don't fail the request, as the file was saved.
+                # The UI will reflect that the instance is stopped or stalled.
+                print(f"[API-ERROR] Failed to auto-restart instance {db_instance.name} after script update: {e}")
+
         return {"ok": True, "detail": "File updated successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error writing file: {str(e)}")

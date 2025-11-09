@@ -33,7 +33,7 @@ NGINX_RELOAD_FLAG = Path("/run/aikore/nginx_reload.flag")
 # Timeout in seconds before an instance is marked as 'stalled'
 STALLED_TIMEOUT = 180
 # How often the monitor thread checks the web port
-MONITOR_POLL_INTERVAL = 2
+MONITOR_POLL_INTERVAL = 1
 
 # --- GLOBAL STATE ---
 # In-memory dictionary to keep track of running processes and their monitor threads
