@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     const instancesTbody = document.getElementById('instances-tbody');
     const addInstanceBtn = document.querySelector('.add-new-btn');
-    let availableBlueprints = [];
+    let availableBlueprints = { stock: [], custom: [] };
     let availablePorts = [];
     let systemInfo = { gpu_count: 0 };
 
@@ -11,9 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const logViewerContainer = document.getElementById('log-viewer-container');
     const logContentArea = document.getElementById('log-content-area');
     const editorContainer = document.getElementById('editor-container');
-    const fileEditorTextarea = document.getElementById('file-editor-textarea');
-    const editorSaveBtn = document.getElementById('editor-save-btn');
-    const editorExitBtn = document.getElementById('editor-exit-btn');
+    const editorUpdateBtn = document.getElementById('editor-update-btn');
+    const editorSaveCustomBtn = document.getElementById('editor-save-custom-btn');
     const instanceViewContainer = document.getElementById('instance-view-container');
     const instanceIframe = document.getElementById('instance-iframe');
     const terminalViewContainer = document.getElementById('terminal-view-container');
@@ -29,6 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const deleteModal = document.getElementById('delete-modal');
     const overwriteModal = document.getElementById('overwrite-modal');
     const rebuildModal = document.getElementById('rebuild-modal');
+    const saveBlueprintModal = document.getElementById('save-blueprint-modal');
+    const blueprintFilenameInput = document.getElementById('blueprint-filename-input');
+
     let instanceToDeleteId = null;
     let instanceToRebuild = null;
 
@@ -40,8 +42,10 @@ document.addEventListener('DOMContentLoaded', () => {
         instanceId: null,
         instanceName: null,
         fileType: null,
+        baseBlueprint: null,
     };
 
+    let codeEditor = null;
     let currentTerminal = null;
     let currentTerminalSocket = null;
     let fitAddon = null;
@@ -50,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let viewResizeObserver = null;
 
-    // NEW: Toast notification function
     function showToast(message, type = 'success') {
         const toastContainer = document.getElementById('toast-container');
         if (!toastContainer) return;
@@ -61,17 +64,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         toastContainer.appendChild(toast);
 
-        // Trigger the animation
         setTimeout(() => {
             toast.classList.add('show');
         }, 10);
 
-        // Set timers to remove the toast
         setTimeout(() => {
             toast.classList.remove('show');
-            // Remove the element from the DOM after the fade-out animation completes
             toast.addEventListener('transitionend', () => toast.remove());
-        }, 3000); // Toast visible for 3 seconds
+        }, 3000);
     }
 
     function closeTerminal() {
@@ -159,10 +159,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/api/system/blueprints');
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            availableBlueprints = data.blueprints;
+            availableBlueprints = data;
         } catch (error) {
             console.error("Failed to fetch blueprints:", error);
-            availableBlueprints = ["Error loading blueprints"];
+            availableBlueprints = { stock: ["Error loading blueprints"], custom: [] };
         }
     }
 
@@ -182,19 +182,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const select = document.createElement('select');
         select.dataset.field = 'base_blueprint';
         select.required = true;
+
         const defaultOption = document.createElement('option');
         defaultOption.value = '';
         defaultOption.textContent = 'Select a blueprint';
         defaultOption.disabled = true;
         select.appendChild(defaultOption);
         if (!selectedValue) defaultOption.selected = true;
-        availableBlueprints.forEach(bp => {
-            const option = document.createElement('option');
-            option.value = bp;
-            option.textContent = bp;
-            if (bp === selectedValue) option.selected = true;
-            select.appendChild(option);
-        });
+
+        if (availableBlueprints.stock && availableBlueprints.stock.length > 0) {
+            const stockGroup = document.createElement('optgroup');
+            stockGroup.label = 'Stock';
+            availableBlueprints.stock.forEach(bp => {
+                const option = document.createElement('option');
+                option.value = bp;
+                option.textContent = bp;
+                if (bp === selectedValue) option.selected = true;
+                stockGroup.appendChild(option);
+            });
+            select.appendChild(stockGroup);
+        }
+
+        if (availableBlueprints.custom && availableBlueprints.custom.length > 0) {
+            const customGroup = document.createElement('optgroup');
+            customGroup.label = 'Custom';
+            availableBlueprints.custom.forEach(bp => {
+                const option = document.createElement('option');
+                option.value = bp;
+                option.textContent = bp;
+                if (bp === selectedValue) option.selected = true;
+                customGroup.appendChild(option);
+            });
+            select.appendChild(customGroup);
+        }
+
         return select;
     }
 
@@ -203,14 +224,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!updateButton) return;
 
         const nameField = row.querySelector('input[data-field="name"]');
+        const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
         const autostartField = row.querySelector('input[data-field="autostart"]');
         const hostnameField = row.querySelector('input[data-field="hostname"]');
         const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
-
         const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
 
         let changed = false;
         if (nameField.value !== row.dataset.originalName) changed = true;
+        if (blueprintField && blueprintField.value !== row.dataset.originalBlueprint) changed = true;
         if (selectedGpuIds !== row.dataset.originalGpuIds) changed = true;
         if (autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
         if ((hostnameField.value || '') !== (row.dataset.originalHostname || '')) changed = true;
@@ -226,26 +248,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const useCustomHostname = row.dataset.useCustomHostname === 'true';
         const customHostname = row.dataset.hostname;
         const isPersistent = row.dataset.persistentMode === 'true';
-        const port = isPersistent ? row.dataset.persistentPort : row.dataset.port;
-
-        let baseUrl = '';
-        if (useCustomHostname && customHostname) {
-            baseUrl = customHostname.startsWith('http') ? customHostname : `http://${customHostname}`;
-        } else {
-            baseUrl = `${window.location.protocol}//${window.location.hostname}:${port}`;
-        }
 
         if (isPersistent) {
+            const port = row.dataset.persistentPort;
+            const baseUrl = `${window.location.protocol}//${window.location.hostname}:${port}`;
             return forView ? `${baseUrl}/vnc.html?resize=remote` : baseUrl;
-        } else {
-            return baseUrl;
         }
+
+        if (useCustomHostname && customHostname) {
+            return customHostname.startsWith('http') ? customHostname : `http://${customHostname}`;
+        }
+
+        const instanceSlug = row.dataset.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+        return `/instance/${instanceSlug}/`;
     }
 
     function updateInstanceRow(row, instance) {
-        const isStarted = instance.status === 'started';
-        const isStopped = instance.status === 'stopped';
-        const isActive = !isStopped;
+        const isActive = instance.status !== 'stopped';
 
         row.dataset.status = instance.status;
         row.dataset.port = instance.port || '';
@@ -259,29 +278,23 @@ document.addEventListener('DOMContentLoaded', () => {
         statusSpan.textContent = instance.status;
         statusSpan.className = `status status-${instance.status.toLowerCase()}`;
 
-        const useHostnameCheckbox = row.querySelector('[data-field="use_custom_hostname"]');
-        if (useHostnameCheckbox) useHostnameCheckbox.checked = instance.use_custom_hostname;
-
-        const hostnameInput = row.querySelector('[data-field="hostname"]');
-        if (hostnameInput) {
-            hostnameInput.value = instance.hostname || '';
-        }
-
         const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
         row.cells[8].textContent = displayPort || 'N/A';
 
         row.querySelector('[data-action="start"]').disabled = isActive;
-        row.querySelector('[data-action="stop"]').disabled = isStopped;
+        row.querySelector('[data-action="stop"]').disabled = !isActive;
         row.querySelector('[data-action="delete"]').disabled = isActive;
 
         const openButton = row.querySelector('[data-action="open"]');
         const viewButton = row.querySelector('[data-action="view"]');
-
         const openHref = buildInstanceUrl(row, false);
 
         openButton.href = openHref;
         openButton.classList.toggle('disabled', openHref === '#');
-        viewButton.disabled = !isStarted;
+        viewButton.disabled = (instance.status !== 'started');
+
+        row.querySelector('input[data-field="name"]').disabled = isActive;
+        row.querySelector('select[data-field="base_blueprint"]').disabled = isActive;
 
         checkRowForChanges(row);
     }
@@ -307,9 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.hostname = instance.hostname || '';
         row.dataset.useCustomHostname = String(instance.use_custom_hostname);
 
-        const isStarted = instance.status === 'started';
-        const isStopped = instance.status === 'stopped';
-        const isActive = !isStopped;
+        const isActive = instance.status !== 'stopped';
 
         const handleCell = row.insertCell();
         if (!isNew) {
@@ -326,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
         row.insertCell().appendChild(nameInput);
 
         const blueprintSelect = createBlueprintSelect(instance.base_blueprint);
-        blueprintSelect.disabled = !isNew;
+        blueprintSelect.disabled = !isNew && isActive;
         row.insertCell().appendChild(blueprintSelect);
 
         const gpuCell = row.insertCell();
@@ -339,16 +350,12 @@ document.addEventListener('DOMContentLoaded', () => {
             checkbox.type = 'checkbox';
             checkbox.name = `gpu_id_${instance.id || 'new'}_${i}`;
             checkbox.value = i;
-            if (assignedGpus.includes(String(i))) {
-                checkbox.checked = true;
-            }
+            if (assignedGpus.includes(String(i))) checkbox.checked = true;
             label.appendChild(checkbox);
             label.appendChild(document.createTextNode(` ${i}`));
             gpuContainer.appendChild(label);
         }
-        if (systemInfo.gpu_count === 0) {
-            gpuContainer.textContent = 'N/A';
-        }
+        if (systemInfo.gpu_count === 0) gpuContainer.textContent = 'N/A';
         gpuCell.appendChild(gpuContainer);
 
         const autostartCheckbox = document.createElement('input');
@@ -361,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
         persistentModeCheckbox.type = 'checkbox';
         persistentModeCheckbox.checked = instance.persistent_mode;
         persistentModeCheckbox.dataset.field = 'persistent_mode';
-        persistentModeCheckbox.disabled = !isNew;
+        persistentModeCheckbox.disabled = !isNew && isActive;
         row.insertCell().appendChild(persistentModeCheckbox);
 
         row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
@@ -369,27 +376,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const hostnameCell = row.insertCell();
         const hostnameContainer = document.createElement('div');
         hostnameContainer.className = 'hostname-container';
-
         const useHostnameLabel = document.createElement('label');
         useHostnameLabel.className = 'switch-label';
-        
         const useHostnameCheckbox = document.createElement('input');
         useHostnameCheckbox.type = 'checkbox';
         useHostnameCheckbox.checked = instance.use_custom_hostname;
         useHostnameCheckbox.dataset.field = 'use_custom_hostname';
-        
         const switchSpan = document.createElement('span');
         switchSpan.className = 'switch';
-
         useHostnameLabel.appendChild(useHostnameCheckbox);
         useHostnameLabel.appendChild(switchSpan);
-
         const hostnameInput = document.createElement('input');
         hostnameInput.type = 'text';
         hostnameInput.value = instance.hostname || '';
         hostnameInput.placeholder = 'e.g., my-app.local';
         hostnameInput.dataset.field = 'hostname';
-
         hostnameContainer.appendChild(useHostnameLabel);
         hostnameContainer.appendChild(hostnameInput);
         hostnameCell.appendChild(hostnameContainer);
@@ -398,12 +399,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isNew) {
             const portSelect = document.createElement('select');
             portSelect.dataset.field = 'port';
-
             const autoOption = document.createElement('option');
             autoOption.value = '';
             autoOption.textContent = 'Auto';
             portSelect.appendChild(autoOption);
-
             availablePorts.forEach(port => {
                 const option = document.createElement('option');
                 option.value = port;
@@ -422,22 +421,20 @@ document.addEventListener('DOMContentLoaded', () => {
             actionsCell.innerHTML = `
                 <button class="action-btn" data-action="save" data-id="new" disabled>Save</button>
                 <button class="action-btn" data-action="cancel_new">Cancel</button>
-                <!-- Empty buttons for alignment -->
-                <span class="action-btn-placeholder"></span>
-                <span class="action-btn-placeholder"></span>
-                <span class="action-btn-placeholder"></span>
-                <span class="action-btn-placeholder"></span>
-                <span class="action-btn-placeholder"></span>
-                <span class="action-btn-placeholder"></span>`;
+                <span class="action-btn-placeholder"></span><span class="action-btn-placeholder"></span>
+                <span class="action-btn-placeholder"></span><span class="action-btn-placeholder"></span>
+                <span class="action-btn-placeholder"></span><span class="action-btn-placeholder"></span>`;
         } else {
             const openHref = buildInstanceUrl(row, false);
+            const isStarted = instance.status === 'started';
+            const isStopped = instance.status === 'stopped';
             actionsCell.innerHTML = `
-                <button class="action-btn" data-action="start" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Start</button>
+                <button class="action-btn" data-action="start" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>Start</button>
                 <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
                 <button class="action-btn" data-action="logs" data-id="${instance.id}">Logs</button>
                 <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">Tools</button>
                 <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
-                <button class="action-btn" data-action="delete" data-id="${instance.id}" ${isActive ? 'disabled' : ''}>Delete</button>
+                <button class="action-btn" data-action="delete" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>Delete</button>
                 <button class="action-btn" data-action="view" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>View</button>
                 <a href="${openHref}" class="action-btn ${openHref === '#' ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
         }
@@ -460,12 +457,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchAndRenderInstances() {
         try {
-            // --- UX IMPROVEMENT: Don't refresh table if user is editing something in it ---
-            if (document.activeElement && document.activeElement.closest('#instances-tbody')) {
+            if (document.activeElement && document.activeElement.closest('#instances-tbody tr:not([data-is-new="true"])')) {
                 return;
             }
 
-            // --- CRITICAL FIX: Preserve the "new instance" row during polling ---
             const newInstanceRow = instancesTbody.querySelector('tr[data-is-new="true"]');
 
             const response = await fetch('/api/instances/');
@@ -484,26 +479,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            const existingRows = new Map([...instancesTbody.querySelectorAll('tr[data-id]:not([data-is-new="true"])')].map(row => [row.dataset.id, row]));
-            const fragment = document.createDocumentFragment();
-
+            instancesTbody.innerHTML = '';
             instances.forEach(instance => {
-                const instanceIdStr = String(instance.id);
-                let row = existingRows.get(instanceIdStr);
-                if (row) {
-                    updateInstanceRow(row, instance);
-                    existingRows.delete(instanceIdStr);
-                } else {
-                    row = renderInstanceRow(instance);
-                }
-                fragment.appendChild(row);
+                const row = renderInstanceRow(instance);
+                instancesTbody.appendChild(row);
             });
 
-            instancesTbody.innerHTML = ''; // Clear the table
-            instancesTbody.appendChild(fragment); // Append the updated/correct rows
-
             if (newInstanceRow) {
-                instancesTbody.appendChild(newInstanceRow); // Add the "new instance" row back
+                instancesTbody.appendChild(newInstanceRow);
             }
 
             if (instancesTbody.childElementCount === 0) {
@@ -521,7 +504,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const noInstancesRow = instancesTbody.querySelector('.no-instances-row');
         if (noInstancesRow) noInstancesRow.remove();
 
-        // Fetch stats to find best GPU
         let bestGpuId = null;
         try {
             const response = await fetch('/api/system/stats');
@@ -558,7 +540,10 @@ document.addEventListener('DOMContentLoaded', () => {
     addInstanceBtn.addEventListener('click', () => addNewInstanceRow());
 
     function exitEditor() {
-        editorState = { instanceId: null, instanceName: null, fileType: null };
+        editorState = { instanceId: null, instanceName: null, fileType: null, baseBlueprint: null };
+        if (codeEditor) {
+            codeEditor.setValue('');
+        }
         showWelcomeScreen();
     }
 
@@ -568,33 +553,48 @@ document.addEventListener('DOMContentLoaded', () => {
         toolsCloseBtn.classList.remove('hidden');
         const fileTypeName = fileType.charAt(0).toUpperCase() + fileType.slice(1);
         toolsPaneTitle.textContent = `Editing ${fileTypeName} for: ${instanceName}`;
-        fileEditorTextarea.value = `Loading ${fileType} content...`;
-        editorState = { instanceId, instanceName, fileType };
+
+        if (!codeEditor) {
+            const textarea = document.getElementById('file-editor-textarea');
+            codeEditor = CodeMirror.fromTextArea(textarea, {
+                lineNumbers: true, mode: 'shell', theme: 'darcula',
+                indentUnit: 4, smartIndent: true,
+            });
+        }
+
+        codeEditor.setValue(`Loading ${fileType} content...`);
+        setTimeout(() => codeEditor.refresh(), 1);
+
+        const row = instancesTbody.querySelector(`tr[data-id="${instanceId}"]`);
+        const baseBlueprint = row ? row.dataset.originalBlueprint : null;
+        editorState = { instanceId, instanceName, fileType, baseBlueprint };
+
         try {
             const response = await fetch(`/api/instances/${instanceId}/file?file_type=${fileType}`);
             if (!response.ok) throw new Error((await response.json()).detail || 'Failed to load file.');
             const data = await response.json();
-            fileEditorTextarea.value = data.content;
+            codeEditor.setValue(data.content);
         } catch (error) {
-            fileEditorTextarea.value = `[ERROR] Could not load file: ${error.message}`;
+            codeEditor.setValue(`[ERROR] Could not load file: ${error.message}`);
         }
     }
 
-    async function saveFileContent() {
+    async function updateInstanceScript() {
         if (!editorState.instanceId || !editorState.fileType) return;
-        const content = fileEditorTextarea.value;
-        editorSaveBtn.textContent = 'Saving...';
-        editorSaveBtn.disabled = true;
+        const content = codeEditor.getValue();
+        editorUpdateBtn.textContent = 'Updating...';
+        editorUpdateBtn.disabled = true;
         try {
             const response = await fetch(`/api/instances/${editorState.instanceId}/file?file_type=${editorState.fileType}`, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content })
             });
             if (!response.ok) throw new Error((await response.json()).detail || 'Failed to save file.');
-            editorSaveBtn.textContent = 'Saved!';
-            setTimeout(() => { editorSaveBtn.textContent = 'Save'; editorSaveBtn.disabled = false; }, 1500);
+            showToast('Instance script updated successfully.', 'success');
         } catch (error) {
-            alert(`Error saving file: ${error.message}`);
-            editorSaveBtn.textContent = 'Save'; editorSaveBtn.disabled = false;
+            showToast(`Error updating script: ${error.message}`, 'error');
+        } finally {
+            editorUpdateBtn.textContent = 'Update Instance';
+            editorUpdateBtn.disabled = false;
         }
     }
 
@@ -605,7 +605,6 @@ document.addEventListener('DOMContentLoaded', () => {
         toolsPaneTitle.textContent = `View: ${instanceName}`;
         if (!url || url === '#') {
             instanceIframe.src = 'about:blank';
-            console.error("Cannot open view: instance URL is missing or instance is stopped.");
             return;
         }
         instanceIframe.src = url;
@@ -646,16 +645,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         };
         currentTerminalSocket.onmessage = (event) => { currentTerminal.write(new Uint8Array(event.data)); };
-        currentTerminalSocket.onclose = (event) => {
-            currentTerminal.write(`\r\n\x1b[31m[CLOSED]\x1b[0m ${event.reason || ''}\r\n`);
-        };
-        currentTerminalSocket.onerror = (error) => {
-            currentTerminal.write('\r\n\x1b[31m[ERROR]\x1b[0m\r\n'); console.error('WebSocket Error:', error);
-        };
+        currentTerminalSocket.onclose = (event) => { currentTerminal.write(`\r\n\x1b[31m[CLOSED]\x1b[0m ${event.reason || ''}\r\n`); };
+        currentTerminalSocket.onerror = (error) => { currentTerminal.write('\r\n\x1b[31m[ERROR]\x1b[0m\r\n'); };
     }
 
-    editorSaveBtn.addEventListener('click', saveFileContent);
-    editorExitBtn.addEventListener('click', exitEditor);
+    editorUpdateBtn.addEventListener('click', updateInstanceScript);
 
     function showToolsMenu(buttonEl) {
         const row = buttonEl.closest('tr');
@@ -678,8 +672,47 @@ document.addEventListener('DOMContentLoaded', () => {
         deleteModal.classList.add('hidden');
         overwriteModal.classList.add('hidden');
         rebuildModal.classList.add('hidden');
+        saveBlueprintModal.classList.add('hidden');
         instanceToDeleteId = null;
         instanceToRebuild = null;
+    }
+
+    async function performInstanceUpdate(row, button) {
+        const instanceId = row.dataset.id;
+        const data = {
+            name: row.querySelector('input[data-field="name"]').value,
+            base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
+            gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
+            autostart: row.querySelector('input[data-field="autostart"]').checked,
+            hostname: row.querySelector('input[data-field="hostname"]').value || null,
+            use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
+        };
+
+        button.textContent = 'Updating...';
+        button.disabled = true;
+        try {
+            const response = await fetch(`/api/instances/${instanceId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!response.ok) throw new Error((await response.json()).detail);
+            const updatedInstance = await response.json();
+
+            row.dataset.originalName = updatedInstance.name;
+            row.dataset.originalBlueprint = updatedInstance.base_blueprint;
+            row.dataset.originalGpuIds = updatedInstance.gpu_ids || '';
+            row.dataset.originalAutostart = String(updatedInstance.autostart);
+            row.dataset.originalHostname = updatedInstance.hostname || '';
+            row.dataset.originalUseCustomHostname = String(updatedInstance.use_custom_hostname);
+
+            showToast(`Instance '${data.name}' updated.`);
+            await fetchAndRenderInstances();
+        } catch (error) {
+            showToast(error.message, 'error');
+            button.textContent = 'Update';
+            checkRowForChanges(row);
+        }
     }
 
     instancesTbody.addEventListener('click', async (event) => {
@@ -688,7 +721,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (target.closest('.context-menu')) return;
         if (target.disabled || target.classList.contains('disabled')) return;
         const action = target.dataset.action;
-        if (action === 'tools_menu') { showToolsMenu(target); return; }
+        if (action === 'tools_menu') {
+            showToolsMenu(target);
+            return;
+        }
         hideToolsMenu();
         const row = target.closest('tr');
         const instanceId = row.dataset.id;
@@ -699,7 +735,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const response = await fetch(`/api/instances/${instanceId}/${action}`, { method: 'POST' });
                 if (!response.ok) throw new Error((await response.json()).detail);
                 await fetchAndRenderInstances();
-            } catch (error) { showToast(error.message, 'error'); await fetchAndRenderInstances(); }
+            } catch (error) {
+                showToast(error.message, 'error');
+                await fetchAndRenderInstances();
+            }
         } else if (action === 'save') {
             const portValue = row.querySelector('[data-field="port"]').value;
             const data = {
@@ -718,29 +757,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.remove();
                 await fetchAndRenderInstances();
                 showToast(`Instance '${data.name}' created successfully.`);
-            } catch (error) { showToast(error.message, 'error'); }
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
         } else if (action === 'update') {
-            const data = {
-                name: row.querySelector('input[data-field="name"]').value,
-                gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
-                autostart: row.querySelector('input[data-field="autostart"]').checked,
-                hostname: row.querySelector('input[data-field="hostname"]').value || null,
-                use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
-            };
-            target.textContent = 'Updating...'; target.disabled = true;
-            try {
-                const response = await fetch(`/api/instances/${instanceId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
-                if (!response.ok) throw new Error((await response.json()).detail);
-                const updatedInstance = await response.json();
-                row.dataset.originalName = updatedInstance.name;
-                row.dataset.originalGpuIds = updatedInstance.gpu_ids || '';
-                row.dataset.originalAutostart = String(updatedInstance.autostart);
-                row.dataset.originalHostname = updatedInstance.hostname || '';
-                row.dataset.originalUseCustomHostname = String(updatedInstance.use_custom_hostname);
-                await fetchAndRenderInstances();
-                showToast(`Instance '${data.name}' updated.`);
-            } catch (error) { showToast(error.message, 'error'); }
-            finally { target.textContent = 'Update'; }
+            await performInstanceUpdate(row, target);
         } else if (action === 'delete') {
             instanceToDeleteId = instanceId;
             document.getElementById('delete-modal-instance-name').textContent = row.dataset.name;
@@ -766,7 +787,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         logSize = data.size;
                         if (isScrolled) logViewerContainer.scrollTop = logViewerContainer.scrollHeight;
                     }
-                } catch (error) { clearInterval(activeLogInterval); activeLogInstanceId = null; }
+                } catch (error) {
+                    clearInterval(activeLogInterval);
+                    activeLogInstanceId = null;
+                }
             };
             fetchLogs();
             activeLogInterval = setInterval(fetchLogs, 2000);
@@ -792,12 +816,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 showVersionCheckView(currentMenuInstance.id, currentMenuInstance.name);
             } else if (action === 'rebuild-env') {
                 const { name, status } = currentMenuInstance;
-                instanceToRebuild = currentMenuInstance; // Store context
-                
+                instanceToRebuild = currentMenuInstance;
                 const message = status !== 'stopped'
                     ? `This will stop and restart the instance '${name}' to rebuild its environment. This can take several minutes.`
                     : `This will rebuild the environment for '${name}' the next time it starts.`;
-
                 document.getElementById('rebuild-modal-instance-name').textContent = name;
                 document.getElementById('rebuild-modal-message').textContent = message;
                 rebuildModal.classList.remove('hidden');
@@ -816,7 +838,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!instanceToDeleteId) return;
         try {
             const response = await fetch(`/api/instances/${instanceToDeleteId}`, {
-                method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options)
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(options)
             });
             if (response.status === 409) {
                 deleteModal.classList.add('hidden');
@@ -828,7 +852,10 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast("Instance moved to trashcan.");
             hideAllModals();
             await fetchAndRenderInstances();
-        } catch (error) { showToast(error.message, 'error'); hideAllModals(); }
+        } catch (error) {
+            showToast(error.message, 'error');
+            hideAllModals();
+        }
     }
 
     deleteModal.addEventListener('click', (e) => {
@@ -854,12 +881,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 hideAllModals();
                 return;
             }
-            
             const instanceName = instanceToRebuild.name;
             const instanceId = instanceToRebuild.id;
-
             hideAllModals();
-
             try {
                 const response = await fetch(`/api/instances/${instanceId}/rebuild`, { method: 'POST' });
                 if (!response.ok) {
@@ -874,6 +898,59 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    editorSaveCustomBtn.addEventListener('click', () => {
+        if (!codeEditor) return;
+        const base = editorState.baseBlueprint;
+        if (base && availableBlueprints.custom.includes(base)) {
+            blueprintFilenameInput.value = base;
+        } else {
+            blueprintFilenameInput.value = '';
+        }
+        saveBlueprintModal.classList.remove('hidden');
+        blueprintFilenameInput.focus();
+    });
+
+    saveBlueprintModal.addEventListener('click', async (e) => {
+        const action = e.target.id;
+        if (action === 'save-blueprint-btn-cancel') {
+            saveBlueprintModal.classList.add('hidden');
+        } else if (action === 'save-blueprint-btn-confirm') {
+            let filename = blueprintFilenameInput.value.trim();
+            const content = codeEditor.getValue();
+            if (!filename) {
+                showToast('Filename cannot be empty.', 'error');
+                return;
+            }
+            if (!filename.endsWith('.sh')) {
+                filename += '.sh';
+            }
+            const confirmBtn = e.target;
+            confirmBtn.textContent = 'Saving...';
+            confirmBtn.disabled = true;
+            try {
+                const response = await fetch('/api/system/blueprints/custom', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename, content })
+                });
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Failed to save custom blueprint.');
+                }
+                const savedData = await response.json();
+                saveBlueprintModal.classList.add('hidden');
+                showToast(`Custom blueprint '${savedData.filename}' saved successfully.`, 'success');
+                await fetchAndStoreBlueprints();
+                await fetchAndRenderInstances(); // Refresh to update dropdowns in any 'new' rows.
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                confirmBtn.textContent = 'Save Blueprint';
+                confirmBtn.disabled = false;
+            }
+        }
+    });
+
     async function initializeApp() {
         await fetchSystemInfo();
         await fetchAndStoreBlueprints();
@@ -884,9 +961,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (instancesPollInterval) clearInterval(instancesPollInterval);
         instancesPollInterval = setInterval(fetchAndRenderInstances, 2000);
         setInterval(updateSystemStats, 2000);
-
         toolsCloseBtn.addEventListener('click', showWelcomeScreen);
-
         new Sortable(instancesTbody, {
             animation: 150, handle: '.drag-handle', ghostClass: 'sortable-ghost', dragClass: 'sortable-drag',
             onEnd: function (evt) {

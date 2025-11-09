@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="/static/style.css">
     <!-- NEW: Xterm.js styles -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+    <!-- NEW: CodeMirror for syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/darcula.min.css" />
 </head>
 
 <body>
@@ -69,8 +72,8 @@
                         <div id="editor-container" class="hidden">
                             <textarea id="file-editor-textarea" spellcheck="false"></textarea>
                             <div class="editor-actions">
-                                <button id="editor-save-btn" class="action-btn">Save</button>
-                                <button id="editor-exit-btn" class="action-btn">Exit Editor</button>
+                                <button id="editor-save-custom-btn" class="action-btn">Save as Custom Blueprint</button>
+                                <button id="editor-update-btn" class="action-btn">Update Instance</button>
                             </div>
                         </div>
 
@@ -172,6 +175,9 @@
     <!-- NEW: Xterm.js library and Fit Addon -->
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <!-- NEW: CodeMirror library and Shell mode -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
     <!-- Sortable.js for drag-and-drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <!-- Our application script -->
@@ -211,6 +217,19 @@
             <div class="modal-actions">
                 <button id="rebuild-btn-confirm" class="action-btn success-btn">Confirm Rebuild</button>
                 <button id="rebuild-btn-cancel" class="action-btn danger-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW: Modal for Save As Custom Blueprint -->
+    <div id="save-blueprint-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Save as Custom Blueprint</h2>
+            <p>Enter a filename for the new custom blueprint.</p>
+            <input type="text" id="blueprint-filename-input" placeholder="e.g., my-custom-comfy.sh" class="modal-input">
+            <div class="modal-actions">
+                <button id="save-blueprint-btn-confirm" class="action-btn success-btn">Save Blueprint</button>
+                <button id="save-blueprint-btn-cancel" class="action-btn danger-btn">Cancel</button>
             </div>
         </div>
     </div>

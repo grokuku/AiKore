@@ -13,7 +13,7 @@ from ..database import crud
 from ..database.session import SessionLocal
 from ..schemas import instance as schemas
 from ..core import process_manager
-from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR, _find_free_port, _find_free_display
+from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR, _find_free_port, _find_free_display
 
 class DeleteOptions(BaseModel):
     mode: str = "trash"
@@ -42,7 +42,16 @@ def get_instance_file_path(db_instance):
     base_script_name = db_instance.base_blueprint
     instance_conf_dir = os.path.join(INSTANCES_DIR, db_instance.name)
     instance_file_path = os.path.join(instance_conf_dir, "launch.sh")
-    blueprint_file_path = os.path.join(BLUEPRINTS_DIR, base_script_name)
+    
+    # --- MODIFIED: Search for blueprint in custom then stock directory ---
+    custom_blueprint_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, base_script_name)
+    stock_blueprint_path = os.path.join(BLUEPRINTS_DIR, base_script_name)
+    
+    if os.path.exists(custom_blueprint_path):
+        blueprint_file_path = custom_blueprint_path
+    else:
+        blueprint_file_path = stock_blueprint_path
+        
     return instance_file_path, blueprint_file_path
 
 # NEW: Endpoint to provide system information like GPU count

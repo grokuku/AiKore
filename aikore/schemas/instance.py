@@ -20,6 +20,7 @@ class InstanceCreate(InstanceBase):
 # Defines the fields that are allowed to be updated on an existing instance.
 class InstanceUpdate(BaseModel):
     name: str | None = None
+    base_blueprint: str | None = None # <-- MODIFICATION ICI
     gpu_ids: str | None = None
     autostart: bool | None = None
     hostname: str | None = None

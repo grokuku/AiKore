@@ -46,6 +46,10 @@ This document tracks the progress of feature implementation based on the roadmap
 
 ## Phase 5: Refinement
 
-- [ ] Implement the `Update` functionality for saving changes to existing instances.
-- [ ] Improve global error handling and status reporting.
-- [ ] Write comprehensive user and system documentation.
+- [x] Overhaul script editor:
+    - [x] Integrate CodeMirror for syntax highlighting.
+    - [x] Implement "Update Instance" functionality with non-blocking toast notifications.
+    - [x] Implement "Save as Custom Blueprint" feature with persistent user storage.
+    - [x] Update UI to categorize blueprints (Stock vs. Custom).
+- [ ] Improve global error handling and status reporting across the entire application.
+- [ ] Write comprehensive user and system documentation.```

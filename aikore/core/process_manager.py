@@ -25,6 +25,7 @@ from aikore.database.session import SessionLocal
 INSTANCES_DIR = "/config/instances"
 OUTPUTS_DIR = "/config/outputs"
 BLUEPRINTS_DIR = "/opt/sd-install/blueprints"
+CUSTOM_BLUEPRINTS_DIR = "/config/custom_blueprints" # NEW: Persistent location for user blueprints
 SCRIPTS_DIR = "/opt/sd-install/scripts"
 NGINX_SITES_AVAILABLE = "/etc/nginx/locations.d"
 NGINX_RELOAD_FLAG = Path("/run/aikore/nginx_reload.flag")
@@ -263,12 +264,28 @@ def start_instance_process(db: Session, instance: models.Instance):
     os.makedirs(global_tmp_dir, exist_ok=True)
 
     dest_script_path = os.path.join(instance_conf_dir, "launch.sh")
-    source_script_path = os.path.join(BLUEPRINTS_DIR, instance.base_blueprint)
-    try:
-        with open(source_script_path, 'r') as src, open(dest_script_path, 'w') as dest:
-            dest.write(src.read())
-    except FileNotFoundError:
-        raise Exception(f"Blueprint file not found at {source_script_path}")
+
+    # --- BUG FIX: Only copy from blueprint if launch.sh doesn't exist ---
+    if not os.path.exists(dest_script_path):
+        print(f"[Manager] launch.sh not found for '{instance.name}'. Creating from blueprint '{instance.base_blueprint}'.")
+        
+        # Find the source blueprint, checking custom directory first
+        custom_blueprint_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, instance.base_blueprint)
+        stock_blueprint_path = os.path.join(BLUEPRINTS_DIR, instance.base_blueprint)
+        
+        if os.path.exists(custom_blueprint_path):
+            source_script_path = custom_blueprint_path
+        else:
+            source_script_path = stock_blueprint_path
+
+        try:
+            with open(source_script_path, 'r') as src, open(dest_script_path, 'w') as dest:
+                dest.write(src.read())
+        except FileNotFoundError:
+            raise Exception(f"Blueprint file not found at {source_script_path}")
+    else:
+        print(f"[Manager] Existing launch.sh found for '{instance.name}'. Using it directly.")
+
     os.chmod(dest_script_path, os.stat(dest_script_path).st_mode | stat.S_IEXEC)
 
     env = os.environ.copy()

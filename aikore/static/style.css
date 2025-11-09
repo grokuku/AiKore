@@ -465,12 +465,12 @@ body {
     /* Match pane background */
 }
 
-#editor-save-btn {
+#editor-update-btn {
     background-color: #28a745;
 }
 
-#editor-exit-btn {
-    background-color: #4a4a70;
+#editor-save-custom-btn {
+    background-color: #6f42c1;
 }
 
 /* --- Instance View (iframe) --- */
@@ -677,6 +677,21 @@ body {
 .warning-btn {
     background-color: #ffc107;
     color: #333;
+}
+
+/* --- NEW: Input field for modals --- */
+.modal-input {
+    width: 100%;
+    padding: 10px;
+    margin-top: 1rem;
+    background-color: #1e1e3f;
+    border: 1px solid #3b3b6b;
+    color: #e0e0e0;
+    border-radius: 6px;
+    box-sizing: border-box;
+    font-size: 14px;
+    text-align: center;
+    user-select: text;
 }
 
 /* --- UI ADDITIONS --- */
@@ -930,4 +945,18 @@ body {
 .toast.error {
     background-color: #dc3545;
     color: white;
+}
+
+/* --- CODEMIRROR STYLES --- */
+.CodeMirror {
+    flex-grow: 1; /* Make the editor fill the available space */
+    height: auto; /* Override fixed height from library */
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+    user-select: text;
+}
+
+/* Ensure the darcula theme integrates with our pane */
+.cm-s-darcula {
+    background-color: #111; /* Match our terminal background */
 }

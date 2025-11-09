@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Body
+from pydantic import BaseModel
 import os
 import psutil
 from pynvml import *
 from sqlalchemy.orm import Session
+import re
 
-from ..core.process_manager import BLUEPRINTS_DIR
+from ..core.process_manager import BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR
 from ..database import crud
 from ..database.session import SessionLocal
 
@@ -13,21 +15,60 @@ router = APIRouter(
     tags=["System"]
 )
 
+class CustomBlueprint(BaseModel):
+    filename: str
+    content: str
+
 @router.get("/blueprints")
 def get_available_blueprints():
     """
-    Scans the blueprints directory and returns a list of available .sh scripts.
+    Scans stock and custom blueprint directories and returns a categorized list of available .sh scripts.
     """
+    stock_blueprints = []
+    custom_blueprints = []
+    
     try:
-        files = os.listdir(BLUEPRINTS_DIR)
-        # Filter for .sh files and sort them
-        sh_files = sorted([f for f in files if f.endswith('.sh')])
-        return {"blueprints": sh_files}
-    except FileNotFoundError:
-        return {"blueprints": []}
+        # Scan stock blueprints
+        if os.path.isdir(BLUEPRINTS_DIR):
+            stock_files = os.listdir(BLUEPRINTS_DIR)
+            stock_blueprints = sorted([f for f in stock_files if f.endswith('.sh')])
+        
+        # Scan custom blueprints
+        os.makedirs(CUSTOM_BLUEPRINTS_DIR, exist_ok=True) # Ensure it exists
+        if os.path.isdir(CUSTOM_BLUEPRINTS_DIR):
+            custom_files = os.listdir(CUSTOM_BLUEPRINTS_DIR)
+            custom_blueprints = sorted([f for f in custom_files if f.endswith('.sh')])
+            
+        return {"stock": stock_blueprints, "custom": custom_blueprints}
+    
     except Exception as e:
-        # In a real app, you'd want to log this error.
-        return {"blueprints": [], "error": str(e)}
+        raise HTTPException(status_code=500, detail=f"Failed to read blueprints: {str(e)}")
+
+@router.post("/blueprints/custom", status_code=201)
+def create_custom_blueprint(blueprint: CustomBlueprint):
+    """
+    Creates a new custom blueprint file from user-provided content.
+    """
+    # Validate filename to prevent directory traversal and ensure it's a .sh file
+    filename = blueprint.filename
+    if not filename.endswith(".sh"):
+        raise HTTPException(status_code=400, detail="Filename must end with .sh")
+    if "/" in filename or ".." in filename or not re.match(r"^[a-zA-Z0-9_\-]+\.sh$", filename):
+        raise HTTPException(status_code=400, detail="Invalid filename. Use only alphanumeric characters, underscores, and hyphens.")
+
+    filepath = os.path.join(CUSTOM_BLUEPRINTS_DIR, filename)
+
+    if os.path.exists(filepath):
+        raise HTTPException(status_code=409, detail=f"A custom blueprint with the name '{filename}' already exists.")
+
+    try:
+        os.makedirs(CUSTOM_BLUEPRINTS_DIR, exist_ok=True)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(blueprint.content)
+        return {"detail": "Custom blueprint created successfully.", "filename": filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write blueprint file: {str(e)}")
+
 
 @router.get("/info")
 def get_system_info():

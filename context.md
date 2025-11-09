@@ -30,6 +30,7 @@ L'objectif principal est de fournir un panneau de contrôle unique, simple et pu
 *   **Migration de Schéma :** Un script de migration automatisé est intégré au démarrage de l'application.
 *   **Gestion des Processus :** Le module `subprocess` de Python, géré par `process_manager.py`.
 *   **Terminal Interactif :** `xterm.js` côté frontend, `pty` côté backend.
+*   **Éditeur de Code :** CodeMirror
 *   **Interface Persistante :** KasmVNC (Xvnc, Openbox)
 
 ---
@@ -132,7 +133,7 @@ Le projet a atteint une maturité fonctionnelle significative. Les fonctionnalit
 
 ### 6.2. Problèmes Connus et Points en Attente
 
-*   Aucun bug majeur identifié. L'attention se porte sur l'amélioration de l'expérience utilisateur globale.
+*   La logique d'interaction entre les boutons "Update Instance" et "Save as Custom Blueprint" dans l'éditeur de script n'est pas finalisée et a conduit à des comportements inattendus. Le développement de cette micro-fonctionnalité est en pause.
 
 ### 6.3. Journal d'Investigation
 
@@ -159,6 +160,28 @@ Le projet a atteint une maturité fonctionnelle significative. Les fonctionnalit
         3.  **Vérification du Blueprint :** Analyse et validation de la logique de lien symbolique (`ln -sfn`) pour le dossier `output` dans le blueprint `ComfyUI.sh`, confirmant sa robustesse.
     *   **État à la fin de la session :** L'interface utilisateur est plus stable et l'expérience utilisateur a été significativement améliorée. La fonctionnalité de reconstruction d'environnement est maintenant complète, robuste et intuitive.
 
+*   **Session du 2025-11-09 (Soir) :**
+    *   **Objectif :** Refonte complète de la fonctionnalité d'édition de scripts pour améliorer l'ergonomie et ajouter des fonctionnalités avancées.
+    *   **Problèmes Résolus & Améliorations :**
+        1.  **Implémentation de la Coloration Syntaxique :** Remplacement du `<textarea>` basique par l'éditeur de code **CodeMirror**, configuré pour le `shell` avec un thème sombre, améliorant drastiquement la lisibilité des scripts.
+        2.  **Rationalisation de l'Interface de l'Éditeur :** Suppression du bouton "Exit" redondant et refonte des actions de sauvegarde pour plus de clarté.
+        3.  **Création de Blueprints Personnalisés :**
+            *   Mise en place d'une nouvelle logique backend pour permettre aux utilisateurs de sauvegarder un script modifié en tant que nouveau **blueprint réutilisable**.
+            *   Ces blueprints customs sont stockés dans un dossier persistant (`/config/custom_blueprints`) pour survivre aux mises à jour du conteneur, une décision d'architecture clé pour la robustesse.
+        4.  **Amélioration de l'UX de Création :** La liste déroulante des blueprints dans le formulaire de création d'instance sépare maintenant visuellement les blueprints "Stock" des blueprints "Custom", rendant la sélection plus intuitive.
+        5.  **Amélioration des Retours Utilisateur :** Remplacement des alertes JavaScript bloquantes par le système de notifications "toast" pour toutes les actions de l'éditeur, offrant un feedback plus fluide et cohérent.
+    *   **État à la fin de la session :** La fonctionnalité d'édition est passée d'un simple outil de modification à une puissante fonctionnalité de gestion de templates, augmentant la flexibilité et la personnalisation d'AiKore.
+
+*   **Session du 2025-11-09 (Soirée) :**
+    *   **Objectif :** Améliorer l'ergonomie et corriger un bug critique dans la fonctionnalité d'édition de script.
+    *   **Problèmes Résolus :**
+        1.  **Correction du Bug Critique d'Écrasement :** Modification de `core/process_manager.py` pour que `start_instance_process` ne copie plus le contenu du blueprint si un `launch.sh` personnalisé existe déjà, préservant ainsi les modifications de l'utilisateur.
+        2.  **Mise à jour du Backend :** Le schéma de mise à jour (`schemas/instance.py`) a été modifié pour autoriser le changement du `base_blueprint` d'une instance existante via l'API, une condition nécessaire pour une gestion correcte dans le frontend.
+    *   **Points en Attente :**
+        *   Le comportement souhaité pour l'interaction entre les boutons "Update Instance" et "Save as Custom Blueprint" a fait l'objet de plusieurs itérations sans aboutir à une solution satisfaisante.
+        *   La décision a été prise de mettre cette amélioration en pause et de revenir à un fonctionnement simple et découplé : chaque bouton n'a qu'une seule fonction. L'implémentation de cette logique simplifiée reste à valider.
+
 ### 6.4. Plan d'Action pour la Prochaine Session
 
-*   **Priorité 1 :** Améliorer la gestion globale des erreurs en standardisant l'utilisation des notifications "toast" pour tous les retours d'API (succès et erreurs), afin de fournir un feedback utilisateur plus cohérent et moins intrusif.
+*   **Priorité 1 :** Valider l'implémentation de la logique simplifiée et découplée pour les boutons "Update Instance" et "Save as Custom Blueprint" dans l'éditeur de script. S'assurer que le comportement est clair, prévisible et sans effets de bord.
+*   **Priorité 2 :** Améliorer la gestion globale des erreurs en standardisant l'utilisation des notifications "toast" pour tous les retours d'API (succès et erreurs), afin de fournir un feedback utilisateur plus cohérent et moins intrusif.
