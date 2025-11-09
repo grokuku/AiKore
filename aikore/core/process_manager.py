@@ -216,18 +216,17 @@ def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, in
 
 def rebuild_instance_env(db: Session, instance: models.Instance):
     """
-    Triggers a rebuild of the instance's Conda environment.
-    Stops the instance, creates a trigger file, and restarts it.
+    Triggers a rebuild of the instance's environment.
+    If running, it stops and restarts it. If stopped, it simply prepares the rebuild for the next start.
     """
     print(f"[Manager] Rebuild requested for instance {instance.name} (ID: {instance.id}).")
+    was_running = instance.status != "stopped"
 
     # 1. Stop the instance if it's running
-    if instance.status != "stopped":
-        print(f"[Manager] Stopping instance {instance.name} before rebuild...")
+    if was_running:
+        print(f"[Manager] Stopping active instance {instance.name} before rebuild...")
         stop_instance_process(db, instance)
-        # Refresh instance object after stopping
-        db.refresh(instance) 
-        print(f"[Manager] Instance {instance.name} stopped.")
+        db.refresh(instance)
 
     # 2. Create the trigger file
     instance_conf_dir = Path(INSTANCES_DIR) / instance.name
@@ -238,10 +237,12 @@ def rebuild_instance_env(db: Session, instance: models.Instance):
     except Exception as e:
         raise Exception(f"Failed to create rebuild trigger file for {instance.name}: {e}")
 
-    # 3. Restart the instance
-    print(f"[Manager] Restarting instance {instance.name} to trigger environment rebuild...")
-    start_instance_process(db, instance)
-    print(f"[Manager] Instance {instance.name} restarted. Environment rebuild will occur on next blueprint execution.")
+    # 3. Restart the instance ONLY if it was running before
+    if was_running:
+        print(f"[Manager] Restarting instance {instance.name} to trigger environment rebuild...")
+        start_instance_process(db, instance)
+    else:
+        print(f"[Manager] Instance {instance.name} was stopped. Rebuild will occur on next manual start.")
 
 def start_instance_process(db: Session, instance: models.Instance):
     """

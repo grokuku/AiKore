@@ -72,7 +72,7 @@ echo "--- Installing dependencies ---"
 
 # 1. Install PyTorch first, as many packages depend on it for their build process.
 #    We use a nightly build to ensure compatibility with the CUDA 13.x toolkit in the container.
-pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu131
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu130
 
 # 2. Install dependencies from ComfyUI's requirements file.
 #    This ensures all versions are compatible as tested by the ComfyUI developers.

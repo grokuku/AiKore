@@ -640,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toolsContextMenu.style.display = 'block';
         toolsContextMenu.style.left = `${rect.left}px`;
         toolsContextMenu.style.top = `${rect.bottom + 5}px`;
-        currentMenuInstance = { id: row.dataset.id, name: row.dataset.name };
+        currentMenuInstance = { id: row.dataset.id, name: row.dataset.name, status: row.dataset.status };
     }
 
     function hideToolsMenu() {
@@ -749,7 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    toolsContextMenu.addEventListener('click', (event) => {
+    toolsContextMenu.addEventListener('click', async (event) => {
         const target = event.target.closest('[data-action]');
         if (!target || target.disabled) return;
         const action = target.dataset.action;
@@ -760,6 +760,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 openTerminal(currentMenuInstance.id, currentMenuInstance.name);
             } else if (action === 'version-check') {
                 showVersionCheckView(currentMenuInstance.id, currentMenuInstance.name);
+            } else if (action === 'rebuild-env') {
+                const { id, name, status } = currentMenuInstance;
+                const message = status !== 'stopped'
+                    ? `This will stop and restart the instance '${name}' to rebuild its environment. Continue?`
+                    : `This will rebuild the environment for '${name}' on its next start. Continue?`;
+
+                if (confirm(message)) {
+                    try {
+                        const response = await fetch(`/api/instances/${id}/rebuild`, { method: 'POST' });
+                        if (!response.ok) {
+                            const err = await response.json();
+                            throw new Error(err.detail || 'Failed to initiate rebuild.');
+                        }
+                        alert(`Rebuild process for '${name}' has been successfully initiated.`);
+                        await fetchAndRenderInstances();
+                    } catch (error) {
+                        alert(`Error: ${error.message}`);
+                    }
+                }
             }
         }
         hideToolsMenu();
