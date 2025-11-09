@@ -77,38 +77,39 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 # --- Modules requiring limited architectures (8.0 8.6 8.7 8.9 9.0 9.0a) ---
 # IMPORTANT: Temporarily limit TORCH_CUDA_ARCH_LIST for these modules due to compatibility issues
 
+    
 # xformers
-RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/facebookresearch/xformers.git /build/xformers \
+RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
     && cd /build/xformers \
     && git submodule update --init --recursive \
-    && python3.12 setup.py bdist_wheel \
+    && TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" python3.12 setup.py bdist_wheel \
     && mv dist/*.whl /build/ \
     && cd /build \
     && rm -rf xformers
 
 # kaolin (Reactivated with limited architectures)
-RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
-    && cd /build/kaolin_5090 \
-    && python3.12 setup.py bdist_wheel \
-    && mv dist/*.whl /build/ \
-    && cd /build \
-    && rm -rf kaolin_5090
+#RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
+#    && cd /build/kaolin_5090 \
+#    && python3.12 setup.py bdist_wheel \
+#    && mv dist/*.whl /build/ \
+#    && cd /build \
+#    && rm -rf kaolin_5090
 
 # mip-splatting / diff-gaussian-rasterization (Reactivated with limited architectures)
-RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
-    && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
-    && python3.12 setup.py bdist_wheel \
-    && mv dist/*.whl /build/ \
-    && cd /build \
-    && rm -rf mip-splatting
+#RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
+#    && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
+#    && python3.12 setup.py bdist_wheel \
+#    && mv dist/*.whl /build/ \
+#    && cd /build \
+""    && rm -rf mip-splatting
 
 # vox2seq / TRELLIS (Reactivated with limited architectures)
-RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
-    && cd /build/TRELLIS/extensions/vox2seq \
-    && python3.12 setup.py bdist_wheel \
-    && mv dist/*.whl /build/ \
-    && cd /build \
-    && rm -rf TRELLIS
+#RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
+#    && cd /build/TRELLIS/extensions/vox2seq \
+#    && python3.12 setup.py bdist_wheel \
+#    && mv dist/*.whl /build/ \
+#    && cd /build \
+#    && rm -rf TRELLIS
 
 # --- Final Stage ---
 # This ensures the final image is also based on Ubuntu 24.04 (noble)
