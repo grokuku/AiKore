@@ -51,12 +51,12 @@ RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && rm -rf SageAttention
 
 # bitsandbytes (compatible with all listed architectures, with pyproject.toml modification)
-RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
-    && cd /build/bitsandbytes \
-    && python3.12 setup.py bdist_wheel \
-    && mv dist/*.whl /build/ \
-    && cd /build \
-    && rm -rf bitsandbytes
+#RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
+#    && cd /build/bitsandbytes \
+#    && python3.12 setup.py bdist_wheel \
+#    && mv dist/*.whl /build/ \
+#    && cd /build \
+#    && rm -rf bitsandbytes
 
 # diso (compatible with all listed architectures)
 RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodules \
