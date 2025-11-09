@@ -101,7 +101,7 @@ RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
 #    && python3.12 setup.py bdist_wheel \
 #    && mv dist/*.whl /build/ \
 #    && cd /build \
-""    && rm -rf mip-splatting
+#    && rm -rf mip-splatting
 
 # vox2seq / TRELLIS (Reactivated with limited architectures)
 #RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
