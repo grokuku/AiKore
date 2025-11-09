@@ -664,6 +664,9 @@ body {
 }
 
 
+.success-btn {
+    background-color: #28a745;
+}
 
 .danger-btn {
 
@@ -671,7 +674,10 @@ body {
 
 }
 
-
+.warning-btn {
+    background-color: #ffc107;
+    color: #333;
+}
 
 /* --- UI ADDITIONS --- */
 
@@ -885,4 +891,43 @@ body {
     overflow: auto; /* Add scrolling to each pre block */
     padding: 0.5rem 1rem;
     background-color: #111;
+}
+
+/* --- TOAST NOTIFICATION STYLES --- */
+#toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 3000;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.toast {
+    background-color: #3b3b6b;
+    color: #e0e0e0;
+    padding: 15px 20px;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transform: translateX(100%);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    user-select: text;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+.toast.success {
+    background-color: #28a745;
+    color: white;
+}
+
+.toast.error {
+    background-color: #dc3545;
+    color: white;
 }

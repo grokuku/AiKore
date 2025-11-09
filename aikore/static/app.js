@@ -28,7 +28,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const deleteModal = document.getElementById('delete-modal');
     const overwriteModal = document.getElementById('overwrite-modal');
+    const rebuildModal = document.getElementById('rebuild-modal');
     let instanceToDeleteId = null;
+    let instanceToRebuild = null;
 
     let activeLogInstanceId = null;
     let activeLogInterval = null;
@@ -47,6 +49,30 @@ document.addEventListener('DOMContentLoaded', () => {
     let instancesPollInterval = null;
 
     let viewResizeObserver = null;
+
+    // NEW: Toast notification function
+    function showToast(message, type = 'success') {
+        const toastContainer = document.getElementById('toast-container');
+        if (!toastContainer) return;
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+
+        toastContainer.appendChild(toast);
+
+        // Trigger the animation
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 10);
+
+        // Set timers to remove the toast
+        setTimeout(() => {
+            toast.classList.remove('show');
+            // Remove the element from the DOM after the fade-out animation completes
+            toast.addEventListener('transitionend', () => toast.remove());
+        }, 3000); // Toast visible for 3 seconds
+    }
 
     function closeTerminal() {
         if (currentTerminalSocket) {
@@ -651,7 +677,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function hideAllModals() {
         deleteModal.classList.add('hidden');
         overwriteModal.classList.add('hidden');
+        rebuildModal.classList.add('hidden');
         instanceToDeleteId = null;
+        instanceToRebuild = null;
     }
 
     instancesTbody.addEventListener('click', async (event) => {
@@ -671,7 +699,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const response = await fetch(`/api/instances/${instanceId}/${action}`, { method: 'POST' });
                 if (!response.ok) throw new Error((await response.json()).detail);
                 await fetchAndRenderInstances();
-            } catch (error) { alert(`Error: ${error.message}`); await fetchAndRenderInstances(); }
+            } catch (error) { showToast(error.message, 'error'); await fetchAndRenderInstances(); }
         } else if (action === 'save') {
             const portValue = row.querySelector('[data-field="port"]').value;
             const data = {
@@ -689,7 +717,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!response.ok) throw new Error((await response.json()).detail);
                 row.remove();
                 await fetchAndRenderInstances();
-            } catch (error) { alert(`Error: ${error.message}`); }
+                showToast(`Instance '${data.name}' created successfully.`);
+            } catch (error) { showToast(error.message, 'error'); }
         } else if (action === 'update') {
             const data = {
                 name: row.querySelector('input[data-field="name"]').value,
@@ -709,7 +738,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.dataset.originalHostname = updatedInstance.hostname || '';
                 row.dataset.originalUseCustomHostname = String(updatedInstance.use_custom_hostname);
                 await fetchAndRenderInstances();
-            } catch (error) { alert(`Error: ${error.message}`); }
+                showToast(`Instance '${data.name}' updated.`);
+            } catch (error) { showToast(error.message, 'error'); }
             finally { target.textContent = 'Update'; }
         } else if (action === 'delete') {
             instanceToDeleteId = instanceId;
@@ -749,7 +779,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    toolsContextMenu.addEventListener('click', async (event) => {
+    toolsContextMenu.addEventListener('click', (event) => {
         const target = event.target.closest('[data-action]');
         if (!target || target.disabled) return;
         const action = target.dataset.action;
@@ -761,24 +791,16 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (action === 'version-check') {
                 showVersionCheckView(currentMenuInstance.id, currentMenuInstance.name);
             } else if (action === 'rebuild-env') {
-                const { id, name, status } = currentMenuInstance;
+                const { name, status } = currentMenuInstance;
+                instanceToRebuild = currentMenuInstance; // Store context
+                
                 const message = status !== 'stopped'
-                    ? `This will stop and restart the instance '${name}' to rebuild its environment. Continue?`
-                    : `This will rebuild the environment for '${name}' on its next start. Continue?`;
+                    ? `This will stop and restart the instance '${name}' to rebuild its environment. This can take several minutes.`
+                    : `This will rebuild the environment for '${name}' the next time it starts.`;
 
-                if (confirm(message)) {
-                    try {
-                        const response = await fetch(`/api/instances/${id}/rebuild`, { method: 'POST' });
-                        if (!response.ok) {
-                            const err = await response.json();
-                            throw new Error(err.detail || 'Failed to initiate rebuild.');
-                        }
-                        alert(`Rebuild process for '${name}' has been successfully initiated.`);
-                        await fetchAndRenderInstances();
-                    } catch (error) {
-                        alert(`Error: ${error.message}`);
-                    }
-                }
+                document.getElementById('rebuild-modal-instance-name').textContent = name;
+                document.getElementById('rebuild-modal-message').textContent = message;
+                rebuildModal.classList.remove('hidden');
             }
         }
         hideToolsMenu();
@@ -803,9 +825,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             if (!response.ok) throw new Error((await response.json()).detail);
+            showToast("Instance moved to trashcan.");
             hideAllModals();
             await fetchAndRenderInstances();
-        } catch (error) { alert(`Error: ${error.message}`); hideAllModals(); }
+        } catch (error) { showToast(error.message, 'error'); hideAllModals(); }
     }
 
     deleteModal.addEventListener('click', (e) => {
@@ -819,6 +842,36 @@ document.addEventListener('DOMContentLoaded', () => {
         const action = e.target.id;
         if (action === 'overwrite-btn-cancel') hideAllModals();
         else if (action === 'overwrite-btn-confirm') handleDelete({ mode: 'trash', overwrite: true });
+    });
+
+    rebuildModal.addEventListener('click', async (e) => {
+        const action = e.target.id;
+        if (action === 'rebuild-btn-cancel') {
+            hideAllModals();
+        } else if (action === 'rebuild-btn-confirm') {
+            if (!instanceToRebuild) {
+                showToast("Error: Instance context lost. Please try again.", "error");
+                hideAllModals();
+                return;
+            }
+            
+            const instanceName = instanceToRebuild.name;
+            const instanceId = instanceToRebuild.id;
+
+            hideAllModals();
+
+            try {
+                const response = await fetch(`/api/instances/${instanceId}/rebuild`, { method: 'POST' });
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Failed to initiate rebuild.');
+                }
+                showToast(`Rebuild process for '${instanceName}' has been successfully initiated.`);
+                await fetchAndRenderInstances();
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        }
     });
 
     async function initializeApp() {
@@ -851,8 +904,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const SPLIT_STORAGE_KEY = 'aikoreSplitSizes';
     let savedSizes = { vertical: [60, 40], horizontal: [65, 35] };
     try { const storedSizes = localStorage.getItem(SPLIT_STORAGE_KEY); if (storedSizes) { const parsedSizes = JSON.parse(storedSizes); if (parsedSizes.vertical && parsedSizes.horizontal) { savedSizes = parsedSizes; } } } catch (e) { console.error("Failed to load or parse split sizes from localStorage.", e); }
-    Split(['#instance-pane', '#bottom-split'], { sizes: savedSizes.vertical, minSize: [200, 150], gutterSize: 5, direction: 'vertical', cursor: 'row-resize', onDragEnd: function (sizes) { savedSizes.vertical = sizes; localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes)); } });
-    Split(['#tools-pane', '#monitoring-pane'], { sizes: savedSizes.horizontal, minSize: [300, 200], gutterSize: 5, direction: 'horizontal', cursor: 'col-resize', onDragEnd: function (sizes) { savedSizes.horizontal = sizes; localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes)); } });
+    Split(['#instance-pane', '#bottom-split'], { sizes: savedSizes.vertical, minSize: [200, 150], gutterSize: 5, direction: 'vertical', cursor: 'row-resize', onEnd: function (sizes) { savedSizes.vertical = sizes; localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes)); } });
+    Split(['#tools-pane', '#monitoring-pane'], { sizes: savedSizes.horizontal, minSize: [300, 200], gutterSize: 5, direction: 'horizontal', cursor: 'col-resize', onEnd: function (sizes) { savedSizes.horizontal = sizes; localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(savedSizes)); } });
 
     viewResizeObserver = new ResizeObserver(() => { if (instanceIframe && instanceIframe.contentWindow) { instanceIframe.contentWindow.dispatchEvent(new Event('resize')); } });
 

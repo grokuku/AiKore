@@ -128,10 +128,11 @@ Le projet a atteint une maturité fonctionnelle significative. Les fonctionnalit
 *   **Interface Web Réactive :** Tableau de bord multi-panneaux avec état et statistiques en temps réel.
 *   **Intégration de KasmVNC :** Les instances persistantes lancent un serveur KasmVNC autonome et isolé.
 *   **Outils Avancés :** Visionneuse de Logs, Éditeur de Script, Terminal Intégré, Vue Embarquée.
+*   **Reconstruction d'Environnement :** Une fonctionnalité UX complète pour reconstruire l'environnement Python d'une instance via l'interface.
 
 ### 6.2. Problèmes Connus et Points en Attente
 
-*   **Bugs d'Affichage Mineurs :** Des bugs mineurs subsistent dans l'affichage et la mise à jour dynamique du tableau des instances.
+*   Aucun bug majeur identifié. L'attention se porte sur l'amélioration de l'expérience utilisateur globale.
 
 ### 6.3. Journal d'Investigation
 
@@ -145,6 +146,19 @@ Le projet a atteint une maturité fonctionnelle significative. Les fonctionnalit
         4.  **Correction de Bugs Frontend :** Résolution du bug qui faisait disparaître la ligne de création lors du rafraîchissement automatique du tableau.
     *   **État à la fin de la session :** Le système est stable. La fonctionnalité de mise à jour est complète et la base de données est maintenant versionnée, prête pour de futures évolutions.
 
+*   **Session du 2025-11-09 :**
+    *   **Objectif :** Correction de bugs d'interface et amélioration de l'expérience utilisateur (UX).
+    *   **Problèmes Résolus :**
+        1.  **Correction du bug d'alignement** sur la ligne "Nouvelle Instance" en ajustant le nombre de placeholders dans `app.js`.
+        2.  **Activation et amélioration de la fonctionnalité 'Rebuild Environment' :**
+            *   Implémentation d'une logique de confirmation conditionnelle (message différent si l'instance est active ou arrêtée).
+            *   Modification du backend (`process_manager.py`) pour ne redémarrer l'instance que si elle était initialement active.
+            *   Remplacement de l'alerte native du navigateur par une fenêtre modale personnalisée et stylisée.
+            *   Remplacement de la notification `alert()` de confirmation par un système de "toast" non-bloquant pour un meilleur retour utilisateur.
+            *   Correction d'une erreur de logique (`instanceToRebuild is null`) qui provoquait une exception lors de la confirmation.
+        3.  **Vérification du Blueprint :** Analyse et validation de la logique de lien symbolique (`ln -sfn`) pour le dossier `output` dans le blueprint `ComfyUI.sh`, confirmant sa robustesse.
+    *   **État à la fin de la session :** L'interface utilisateur est plus stable et l'expérience utilisateur a été significativement améliorée. La fonctionnalité de reconstruction d'environnement est maintenant complète, robuste et intuitive.
+
 ### 6.4. Plan d'Action pour la Prochaine Session
 
-*   **Priorité 1 :** Analyser et corriger les bugs d'affichage mineurs restants dans le tableau des instances pour peaufiner l'expérience utilisateur.
+*   **Priorité 1 :** Améliorer la gestion globale des erreurs en standardisant l'utilisation des notifications "toast" pour tous les retours d'API (succès et erreurs), afin de fournir un feedback utilisateur plus cohérent et moins intrusif.

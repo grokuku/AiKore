@@ -202,6 +202,21 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal for Rebuild Confirmation -->
+    <div id="rebuild-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2>Rebuild Environment: <span id="rebuild-modal-instance-name"></span></h2>
+            <p id="rebuild-modal-message">This will rebuild the environment. Continue?</p>
+            <div class="modal-actions">
+                <button id="rebuild-btn-confirm" class="action-btn success-btn">Confirm Rebuild</button>
+                <button id="rebuild-btn-cancel" class="action-btn danger-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW: Toast Notification Container -->
+    <div id="toast-container"></div>
 </body>
 
 </html>
