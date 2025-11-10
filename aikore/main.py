@@ -3,6 +3,7 @@ import glob
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from pynvml import nvmlInit, nvmlShutdown, NVMLError
 
 from .database import models, crud, migration
 from .database.session import SessionLocal
@@ -25,10 +26,18 @@ app = FastAPI(
 def startup_event():
     """
     Actions to perform on application startup.
+    - Initializes NVML for GPU monitoring.
     - Resets the status of all instances to 'stopped'.
     - Clears all old log files.
     - Autostarts instances marked for it.
     """
+    # 0. Initialize NVML
+    try:
+        nvmlInit()
+        print("[Startup] NVML initialized successfully.")
+    except NVMLError as error:
+        print(f"[Startup] [Warning] NVML could not be initialized: {error}. GPU features will be disabled.")
+
     db = SessionLocal()
     try:
         # 1. Reset all instance statuses
@@ -66,6 +75,18 @@ def startup_event():
                     db.commit()
     finally:
         db.close()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    """
+    Actions to perform on application shutdown.
+    - Shuts down NVML.
+    """
+    try:
+        nvmlShutdown()
+        print("[Shutdown] NVML shut down successfully.")
+    except NVMLError:
+        pass # Ignore if it was never initialized or already shut down
 
 # Include the API routers
 app.include_router(instances.router)

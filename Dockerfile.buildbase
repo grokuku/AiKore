@@ -4,8 +4,8 @@ FROM nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
-# La liste complète pour les modules compatibles avec toutes les architectures
-ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" 
+# User-defined list for consumer cards
+ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10"
 ENV MAX_JOBS=2
 WORKDIR /build
 
@@ -34,81 +34,77 @@ RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
 # --- Wheel Compilation ---
 # Pre-compile performance libraries to speed up runtime installation.
 
-# flash-attn (compatible with all listed architectures)
+# flash-attn
 RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-attention \
     && cd /build/flash-attention \
-    && python3.12 setup.py bdist_wheel \
-    && mv dist/*.whl /build/ \
+    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+    && export FLASH_ATTENTION_FORCE_BUILD=TRUE \
+    && python3.12 -m pip wheel . -w /build/ \
     && cd /build \
     && rm -rf flash-attention
 
-# sageattention (compatible with all listed architectures)
+# sageattention
 RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build/SageAttention \
-    && python3.12 setup.py bdist_wheel \
-    && mv dist/*.whl /build/ \
+    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+    && python3.12 -m pip wheel . -w /build/ \
     && cd /build \
     && rm -rf SageAttention
 
-# bitsandbytes (compatible with all listed architectures, with pyproject.toml modification)
+# bitsandbytes
 #RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
 #    && cd /build/bitsandbytes \
-#    && python3.12 setup.py bdist_wheel \
-#    && mv dist/*.whl /build/ \
+#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
 #    && rm -rf bitsandbytes
 
-# diso (compatible with all listed architectures)
+# diso
 RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodules \
     && cd /build/diso \
-    && python3.12 setup.py bdist_wheel \
-    && mv dist/*.whl /build/ \
+    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+    && python3.12 -m pip wheel . -w /build/ \
     && cd /build \
     && rm -rf diso
 
-# nvdiffrast (compatible with all listed architectures)
+# nvdiffrast
 RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
     && cd /build/nvdiffrast \
-    && python3.12 setup.py bdist_wheel \
-    && mv dist/*.whl /build/ \
+    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+    && python3.12 -m pip wheel . -w /build/ \
     && cd /build \
     && rm -rf nvdiffrast
 
-# --- Modules requiring limited architectures (8.0 8.6 8.7 8.9 9.0 9.0a) ---
-# IMPORTANT: Temporarily limit TORCH_CUDA_ARCH_LIST for these modules due to compatibility issues
-
-    
 # xformers
 #RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
-#    && expose TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" \
 #    && cd /build/xformers \
 #    && git submodule update --init --recursive \
-#    && python3.12 setup.py bdist_wheel \
-#    && mv dist/*.whl /build/ \
+#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
 #    && rm -rf xformers
 
-# kaolin (Reactivated with limited architectures)
-#RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
+# kaolin
+#RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
 #    && cd /build/kaolin_5090 \
-#    && python3.12 setup.py bdist_wheel \
-#    && mv dist/*.whl /build/ \
+#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
 #    && rm -rf kaolin_5090
 
-# mip-splatting / diff-gaussian-rasterization (Reactivated with limited architectures)
-#RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
+# mip-splatting / diff-gaussian-rasterization
+#RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
 #    && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
-#    && python3.12 setup.py bdist_wheel \
-#    && mv dist/*.whl /build/ \
+#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
 #    && rm -rf mip-splatting
 
-# vox2seq / TRELLIS (Reactivated with limited architectures)
-#RUN TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a" git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
+# vox2seq / TRELLIS
+#RUN git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
 #    && cd /build/TRELLIS/extensions/vox2seq \
-#    && python3.12 setup.py bdist_wheel \
-#    && mv dist/*.whl /build/ \
+#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
 #    && rm -rf TRELLIS
 

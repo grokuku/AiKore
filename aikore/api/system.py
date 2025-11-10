@@ -2,7 +2,14 @@ from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel
 import os
 import psutil
-from pynvml import *
+from pynvml import (
+    NVMLError,
+    nvmlDeviceGetCount,
+    nvmlDeviceGetHandleByIndex,
+    nvmlDeviceGetMemoryInfo,
+    nvmlDeviceGetName,
+    nvmlDeviceGetUtilizationRates
+)
 from sqlalchemy.orm import Session
 import re
 
@@ -77,9 +84,7 @@ def get_system_info():
     """
     info = {}
     try:
-        nvmlInit()
         info["gpu_count"] = nvmlDeviceGetCount()
-        nvmlShutdown()
     except NVMLError:
         info["gpu_count"] = 0
     return info
@@ -100,7 +105,6 @@ def get_system_stats():
     }
 
     try:
-        nvmlInit()
         device_count = nvmlDeviceGetCount()
         for i in range(device_count):
             handle = nvmlDeviceGetHandleByIndex(i)
@@ -122,7 +126,6 @@ def get_system_stats():
                 "utilization_percent": util_rates.gpu
             }
             stats["gpus"].append(gpu_info)
-        nvmlShutdown()
     except NVMLError as error:
         # This can happen if NVIDIA drivers are not installed or no GPU is found.
         # We'll just return the stats without GPU info.

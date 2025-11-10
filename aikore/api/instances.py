@@ -75,20 +75,12 @@ def get_system_info():
         gpu_count = 0
     return {"gpu_count": gpu_count}
 
-@router.post("/instances/", response_model=schemas.Instance)
-def create_new_instance(instance: schemas.InstanceCreate, db: Session = Depends(get_db)):
-    db_instance = crud.get_instance_by_name(db, name=instance.name)
-    if db_instance:
-        raise HTTPException(status_code=400, detail="Instance with this name already exists")
-
-    # --- RE-ARCHITECTED PORT LOGIC ---
-    
-    # Define ports to be assigned
-    app_port = None
-    persistent_port = None
-    persistent_display = None
-
-    # Get the pool of available, user-facing ports
+def _allocate_ports(db: Session, persistent_mode: bool, requested_port: int | None, instance_to_exclude_id: int | None = None) -> dict:
+    """
+    Allocates application and persistent ports based on availability and instance mode.
+    Returns a dictionary with 'port', 'persistent_port', and 'persistent_display'.
+    If instance_to_exclude_id is provided, its ports are ignored during conflict checks.
+    """
     port_range_str = os.environ.get("AIKORE_INSTANCE_PORT_RANGE", "19001-19020")
     try:
         start_port, end_port = map(int, port_range_str.split('-'))
@@ -99,60 +91,71 @@ def create_new_instance(instance: schemas.InstanceCreate, db: Session = Depends(
             detail=f"Invalid AIKORE_INSTANCE_PORT_RANGE format: '{port_range_str}'. Expected 'start-end'."
         )
 
-    # Find which ports from the pool are already in use
     instances = crud.get_instances(db, limit=1000)
-    # Check both port and persistent_port to see what's used from the main pool
-    used_pool_ports = {inst.port for inst in instances if inst.port in all_possible_ports}
-    used_pool_ports.update({inst.persistent_port for inst in instances if inst.persistent_port in all_possible_ports})
+    used_pool_ports = set()
+    for inst in instances:
+        if inst.id == instance_to_exclude_id:
+            continue
+        if inst.port in all_possible_ports:
+            used_pool_ports.add(inst.port)
+        if inst.persistent_port in all_possible_ports:
+            used_pool_ports.add(inst.persistent_port)
 
-    if instance.persistent_mode:
-        # For persistent mode, the USER-FACING port is the persistent_port, chosen from the pool.
-        user_selected_port = instance.port # The UI sends the choice in the 'port' field
-        
-        if user_selected_port:
-            # User provided a port, validate it
-            if user_selected_port not in all_possible_ports:
-                raise HTTPException(status_code=400, detail=f"Selected port {user_selected_port} is not within the allowed range {port_range_str}.")
-            if user_selected_port in used_pool_ports:
-                raise HTTPException(status_code=400, detail=f"Selected port {user_selected_port} is already in use.")
-            persistent_port = user_selected_port
+    app_port = None
+    persistent_port = None
+    persistent_display = None
+
+    if persistent_mode:
+        if requested_port:
+            if requested_port not in all_possible_ports:
+                raise HTTPException(status_code=400, detail=f"Selected port {requested_port} is not within the allowed range {port_range_str}.")
+            if requested_port in used_pool_ports:
+                raise HTTPException(status_code=400, detail=f"Selected port {requested_port} is already in use.")
+            persistent_port = requested_port
         else:
-            # User did not provide a port, find the first available one from the pool
             available_ports = sorted(list(all_possible_ports - used_pool_ports))
             if not available_ports:
-                raise HTTPException(status_code=503, detail="No available ports for new instances.")
+                raise HTTPException(status_code=503, detail="No available ports for new persistent instances.")
             persistent_port = available_ports[0]
         
-        # The application port is a random internal port
         app_port = _find_free_port()
         persistent_display = _find_free_display()
-
     else:
-        # For normal mode, the USER-FACING port is the app_port, chosen from the pool.
-        user_selected_port = instance.port
-
-        if user_selected_port:
-            if user_selected_port not in all_possible_ports:
-                raise HTTPException(status_code=400, detail=f"Selected port {user_selected_port} is not within the allowed range {port_range_str}.")
-            if user_selected_port in used_pool_ports:
-                raise HTTPException(status_code=400, detail=f"Selected port {user_selected_port} is already in use.")
-            app_port = user_selected_port
+        if requested_port:
+            if requested_port not in all_possible_ports:
+                raise HTTPException(status_code=400, detail=f"Selected port {requested_port} is not within the allowed range {port_range_str}.")
+            if requested_port in used_pool_ports:
+                raise HTTPException(status_code=400, detail=f"Selected port {requested_port} is already in use.")
+            app_port = requested_port
         else:
             available_ports = sorted(list(all_possible_ports - used_pool_ports))
             if not available_ports:
-                raise HTTPException(status_code=503, detail="No available ports for new instances.")
+                raise HTTPException(status_code=503, detail="No available ports for new normal instances.")
             app_port = available_ports[0]
         
-        # No persistent resources for normal mode
         persistent_port = None
         persistent_display = None
+
+    return {
+        "port": app_port,
+        "persistent_port": persistent_port,
+        "persistent_display": persistent_display
+    }
+
+@router.post("/instances/", response_model=schemas.Instance)
+def create_new_instance(instance: schemas.InstanceCreate, db: Session = Depends(get_db)):
+    db_instance = crud.get_instance_by_name(db, name=instance.name)
+    if db_instance:
+        raise HTTPException(status_code=400, detail="Instance with this name already exists")
+
+    port_allocations = _allocate_ports(db, instance.persistent_mode, instance.port)
 
     return crud.create_instance(
         db=db, 
         instance=instance,
-        port=app_port,
-        persistent_port=persistent_port,
-        persistent_display=persistent_display
+        port=port_allocations["port"],
+        persistent_port=port_allocations["persistent_port"],
+        persistent_display=port_allocations["persistent_display"]
     )
 
 @router.get("/instances/", response_model=List[schemas.Instance])
@@ -163,41 +166,135 @@ def read_all_instances(skip: int = 0, limit: int = 100, db: Session = Depends(ge
 # NEW: Endpoint to update an instance's details
 @router.put("/instances/{instance_id}", response_model=schemas.Instance)
 def update_instance_details(
-    instance_id: int, 
-    instance_update: schemas.InstanceUpdate, 
+    instance_id: int,
+    instance_update: schemas.InstanceUpdate,
     db: Session = Depends(get_db)
 ):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
         raise HTTPException(status_code=404, detail="Instance not found")
-    
+
     update_data = instance_update.model_dump(exclude_unset=True)
+    
+    if not update_data:
+        return db_instance
 
-    # Special case: allow 'autostart' to be updated on a running instance
-    # if it's the ONLY thing being updated.
-    is_only_autostart_update = list(update_data.keys()) == ['autostart']
+    # --- Autostart-only case (no restart needed) ---
+    if list(update_data.keys()) == ['autostart']:
+        return crud.update_instance(db, db_instance=db_instance, instance_update=instance_update)
 
-    # Proactive check: Disallow other updates on a running instance
-    if db_instance.status != "stopped" and not is_only_autostart_update:
-        raise HTTPException(status_code=400, detail="Instance must be stopped to apply these changes.")
+    # --- For all other updates, handle stop/start ---
+    was_running = db_instance.status != "stopped"
+    if was_running:
+        print(f"Instance '{db_instance.name}' is running. Stopping it before update.")
+        process_manager.stop_instance_process(db=db, instance=db_instance)
+        db.refresh(db_instance)
 
-    # Check if the name is being changed and if the new name already exists
-    if "name" in update_data and update_data["name"] != db_instance.name:
-        existing_instance = crud.get_instance_by_name(db, name=update_data["name"])
-        if existing_instance:
-            raise HTTPException(status_code=400, detail="An instance with the new name already exists.")
-        # NOTE: Renaming the instance directory is a side-effect that needs careful handling.
-        # For now, we focus on DB change. Frontend should be aware.
-        # A more robust solution would handle the rename in a transaction.
+    # --- Apply changes ---
+    original_name = db_instance.name
+    final_update_data = update_data.copy()
+
+    # 1. Name Change (most disruptive)
+    if "name" in update_data and update_data["name"] != original_name:
+        new_name = update_data["name"]
+        print(f"Processing name change from '{original_name}' to '{new_name}'")
+        
+        if crud.get_instance_by_name(db, name=new_name):
+            raise HTTPException(status_code=400, detail=f"An instance with the name '{new_name}' already exists.")
+        
         try:
-            old_dir = os.path.join(INSTANCES_DIR, db_instance.name)
-            new_dir = os.path.join(INSTANCES_DIR, update_data["name"])
+            old_dir = os.path.join(INSTANCES_DIR, original_name)
+            new_dir = os.path.join(INSTANCES_DIR, new_name)
             if os.path.isdir(old_dir):
+                print(f"Renaming directory from '{old_dir}' to '{new_dir}'")
                 os.rename(old_dir, new_dir)
+                rebuild_trigger_path = os.path.join(new_dir, ".rebuild-env")
+                print(f"Creating rebuild trigger file at '{rebuild_trigger_path}'")
+                with open(rebuild_trigger_path, 'w') as f:
+                    f.write('') # Create empty file
+            else:
+                print(f"Instance directory '{old_dir}' not found. Only DB name will be updated.")
+
         except OSError as e:
+            if 'new_dir' in locals() and not os.path.isdir(old_dir) and os.path.isdir(new_dir):
+                os.rename(new_dir, old_dir)
             raise HTTPException(status_code=500, detail=f"Failed to rename instance directory: {e}")
 
-    updated_instance = crud.update_instance(db, instance_id, instance_update)
+    # 2. Blueprint Change
+    if "base_blueprint" in update_data and update_data["base_blueprint"] != db_instance.base_blueprint:
+        new_blueprint = update_data["base_blueprint"]
+        print(f"Processing blueprint change to '{new_blueprint}'")
+        
+        current_name = update_data.get("name", original_name)
+        instance_conf_dir = os.path.join(INSTANCES_DIR, current_name)
+        os.makedirs(instance_conf_dir, exist_ok=True)
+        instance_file_path = os.path.join(instance_conf_dir, "launch.sh")
+
+        custom_blueprint_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, new_blueprint)
+        stock_blueprint_path = os.path.join(BLUEPRINTS_DIR, new_blueprint)
+        
+        blueprint_to_copy = None
+        if os.path.exists(custom_blueprint_path):
+            blueprint_to_copy = custom_blueprint_path
+        elif os.path.exists(stock_blueprint_path):
+            blueprint_to_copy = stock_blueprint_path
+        
+        if blueprint_to_copy:
+            try:
+                print(f"Copying '{blueprint_to_copy}' to '{instance_file_path}'")
+                shutil.copy(blueprint_to_copy, instance_file_path)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to update launch script: {e}")
+        else:
+            print(f"WARNING: New blueprint file '{new_blueprint}' not found. Skipping script update.")
+
+    # 3. Port-related changes (persistent_mode or port itself)
+    persistent_mode_changed = "persistent_mode" in update_data and update_data["persistent_mode"] != db_instance.persistent_mode
+    port_changed = "port" in update_data and update_data["port"] != db_instance.port
+
+    if persistent_mode_changed or port_changed:
+        new_persistent_mode = update_data.get("persistent_mode", db_instance.persistent_mode)
+        new_requested_port = update_data.get("port", db_instance.port)
+        
+        print(f"Processing port-related change. New persistent_mode: {new_persistent_mode}, new requested_port: {new_requested_port}")
+
+        port_allocations = _allocate_ports(db, new_persistent_mode, new_requested_port, instance_to_exclude_id=db_instance.id)
+        final_update_data.update(port_allocations)
+
+        # If we just enabled persistent mode, install dependencies
+        if new_persistent_mode and not db_instance.persistent_mode:
+            print(f"Enabling persistent mode for '{db_instance.name}'. Installing dependencies.")
+            # We need to apply the name change to the db_instance object before running this
+            # so it can find the correct directory if the name was also changed.
+            temp_instance_for_cmd = schemas.Instance.model_validate(db_instance)
+            temp_instance_for_cmd.name = update_data.get("name", original_name)
+
+            success, output = process_manager.run_command_in_instance_venv(
+                temp_instance_for_cmd,
+                "pip install websockify numpy"
+            )
+            if not success:
+                # We don't raise an exception, but we should log this failure.
+                # The instance will likely fail to start, but the update itself is saved.
+                print(f"WARNING: Failed to install persistent mode dependencies for '{db_instance.name}': {output}")
+
+    # --- Finalize ---
+    print("Updating instance record in database with final data:", final_update_data)
+    
+    # We need to construct a new InstanceUpdate object for the CRUD function
+    final_instance_update = schemas.InstanceUpdate(**final_update_data)
+    
+    updated_instance = crud.update_instance(db, instance_id=db_instance.id, instance_update=final_instance_update)
+    db.refresh(updated_instance)
+
+    if was_running:
+        print(f"Restarting instance '{updated_instance.name}'.")
+        try:
+            process_manager.start_instance_process(db=db, instance=updated_instance)
+        except Exception as e:
+            print(f"CRITICAL: Failed to restart instance after update: {e}")
+            pass
+
     return updated_instance
 
 @router.post("/instances/{instance_id}/rebuild", response_model=schemas.Instance, tags=["Instance Actions"])

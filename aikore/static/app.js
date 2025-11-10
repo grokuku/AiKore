@@ -748,41 +748,44 @@ document.addEventListener('DOMContentLoaded', () => {
         instanceToUpdate = null;
     }
 
-    async function performInstanceUpdate(row, button) {
+    async function performFullInstanceUpdate(row, button) {
         const instanceId = row.dataset.id;
+        
         const data = {
             name: row.querySelector('input[data-field="name"]').value,
             base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
+            output_path: row.querySelector('input[data-field="output_path"]').value || null,
             gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
-            autostart: row.querySelector('input[data-field="autostart"]').checked,
+            persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
             hostname: row.querySelector('input[data-field="hostname"]').value || null,
             use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
         };
-
-        button.textContent = 'Updating...';
-        button.disabled = true;
+    
+        const modalConfirmButton = document.getElementById('update-confirm-btn-confirm');
+        const originalButtonText = modalConfirmButton.textContent;
+        modalConfirmButton.textContent = 'Updating...';
+        modalConfirmButton.disabled = true;
+    
         try {
             const response = await fetch(`/api/instances/${instanceId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
             });
-            if (!response.ok) throw new Error((await response.json()).detail);
-            const updatedInstance = await response.json();
-
-            row.dataset.originalName = updatedInstance.name;
-            row.dataset.originalBlueprint = updatedInstance.base_blueprint;
-            row.dataset.originalGpuIds = updatedInstance.gpu_ids || '';
-            row.dataset.originalAutostart = String(updatedInstance.autostart);
-            row.dataset.originalHostname = updatedInstance.hostname || '';
-            row.dataset.originalUseCustomHostname = String(updatedInstance.use_custom_hostname);
-
-            showToast(`Instance '${data.name}' updated.`);
+    
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to update instance.');
+            }
+            
+            showToast(`Instance '${data.name}' is being updated.`, 'success');
             await fetchAndRenderInstances();
+    
         } catch (error) {
             showToast(error.message, 'error');
-            button.textContent = 'Update';
-            checkRowForChanges(row);
+        } finally {
+            modalConfirmButton.textContent = originalButtonText;
+            modalConfirmButton.disabled = false;
         }
     }
 
@@ -1059,11 +1062,7 @@ document.addEventListener('DOMContentLoaded', () => {
             hideAllModals();
         } else if (action === 'update-confirm-btn-confirm') {
             if (instanceToUpdate) {
-                // Placeholder for now
-                console.log("Update confirmed for instance:", instanceToUpdate.row.dataset.id);
-                showToast("Update logic is not yet implemented.", "error");
-                // In the future, this would call performInstanceUpdate
-                // performInstanceUpdate(instanceToUpdate.row, instanceToUpdate.button);
+                performFullInstanceUpdate(instanceToUpdate.row, instanceToUpdate.button);
             }
             hideAllModals();
         }

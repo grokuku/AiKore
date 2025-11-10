@@ -430,3 +430,51 @@ def run_version_check(instance: models.Instance) -> str:
         return "Error: The version check script timed out."
     except Exception as e:
         return f"An unexpected error occurred while running version check: {e}"
+
+def run_command_in_instance_venv(instance: models.Instance, command_to_run: str) -> (bool, str):
+    """
+    Runs a given shell command within the instance's configured virtual environment.
+    Returns a tuple of (success: bool, output: str).
+    """
+    instance_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
+    metadata = parse_blueprint_metadata(instance.base_blueprint)
+    
+    venv_type = metadata.get('venv_type')
+    venv_path = metadata.get('venv_path')
+    
+    command = ['/bin/bash', '-c', command_to_run] # Default command if no venv
+
+    if venv_type and venv_path:
+        full_venv_path = os.path.join(instance_conf_dir, venv_path)
+        if venv_type == 'conda' and os.path.isdir(full_venv_path):
+            activate_and_run_cmd = f"source /home/abc/miniconda3/bin/activate {full_venv_path} && {command_to_run}"
+            command = ['/bin/bash', '-c', activate_and_run_cmd]
+        elif venv_type == 'python' and os.path.exists(os.path.join(full_venv_path, 'bin', 'activate')):
+            activate_and_run_cmd = f"source {os.path.join(full_venv_path, 'bin', 'activate')} && {command_to_run}"
+            command = ['/bin/bash', '-c', activate_and_run_cmd]
+
+    try:
+        print(f"[Manager] Running command in venv for '{instance.name}': {command_to_run}")
+        result = subprocess.run(
+            command,
+            cwd=instance_conf_dir,
+            capture_output=True,
+            text=True,
+            timeout=300 # 5-minute timeout for pip installs
+        )
+        if result.returncode != 0:
+            error_output = f"Error running command:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+            print(f"[Manager] Command failed for '{instance.name}': {error_output}")
+            return False, error_output
+        
+        print(f"[Manager] Command succeeded for '{instance.name}'.")
+        return True, result.stdout
+    except subprocess.TimeoutExpired:
+        error_msg = "Error: The command timed out."
+        print(f"[Manager] Command timed out for '{instance.name}'.")
+        return False, error_msg
+    except Exception as e:
+        error_msg = f"An unexpected error occurred: {e}"
+        print(f"[Manager] Command failed for '{instance.name}' with exception: {e}")
+        return False, error_msg
+    
