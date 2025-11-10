@@ -31,10 +31,10 @@ RUN python3 -m pip install --no-cache-dir wheel packaging scikit-build-core nump
 # --- PyTorch Compilation ---
 WORKDIR /build
 RUN git clone --branch ${PYTORCH_TAG} https://github.com/pytorch/pytorch.git . \
-        && git submodule update --init --recursive \
-        && echo "============================================================================" \
-        && echo "Starting PyTorch ${PYTORCH_TAG} compilation for CUDA arches: ${TORCH_CUDA_ARCH_LIST}"&& echo "============================================================================"
-&& export CMAKE_BUILD_TYPE=Release \
+    && git submodule update --init --recursive \
+    && echo "============================================================================" \
+    && echo "Starting PyTorch ${PYTORCH_TAG} compilation for CUDA arches: ${TORCH_CUDA_ARCH_LIST}"&& echo "============================================================================" \
+    && export CMAKE_BUILD_TYPE=Release \
     && export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
     && export USE_CUDA=1 \
     && export BUILD_TEST=0 \
