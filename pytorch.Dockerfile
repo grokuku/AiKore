@@ -3,7 +3,7 @@
 # This Dockerfile is dedicated to compiling a specific version of PyTorch from source.
 # It is designed to be used with a GitHub Actions workflow that passes build arguments.
 
-ARG BASE_IMAGE_TAG=13.0.2-cudnn-runtime-ubuntu24.04
+ARG BASE_IMAGE_TAG=13.0.2-cudnn-devel-ubuntu22.04
 FROM nvidia/cuda:${BASE_IMAGE_TAG}
 
 ARG PYTORCH_TAG=v2.9.0
@@ -43,5 +43,5 @@ RUN git clone --branch ${PYTORCH_TAG} https://github.com/pytorch/pytorch.git . \
 
 # --- Final Stage ---
 # A minimal image to hold the final wheel.
-FROM scratch
+FROM scratch AS scratch
 COPY --from=0 /dist/ /dist/
