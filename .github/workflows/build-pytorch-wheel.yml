@@ -40,7 +40,7 @@ jobs:
           # Do not push the image, we only want the build result
           push: false
           # Target the final 'scratch' stage which only contains the wheel
-          target: scratch
+          target: final
           # Export the build result to a local directory
           outputs: type=local,dest=./wheel_output
           # Pass the workflow inputs as build arguments to the Dockerfile
