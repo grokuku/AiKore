@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # --- Python Build Dependencies ---
 # We install them here to ensure they are cached by Docker unless changed.
-RUN python3 -m pip install --no-cache-dir wheel packaging scikit-build-core numpy cython
+RUN python3 -m pip install --no-cache-dir wheel packaging scikit-build-core numpy cython six
 
 # --- PyTorch Compilation ---
 WORKDIR /build

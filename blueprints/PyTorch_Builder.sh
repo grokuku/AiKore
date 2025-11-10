@@ -44,9 +44,11 @@ echo "Build will occur in temporary directory: ${BUILD_DIR}"
 
 # --- Dependency Check/Install ---
 # The base AiKore image should have these, but we run it just in case.
-echo "--- Updating apt and installing build dependencies (if missing) ---"
-apt-get update
-apt-get install -y --no-install-recommends git cmake ninja-build libopenblas-dev
+# The apt-get commands are removed as they cause permission errors and dependencies are already in the base image.
+
+# --- Python Build Dependencies ---
+echo "--- Installing Python build dependencies ---"
+python3 -m pip install --no-cache-dir wheel packaging scikit-build-core numpy cython six
 
 # --- Source Code Checkout ---
 echo "--- Cloning PyTorch repository (version ${PYTORCH_TAG}) ---"
