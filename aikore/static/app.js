@@ -341,6 +341,14 @@ document.addEventListener('DOMContentLoaded', () => {
         blueprintSelect.disabled = !isNew && isActive;
         row.insertCell().appendChild(blueprintSelect);
 
+        const outputPathInput = document.createElement('input');
+        outputPathInput.type = 'text';
+        outputPathInput.value = ''; // Dummy
+        outputPathInput.dataset.field = 'output_path';
+        outputPathInput.placeholder = 'Optional: /path/to/outputs';
+        outputPathInput.disabled = !isNew && isActive;
+        row.insertCell().appendChild(outputPathInput);
+
         const gpuCell = row.insertCell();
         const gpuContainer = document.createElement('div');
         gpuContainer.className = 'gpu-checkbox-container';
@@ -491,12 +499,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (instancesTbody.childElementCount === 0) {
-                instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="10" style="text-align: center;">No instances created yet.</td></tr>`;
+                instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="11" style="text-align: center;">No instances created yet.</td></tr>`;
             }
         } catch (error) {
             console.error("Failed to fetch instances:", error);
             if (instancesPollInterval) clearInterval(instancesPollInterval);
-            instancesTbody.innerHTML = `<tr><td colspan="10" style="text-align:center;">Error loading data. Check console.</td></tr>`;
+            instancesTbody.innerHTML = `<tr><td colspan="11" style="text-align:center;">Error loading data. Check console.</td></tr>`;
         }
     }
 
