@@ -104,7 +104,7 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 #    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
 #    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
-    && rm -rf TRELLIS
+#    && rm -rf TRELLIS
 
 # --- Final Stage ---
 # This ensures the final image is also based on Ubuntu 24.04 (noble)
