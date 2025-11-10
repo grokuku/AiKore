@@ -14,7 +14,7 @@ on:
         default: '12.4.1-cudnn-devel-ubuntu22.04'
       torch_cuda_arch_list:
         description: 'Space-separated list of CUDA architectures (e.g., "8.9")'
-        required: true,
+        required: true
         default: '8.9'
 
 jobs:
