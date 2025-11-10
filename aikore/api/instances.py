@@ -171,13 +171,19 @@ def update_instance_details(
     if not db_instance:
         raise HTTPException(status_code=404, detail="Instance not found")
     
-    # Proactive check: Disallow updates on a running instance to prevent inconsistencies
-    if db_instance.status != "stopped":
-        raise HTTPException(status_code=400, detail="Instance must be stopped to be updated.")
+    update_data = instance_update.model_dump(exclude_unset=True)
+
+    # Special case: allow 'autostart' to be updated on a running instance
+    # if it's the ONLY thing being updated.
+    is_only_autostart_update = list(update_data.keys()) == ['autostart']
+
+    # Proactive check: Disallow other updates on a running instance
+    if db_instance.status != "stopped" and not is_only_autostart_update:
+        raise HTTPException(status_code=400, detail="Instance must be stopped to apply these changes.")
 
     # Check if the name is being changed and if the new name already exists
-    if instance_update.name and instance_update.name != db_instance.name:
-        existing_instance = crud.get_instance_by_name(db, name=instance_update.name)
+    if "name" in update_data and update_data["name"] != db_instance.name:
+        existing_instance = crud.get_instance_by_name(db, name=update_data["name"])
         if existing_instance:
             raise HTTPException(status_code=400, detail="An instance with the new name already exists.")
         # NOTE: Renaming the instance directory is a side-effect that needs careful handling.
@@ -185,7 +191,7 @@ def update_instance_details(
         # A more robust solution would handle the rename in a transaction.
         try:
             old_dir = os.path.join(INSTANCES_DIR, db_instance.name)
-            new_dir = os.path.join(INSTANCES_DIR, instance_update.name)
+            new_dir = os.path.join(INSTANCES_DIR, update_data["name"])
             if os.path.isdir(old_dir):
                 os.rename(old_dir, new_dir)
         except OSError as e:

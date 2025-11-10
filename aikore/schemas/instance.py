@@ -6,6 +6,7 @@ class InstanceBase(BaseModel):
     name: str
     base_blueprint: str
     gpu_ids: str | None = None
+    output_path: str | None = None
     autostart: bool = False
     persistent_mode: bool = False
     hostname: str | None = None # NEW: Add hostname field
@@ -20,9 +21,11 @@ class InstanceCreate(InstanceBase):
 # Defines the fields that are allowed to be updated on an existing instance.
 class InstanceUpdate(BaseModel):
     name: str | None = None
-    base_blueprint: str | None = None # <-- MODIFICATION ICI
+    base_blueprint: str | None = None
     gpu_ids: str | None = None
+    output_path: str | None = None
     autostart: bool | None = None
+    persistent_mode: bool | None = None
     hostname: str | None = None
     use_custom_hostname: bool | None = None
 

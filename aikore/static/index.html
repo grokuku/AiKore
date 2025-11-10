@@ -248,6 +248,21 @@
         </div>
     </div>
 
+    <!-- NEW: Modal for Update Confirmation -->
+    <div id="update-confirm-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 id="update-confirm-title">Confirm Changes</h2>
+            <p id="update-confirm-warning">The following changes will be applied.</p>
+            <div id="update-confirm-changes" class="changes-list">
+                <!-- Changes will be populated here -->
+            </div>
+            <div class="modal-actions">
+                <button id="update-confirm-btn-confirm" class="action-btn success-btn">Update</button>
+                <button id="update-confirm-btn-cancel" class="action-btn danger-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- NEW: Toast Notification Container -->
     <div id="toast-container"></div>
 </body>

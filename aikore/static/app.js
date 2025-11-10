@@ -31,6 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const restartConfirmModal = document.getElementById('restart-confirm-modal');
     const saveBlueprintModal = document.getElementById('save-blueprint-modal');
     const blueprintFilenameInput = document.getElementById('blueprint-filename-input');
+    const updateConfirmModal = document.getElementById('update-confirm-modal');
+    let instanceToUpdate = null;
 
     let instanceToDeleteId = null;
     let instanceToRebuild = null;
@@ -224,19 +226,27 @@ document.addEventListener('DOMContentLoaded', () => {
         const updateButton = row.querySelector('button[data-action="update"]');
         if (!updateButton) return;
 
-        const nameField = row.querySelector('input[data-field="name"]');
-        const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
-        const autostartField = row.querySelector('input[data-field="autostart"]');
-        const hostnameField = row.querySelector('input[data-field="hostname"]');
-        const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
-        const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
-
         let changed = false;
+
+        const nameField = row.querySelector('input[data-field="name"]');
         if (nameField.value !== row.dataset.originalName) changed = true;
+
+        const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
         if (blueprintField && blueprintField.value !== row.dataset.originalBlueprint) changed = true;
+
+        const outputPathField = row.querySelector('input[data-field="output_path"]');
+        if ((outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) changed = true;
+
+        const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
         if (selectedGpuIds !== row.dataset.originalGpuIds) changed = true;
-        if (autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
+
+        const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
+        if (persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) changed = true;
+
+        const hostnameField = row.querySelector('input[data-field="hostname"]');
         if ((hostnameField.value || '') !== (row.dataset.originalHostname || '')) changed = true;
+
+        const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
         if (useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) changed = true;
 
         updateButton.disabled = !changed;
@@ -294,10 +304,31 @@ document.addEventListener('DOMContentLoaded', () => {
         openButton.classList.toggle('disabled', openHref === '#');
         viewButton.disabled = (instance.status !== 'started');
 
-        row.querySelector('input[data-field="name"]').disabled = isActive;
-        row.querySelector('select[data-field="base_blueprint"]').disabled = isActive;
-
         checkRowForChanges(row);
+    }
+
+    async function updateInstanceAutostart(instanceId, autostartValue, instanceName) {
+        try {
+            const response = await fetch(`/api/instances/${instanceId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ autostart: autostartValue })
+            });
+            if (!response.ok) throw new Error((await response.json()).detail);
+            const updatedInstance = await response.json();
+
+            const row = instancesTbody.querySelector(`tr[data-id="${instanceId}"]`);
+            if (row) {
+                row.dataset.originalAutostart = String(updatedInstance.autostart);
+            }
+            showToast(`Autostart for '${instanceName}' updated.`, 'success');
+        } catch (error) {
+            showToast(`Error updating autostart: ${error.message}`, 'error');
+            const row = instancesTbody.querySelector(`tr[data-id="${instanceId}"]`);
+            if (row) {
+                row.querySelector('input[data-field="autostart"]').checked = !autostartValue;
+            }
+        }
     }
 
     function renderInstanceRow(instance, isNew = false) {
@@ -312,6 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.originalPersistentMode = String(instance.persistent_mode);
         row.dataset.originalHostname = instance.hostname || '';
         row.dataset.originalUseCustomHostname = String(instance.use_custom_hostname);
+        row.dataset.originalOutputPath = instance.output_path || '';
 
         row.dataset.status = instance.status;
         row.dataset.name = instance.name || '';
@@ -320,8 +352,6 @@ document.addEventListener('DOMContentLoaded', () => {
         row.dataset.persistentMode = String(instance.persistent_mode);
         row.dataset.hostname = instance.hostname || '';
         row.dataset.useCustomHostname = String(instance.use_custom_hostname);
-
-        const isActive = instance.status !== 'stopped';
 
         const handleCell = row.insertCell();
         if (!isNew) {
@@ -334,19 +364,19 @@ document.addEventListener('DOMContentLoaded', () => {
         nameInput.value = instance.name || '';
         nameInput.dataset.field = 'name';
         nameInput.required = true;
-        nameInput.disabled = !isNew && isActive;
+        nameInput.disabled = false;
         row.insertCell().appendChild(nameInput);
 
         const blueprintSelect = createBlueprintSelect(instance.base_blueprint);
-        blueprintSelect.disabled = !isNew && isActive;
+        blueprintSelect.disabled = false;
         row.insertCell().appendChild(blueprintSelect);
 
         const outputPathInput = document.createElement('input');
         outputPathInput.type = 'text';
-        outputPathInput.value = ''; // Dummy
+        outputPathInput.value = instance.output_path || '';
         outputPathInput.dataset.field = 'output_path';
         outputPathInput.placeholder = 'Optional: /path/to/outputs';
-        outputPathInput.disabled = !isNew && isActive;
+        outputPathInput.disabled = false;
         row.insertCell().appendChild(outputPathInput);
 
         const gpuCell = row.insertCell();
@@ -371,13 +401,18 @@ document.addEventListener('DOMContentLoaded', () => {
         autostartCheckbox.type = 'checkbox';
         autostartCheckbox.checked = instance.autostart;
         autostartCheckbox.dataset.field = 'autostart';
+        if (!isNew) {
+            autostartCheckbox.addEventListener('change', (e) => {
+                updateInstanceAutostart(instance.id, e.target.checked, instance.name);
+            });
+        }
         row.insertCell().appendChild(autostartCheckbox);
 
         const persistentModeCheckbox = document.createElement('input');
         persistentModeCheckbox.type = 'checkbox';
         persistentModeCheckbox.checked = instance.persistent_mode;
         persistentModeCheckbox.dataset.field = 'persistent_mode';
-        persistentModeCheckbox.disabled = !isNew && isActive;
+        persistentModeCheckbox.disabled = false;
         row.insertCell().appendChild(persistentModeCheckbox);
 
         row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
@@ -457,7 +492,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 saveButton.disabled = !name || !bp;
             }));
         } else {
-            allFields.forEach(field => field.addEventListener('input', () => checkRowForChanges(row)));
+            allFields.forEach(field => {
+                if (field.dataset.field !== 'autostart') {
+                    field.addEventListener('input', () => checkRowForChanges(row));
+                }
+            });
         }
         return row;
     }
@@ -703,8 +742,10 @@ document.addEventListener('DOMContentLoaded', () => {
         rebuildModal.classList.add('hidden');
         restartConfirmModal.classList.add('hidden');
         saveBlueprintModal.classList.add('hidden');
+        updateConfirmModal.classList.add('hidden');
         instanceToDeleteId = null;
         instanceToRebuild = null;
+        instanceToUpdate = null;
     }
 
     async function performInstanceUpdate(row, button) {
@@ -791,7 +832,65 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast(error.message, 'error');
             }
         } else if (action === 'update') {
-            await performInstanceUpdate(row, target);
+            instanceToUpdate = { row, button: target };
+            const changes = {};
+            const fieldMap = {
+                name: 'Name',
+                base_blueprint: 'Blueprint',
+                output_path: 'Output Path',
+                gpu_ids: 'GPU IDs',
+                persistent_mode: 'Persistent UI',
+                use_custom_hostname: 'Use Custom Address',
+                hostname: 'Custom Address'
+            };
+
+            const nameField = row.querySelector('input[data-field="name"]');
+            if (nameField.value !== row.dataset.originalName) {
+                changes.name = { old: row.dataset.originalName, new: nameField.value, label: fieldMap.name };
+            }
+            const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
+            if (blueprintField.value !== row.dataset.originalBlueprint) {
+                changes.base_blueprint = { old: row.dataset.originalBlueprint, new: blueprintField.value, label: fieldMap.base_blueprint };
+            }
+            const outputPathField = row.querySelector('input[data-field="output_path"]');
+            if ((outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) {
+                changes.output_path = { old: row.dataset.originalOutputPath || '', new: outputPathField.value, label: fieldMap.output_path };
+            }
+            const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
+            if (selectedGpuIds !== row.dataset.originalGpuIds) {
+                changes.gpu_ids = { old: row.dataset.originalGpuIds, new: selectedGpuIds, label: fieldMap.gpu_ids };
+            }
+            const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
+            if (persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) {
+                changes.persistent_mode = { old: row.dataset.originalPersistentMode === 'true' ? 'true' : 'false', new: persistentModeField.checked ? 'true' : 'false', label: fieldMap.persistent_mode };
+            }
+            const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
+            if (useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) {
+                changes.use_custom_hostname = { old: row.dataset.originalUseCustomHostname === 'true' ? 'true' : 'false', new: useHostnameField.checked ? 'true' : 'false', label: fieldMap.use_custom_hostname };
+            }
+            const hostnameField = row.querySelector('input[data-field="hostname"]');
+            if ((hostnameField.value || '') !== (row.dataset.originalHostname || '')) {
+                changes.hostname = { old: row.dataset.originalHostname || '', new: hostnameField.value, label: fieldMap.hostname };
+            }
+
+            const changesContainer = document.getElementById('update-confirm-changes');
+            changesContainer.innerHTML = '';
+            Object.values(changes).forEach(change => {
+                const div = document.createElement('div');
+                div.innerHTML = `<strong>${change.label}:</strong> ${change.old || '""'} &rarr; ${change.new || '""'}`;
+                changesContainer.appendChild(div);
+            });
+
+            const warning = document.getElementById('update-confirm-warning');
+            const title = document.getElementById('update-confirm-title');
+            title.textContent = `Confirm Changes for: ${row.dataset.name}`;
+            if (row.dataset.status !== 'stopped') {
+                warning.textContent = 'This instance is running. Applying these changes will require a restart.';
+            } else {
+                warning.textContent = 'These changes will be applied the next time the instance is started.';
+            }
+
+            updateConfirmModal.classList.remove('hidden');
         } else if (action === 'delete') {
             instanceToDeleteId = instanceId;
             document.getElementById('delete-modal-instance-name').textContent = row.dataset.name;
@@ -934,6 +1033,39 @@ document.addEventListener('DOMContentLoaded', () => {
             hideAllModals();
         } else if (action === 'restart-btn-confirm') {
             updateInstanceScript(true);
+        }
+    });
+
+    updateConfirmModal.addEventListener('click', (e) => {
+        const action = e.target.id;
+        if (action === 'update-confirm-btn-cancel') {
+            if (instanceToUpdate) {
+                const { row } = instanceToUpdate;
+                // Revert changes in the UI
+                row.querySelector('input[data-field="name"]').value = row.dataset.originalName;
+                row.querySelector('select[data-field="base_blueprint"]').value = row.dataset.originalBlueprint;
+                row.querySelector('input[data-field="output_path"]').value = row.dataset.originalOutputPath || '';
+                row.querySelector('input[data-field="persistent_mode"]').checked = row.dataset.originalPersistentMode === 'true';
+                row.querySelector('input[data-field="use_custom_hostname"]').checked = row.dataset.originalUseCustomHostname === 'true';
+                row.querySelector('input[data-field="hostname"]').value = row.dataset.originalHostname || '';
+                
+                const originalGpus = (row.dataset.originalGpuIds || '').split(',').filter(id => id);
+                row.querySelectorAll('input[name^="gpu_id_"]').forEach(cb => {
+                    cb.checked = originalGpus.includes(cb.value);
+                });
+    
+                checkRowForChanges(row); // This will disable the update button
+            }
+            hideAllModals();
+        } else if (action === 'update-confirm-btn-confirm') {
+            if (instanceToUpdate) {
+                // Placeholder for now
+                console.log("Update confirmed for instance:", instanceToUpdate.row.dataset.id);
+                showToast("Update logic is not yet implemented.", "error");
+                // In the future, this would call performInstanceUpdate
+                // performInstanceUpdate(instanceToUpdate.row, instanceToUpdate.button);
+            }
+            hideAllModals();
         }
     });
 
