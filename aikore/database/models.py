@@ -26,6 +26,7 @@ class Instance(Base):
     persistent_mode = Column(Boolean, default=False, nullable=False)
     hostname = Column(String, nullable=True) # Schema V2 field
     use_custom_hostname = Column(Boolean, default=False, nullable=False, server_default='0')
+    output_path = Column(String, nullable=True) # Schema V4 field
     
     # Possible statuses: 'stopped', 'starting', 'stalled', 'started'
     status = Column(String, default="stopped", nullable=False)
