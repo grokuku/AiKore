@@ -4,8 +4,6 @@ FROM nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
-# User-defined list for consumer cards
-ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10"
 ENV MAX_JOBS=2
 WORKDIR /build
 
@@ -15,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential wget curl git cmake gnupg bc rsync ffmpeg ninja-build \
     libxft2 xvfb \
     python3.12 python3.12-dev python3.12-venv python3-setuptools \
-    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12 \
+    && curl -sS https://bootstrap.pypa.to/get-pip.py | python3.12 \
     && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
     && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
     && apt-get clean \
@@ -37,7 +35,7 @@ RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
 # flash-attn
 RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-attention \
     && cd /build/flash-attention \
-    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
     && export FLASH_ATTENTION_FORCE_BUILD=TRUE \
     && python3.12 -m pip wheel . -w /build/ \
     && cd /build \
@@ -46,7 +44,7 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-atte
 # sageattention
 RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build/SageAttention \
-    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
     && python3.12 -m pip wheel . -w /build/ \
     && cd /build \
     && rm -rf SageAttention
@@ -54,7 +52,7 @@ RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
 # bitsandbytes
 #RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
 #    && cd /build/bitsandbytes \
-#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
 #    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
 #    && rm -rf bitsandbytes
@@ -62,7 +60,7 @@ RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
 # diso
 RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodules \
     && cd /build/diso \
-    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
     && python3.12 -m pip wheel . -w /build/ \
     && cd /build \
     && rm -rf diso
@@ -70,7 +68,7 @@ RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodule
 # nvdiffrast
 RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
     && cd /build/nvdiffrast \
-    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
     && python3.12 -m pip wheel . -w /build/ \
     && cd /build \
     && rm -rf nvdiffrast
@@ -79,7 +77,7 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 #RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
 #    && cd /build/xformers \
 #    && git submodule update --init --recursive \
-#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
 #    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
 #    && rm -rf xformers
@@ -87,7 +85,7 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 # kaolin
 #RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
 #    && cd /build/kaolin_5090 \
-#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
 #    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
 #    && rm -rf kaolin_5090
@@ -95,7 +93,7 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 # mip-splatting / diff-gaussian-rasterization
 #RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
 #    && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
-#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
 #    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
 #    && rm -rf mip-splatting
@@ -103,10 +101,10 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 # vox2seq / TRELLIS
 #RUN git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
 #    && cd /build/TRELLIS/extensions/vox2seq \
-#    && export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;10" \
+#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
 #    && python3.12 -m pip wheel . -w /build/ \
 #    && cd /build \
-#    && rm -rf TRELLIS
+    && rm -rf TRELLIS
 
 # --- Final Stage ---
 # This ensures the final image is also based on Ubuntu 24.04 (noble)
