@@ -70,6 +70,7 @@ export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}"
 export USE_CUDA=1
 export BUILD_TEST=0
 export CUDACXX=/usr/local/cuda/bin/nvcc
+export CPLUS_INCLUDE_PATH="/usr/local/cuda/include"
 # Use MAX_JOBS from the container environment if available, otherwise default to 2
 export MAX_JOBS=${MAX_JOBS:-2}
 

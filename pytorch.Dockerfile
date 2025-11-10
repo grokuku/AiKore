@@ -39,6 +39,7 @@ RUN git clone --branch ${PYTORCH_TAG} https://github.com/pytorch/pytorch.git . \
     && export USE_CUDA=1 \
     && export BUILD_TEST=0 \
     && export CUDACXX=/usr/local/cuda/bin/nvcc \
+    && export CPLUS_INCLUDE_PATH="/usr/local/cuda/include" \
     && python3 -m pip wheel . --wheel-dir /dist
 
 # --- Final Stage ---
