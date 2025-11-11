@@ -2,21 +2,17 @@
 name: Docker Build and Push to GHCR
 
 on:
-  # Se déclenche quand vous poussez un tag qui commence par 'v'
   push:
-    tags:
-      - 'v*.*.*'
-      - 'v*.*'
+    branches:
+      - 'main'
 
 env:
   REGISTRY: ghcr.io
-  # Le nom de l'image sera basé sur le nom de votre dépôt (ex: grokuku/aikore)
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
     runs-on: self-hosted
-    #runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -32,20 +28,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Read PyTorch version from file
+        id: torch_version
+        run: echo "TAG=$(cat .versions/torch)" >> $GITHUB_OUTPUT
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
             type=raw,value=latest
-
-      - name: Download PyTorch wheel artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: pytorch-wheel
-          path: ./pytorch-wheel
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -54,3 +47,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GITHUB_REPO=${{ github.repository }}
+            PYTORCH_RELEASE_TAG=${{ steps.torch_version.outputs.TAG }}
