@@ -1,11 +1,19 @@
 body {
     background-color: #111111;
     margin: 0;
-    overflow: hidden; /* Prevent scrollbars */
+    overflow: hidden;
+    /* Effet scanline CSS pour renforcer le look CRT */
+    background-image: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.2),
+        rgba(0, 0, 0, 0.2) 1px,
+        transparent 1px,
+        transparent 2px
+    );
 }
 
 #welcome-canvas {
-    display: block; /* Remove default inline behavior */
+    display: block;
     width: 100vw;
     height: 100vh;
 }

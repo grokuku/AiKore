@@ -1,14 +1,18 @@
-
 class WaveEffect {
-    constructor(renderer) {
-        this.renderer = renderer;
-        this.amplitude = (this.renderer.particles[0]?.size || 14) * 0.2;
-        this.frequency = this.renderer.logoWidth > 0 ? (2 * Math.PI * 3) / this.renderer.logoWidth : 0.1;
-        this.speed = 0.1;
+    // Le constructeur ne dépend plus du renderer initialisé
+    constructor(amplitude = 3, frequency = 0.02, speed = 0.05) {
+        this.amplitude = amplitude;
+        this.frequency = frequency;
+        this.speed = speed;
     }
 
-    apply(particle, time) {
-        const yOffset = this.amplitude * Math.sin(this.frequency * particle.originalX + this.speed * time);
+    // Prend maintenant les dimensions en paramètres dynamiques
+    apply(particle, time, logoWidth) {
+        // Calcul dynamique de la fréquence basé sur la largeur actuelle
+        const dynamicFreq = logoWidth > 0 ? (2 * Math.PI * 3) / logoWidth : this.frequency;
+        const yOffset = this.amplitude * particle.size * 0.2 * 
+                       Math.sin(dynamicFreq * particle.originalX + this.speed * time);
+        
         return {
             x: particle.x,
             y: particle.originalY + yOffset,

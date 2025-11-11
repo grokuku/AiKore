@@ -29,10 +29,14 @@ document.addEventListener('DOMContentLoaded', () => {
             this.currentColor = this.colors[0];
             this.previousColor = this.colors[0];
 
-            this.time = 0;
+            // FIX: Utilisation d'un timestamp réel au lieu d'un compteur
+            this.startTime = performance.now();
             this.transitionStartTime = 0;
             this.transitionDuration = 1200;
             this.idleDuration = 3800;
+            
+            // Buffer pour éviter les allocations à chaque frame
+            this.particlesBuffer = [];
         }
 
         async load() {
@@ -42,19 +46,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 const logoText = await response.text();
                 const logoData = logoText.split('\n');
                 this.renderer = new Renderer(this.canvas, logoData);
-                this.start();
+                await this.start();
             } catch (error) {
                 console.error('Error setting up animation:', error);
             }
         }
 
-        start() {
+        async start() {
+            // Attendre l'initialisation du renderer
+            if (!this.renderer) return;
+            
             window.addEventListener('resize', () => {
                 this.renderer.resize();
                 this.recreateEffects();
             });
+            
             this.renderer.init();
-            this.currentEffect = new WaveEffect(this.renderer);
+            
+            // FIX: Création de l'effet avec des valeurs par défaut, recalculé dynamiquement
+            this.recreateEffects();
 
             setInterval(() => this.startTransition(), this.idleDuration + this.transitionDuration);
 
@@ -62,7 +72,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         recreateEffects() {
-            this.currentEffect = new WaveEffect(this.renderer);
+            // L'effet est maintenant créé avec des paramètres qui seront ajustés dynamiquement
+            this.currentEffect = new WaveEffect(3, 0.02, 8.0);
         }
 
         startTransition() {
@@ -70,21 +81,24 @@ document.addEventListener('DOMContentLoaded', () => {
             this.currentColor = this.colors[Math.floor(Math.random() * this.colors.length)];
             
             this.state = 'transitioning';
-            this.transitionStartTime = Date.now();
+            this.transitionStartTime = performance.now();
         }
 
         animate() {
             if (!this.renderer) {
-                requestAnimationFrame(() => this.animate());
+                requestAnimationFrame((timestamp) => this.animate(timestamp));
                 return;
             }
 
-            this.time++;
+            // FIX: Utilisation du timestamp réel pour une animation indépendante du framerate
+            const timestamp = performance.now();
+            const elapsedTime = (timestamp - this.startTime) / 1000; // en secondes
+
             let activeColor = this.currentColor;
 
             if (this.state === 'transitioning') {
-                const elapsedTime = Date.now() - this.transitionStartTime;
-                const progress = Math.min(elapsedTime / this.transitionDuration, 1.0);
+                const transitionElapsed = timestamp - this.transitionStartTime;
+                const progress = Math.min(transitionElapsed / this.transitionDuration, 1.0);
                 activeColor = blendColors(this.previousColor, this.currentColor, progress);
 
                 if (progress >= 1.0) {
@@ -92,16 +106,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            const particlesToRender = this.renderer.particles.map(p => {
-                const effectState = this.currentEffect.apply(p, this.time);
-                return {
-                    char: p.char,
-                    ...effectState
-                };
-            });
+            // OPTIMISATION: Réutilisation du buffer pour éviter les allocations
+            if (this.particlesBuffer.length !== this.renderer.particles.length) {
+                this.particlesBuffer = new Array(this.renderer.particles.length);
+            }
 
-            this.renderer.draw(particlesToRender, activeColor);
-            requestAnimationFrame(() => this.animate());
+            // Application de l'effet sans créer de nouveau tableau
+            for (let i = 0; i < this.renderer.particles.length; i++) {
+                const p = this.renderer.particles[i];
+                const effectState = this.currentEffect.apply(p, elapsedTime, this.renderer.logoWidth);
+                
+                // IMMUABLE: Crée un nouvel objet sans modifier l'original
+                this.particlesBuffer[i] = {
+                    char: p.char,
+                    ...effectState,
+                    cellWidth: p.cellWidth // Assure que cellWidth est passé
+                };
+            }
+
+            this.renderer.draw(this.particlesBuffer, activeColor);
+            requestAnimationFrame((t) => this.animate(t));
         }
     }
 
