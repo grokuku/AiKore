@@ -2,16 +2,9 @@
 name: Docker Build and Push to GHCR
 
 on:
-  workflow_dispatch:
-    inputs:
-      pytorch_release_tag:
-        description: 'The GitHub release tag for the pre-compiled PyTorch wheel (e.g., torch-v2.9.0)'
-        required: true
-        default: 'torch-v2.9.0'
-      image_tag:
-        description: 'The tag for the final Docker image (e.g., v1.2.3)'
-        required: true
-        default: 'latest'
+  push:
+    branches:
+      - 'main'
 
 env:
   REGISTRY: ghcr.io
@@ -35,13 +28,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Read PyTorch version from file
+        id: torch_version
+        run: echo "TAG=$(cat .versions/torch)" >> $GITHUB_OUTPUT
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ github.event.inputs.image_tag }}
+            type=raw,value=latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -52,4 +49,4 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             GITHUB_REPO=${{ github.repository }}
-            PYTORCH_RELEASE_TAG=${{ github.event.inputs.pytorch_release_tag }}
+            PYTORCH_RELEASE_TAG=${{ steps.torch_version.outputs.TAG }}
