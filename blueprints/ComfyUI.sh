@@ -99,21 +99,23 @@ echo "--- Dependency installation complete ---"
 # --- Symlink Setup ---
 echo "--- Setting up model and output symlinks ---"
 # Symlink shared models folders into the ComfyUI directory
-sl_folder "${COMFYUI_DIR}/models" "checkpoints" "/config/models/stable-diffusion"
-sl_folder "${COMFYUI_DIR}/models" "hypernetworks" "/config/models/hypernetwork"
-sl_folder "${COMFYUI_DIR}/models" "loras" "/config/models/lora"
-sl_folder "${COMFYUI_DIR}/models" "vae" "/config/models/vae"
-sl_folder "${COMFYUI_DIR}/models" "vae_approx" "/config/models/vae_approx"
-sl_folder "${COMFYUI_DIR}/models" "embeddings" "/config/models/embeddings"
-sl_folder "${COMFYUI_DIR}/models" "upscale_models" "/config/models/upscale"
-sl_folder "${COMFYUI_DIR}/models" "clip_vision" "/config/models/clip_vision"
-sl_folder "${COMFYUI_DIR}/models" "clip" "/config/models/clip"
-sl_folder "${COMFYUI_DIR}/models" "controlnet" "/config/models/controlnet"
-sl_folder "${COMFYUI_DIR}/models" "t5" "/config/models/t5"
-sl_folder "${COMFYUI_DIR}/models" "unet" "/config/models/unet"
+sl_folder "${COMFYUI_DIR}/models" "checkpoints" "/config/models" "stable-diffusion"
+sl_folder "${COMFYUI_DIR}/models" "hypernetworks" "/config/models" "hypernetwork"
+sl_folder "${COMFYUI_DIR}/models" "loras" "/config/models" "lora"
+sl_folder "${COMFYUI_DIR}/models" "vae" "/config/models" "vae"
+sl_folder "${COMFYUI_DIR}/models" "vae_approx" "/config/models" "vae_approx"
+sl_folder "${COMFYUI_DIR}/models" "embeddings" "/config/models" "embeddings"
+sl_folder "${COMFYUI_DIR}/models" "upscale_models" "/config/models" "upscale"
+sl_folder "${COMFYUI_DIR}/models" "clip_vision" "/config/models" "clip_vision"
+sl_folder "${COMFYUI_DIR}/models" "clip" "/config/models" "clip"
+sl_folder "${COMFYUI_DIR}/models" "controlnet" "/config/models" "controlnet"
+sl_folder "${COMFYUI_DIR}/models" "t5" "/config/models" "t5"
+sl_folder "${COMFYUI_DIR}/models" "unet" "/config/models" "unet"
 
 # Symlink the output directory to the instance-specific output folder
-ln -sfn "${INSTANCE_OUTPUT_DIR}" "${COMFYUI_DIR}/output"
+TARGET_PARENT=$(dirname "$INSTANCE_OUTPUT_DIR")
+TARGET_FOLDER=$(basename "$INSTANCE_OUTPUT_DIR")
+sl_folder "${COMFYUI_DIR}" "output" "${TARGET_PARENT}" "${TARGET_FOLDER}"
 
 # --- Launch ---
 cd "${COMFYUI_DIR}"

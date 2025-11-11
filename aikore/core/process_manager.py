@@ -253,7 +253,13 @@ def start_instance_process(db: Session, instance: models.Instance):
         raise Exception(f"Instance {instance.id} is already running.")
 
     instance_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
-    instance_output_dir = os.path.join(OUTPUTS_DIR, instance.name)
+    
+    # --- NEW: Determine output directory ---
+    # Use the custom output_path if available, otherwise fall back to the instance name.
+    # This provides backward compatibility for instances created before the output_path field existed.
+    output_folder_name = instance.output_path or instance.name
+    instance_output_dir = os.path.join(OUTPUTS_DIR, output_folder_name)
+
     instance_slug = _slugify(instance.name)
 
     os.makedirs(instance_conf_dir, exist_ok=True)
@@ -477,4 +483,3 @@ def run_command_in_instance_venv(instance: models.Instance, command_to_run: str)
         error_msg = f"An unexpected error occurred: {e}"
         print(f"[Manager] Command failed for '{instance.name}' with exception: {e}")
         return False, error_msg
-    

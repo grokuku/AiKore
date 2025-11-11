@@ -35,7 +35,7 @@ L'objectif principal est de fournir un panneau de contrôle unique, simple et pu
 
 ---
 
-## 4. Modèle de Données (Table `instances`, Schéma v3)
+## 4. Modèle de Données (Table `instances`, Schéma v4)
 
 | Nom de la Colonne     | Type de Données | Description                                                                 |
 |----------------------|-----------------|-----------------------------------------------------------------------------|
@@ -47,6 +47,7 @@ L'objectif principal est de fournir un panneau de contrôle unique, simple et pu
 | `persistent_mode`    | BOOLEAN         | Si `true`, l'instance est lancée dans une session de bureau KasmVNC.        |
 | `hostname`           | STRING          | **(V2)** Hostname/URL personnalisé pour l'accès direct à l'instance.      |
 | `use_custom_hostname`| BOOLEAN         | **(V3)** Si `true`, le `hostname` est utilisé pour construire l'URL d'accès. |
+| `output_path`        | STRING          | **(V4)** Nom du dossier de sortie sous `/config/outputs/`.                  |
 | `status`             | STRING          | État actuel : 'stopped', 'starting', 'stalled', 'started', 'error'.         |
 | `pid`                | INTEGER         | Process ID du processus principal de l'instance.                            |
 | `port`               | INTEGER         | Port interne de l'application (toujours utilisé, souvent éphémère).         |
@@ -180,6 +181,21 @@ Le projet a atteint une maturité fonctionnelle significative. Les fonctionnalit
     *   **Points en Attente :**
         *   Le comportement souhaité pour l'interaction entre les boutons "Update Instance" et "Save as Custom Blueprint" a fait l'objet de plusieurs itérations sans aboutir à une solution satisfaisante.
         *   La décision a été prise de mettre cette amélioration en pause et de revenir à un fonctionnement simple et découplé : chaque bouton n'a qu'une seule fonction. L'implémentation de cette logique simplifiée reste à valider.
+
+*   **Session du 2025-11-11 :**
+    *   **Objectif :** Implémentation d'un chemin de sortie personnalisable et standardisation des blueprints.
+    *   **Problèmes Résolus & Améliorations :**
+        1.  **Implémentation du Chemin de Sortie Personnalisable :**
+            *   La logique a été simplifiée : le champ "Output Path" de l'interface contient désormais un nom de dossier (et non un chemin absolu), qui est créé sous `/config/outputs/`.
+            *   Le frontend (`app.js`) pré-remplit ce champ avec le nom de l'instance pour une meilleure UX.
+            *   Le backend (`process_manager.py`) a été mis à jour pour construire et passer la variable d'environnement `INSTANCE_OUTPUT_DIR` au blueprint de manière fiable.
+        2.  **Sécurisation de la Mise à Jour du Chemin :**
+            *   Suite à une analyse des risques, il a été décidé de **ne pas déplacer automatiquement** les données existantes lors d'un changement de chemin de sortie, pour éviter toute perte de données accidentelle.
+            *   Pour compenser, un **avertissement clair** a été ajouté à la modale de confirmation (`index.html`, `style.css`, `app.js`) pour informer l'utilisateur des conséquences.
+        3.  **Standardisation des Blueprints :**
+            *   Suite à une observation pertinente de l'utilisateur, une incohérence dans l'appel de la fonction `sl_folder` (3 arguments au lieu de 4) a été identifiée dans `ComfyUI.sh`.
+            *   Tous les appels à `sl_folder` dans ce blueprint ont été corrigés pour utiliser la syntaxe standard à 4 arguments, améliorant la lisibilité et la robustesse du code.
+    *   **État à la fin de la session :** La fonctionnalité de chemin de sortie personnalisé est complète, sécurisée et intuitive. Les blueprints ont été améliorés pour une meilleure maintenance.
 
 ### 6.4. Plan d'Action pour la Prochaine Session
 

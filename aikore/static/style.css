@@ -978,3 +978,14 @@ body {
 .changes-list div {
     padding: 4px 0;
 }
+
+/* NEW: Style for the output path warning */
+#update-output-path-warning {
+    background-color: #5d3a00;
+    color: #ffc107;
+    border: 1px solid #ffc107;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+    font-weight: bold;
+}
