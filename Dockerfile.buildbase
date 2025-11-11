@@ -2,11 +2,14 @@
 # Using the correct Ubuntu 24.04 base image with CUDA 13.0
 FROM nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 AS builder
 
+# Arguments to control the build
+ARG GITHUB_REPO
+ARG PYTORCH_RELEASE_TAG
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 ENV MAX_JOBS=2
 WORKDIR /build
-COPY ./pytorch-wheel/*.whl /wheels/
 
 # --- System Dependencies ---
 # The CUDA toolkit is already included in the 'devel' base image
@@ -24,8 +27,13 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 
 # --- Python Packages ---
-# Install the correct stable build for CUDA 13.0 to ensure a clean build environment.
-RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
+# Download the custom PyTorch wheel from the specified GitHub Release
+# and then install it.
+RUN if [ -z "$GITHUB_REPO" ] || [ -z "$PYTORCH_RELEASE_TAG" ]; then \
+        echo "Error: GITHUB_REPO and PYTORCH_RELEASE_TAG build arguments must be set." && exit 1; \
+    fi \
+    && wget https://github.com/${GITHUB_REPO}/releases/download/${PYTORCH_RELEASE_TAG}/torch-*.whl -P /wheels/ \
+    && python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
     && python3.12 -m pip install --no-cache-dir /wheels/torch-*.whl \
     && python3.12 -m pip install --no-cache-dir cython==0.29.37
 

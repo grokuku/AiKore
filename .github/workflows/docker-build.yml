@@ -2,21 +2,24 @@
 name: Docker Build and Push to GHCR
 
 on:
-  # Se déclenche quand vous poussez un tag qui commence par 'v'
-  push:
-    tags:
-      - 'v*.*.*'
-      - 'v*.*'
+  workflow_dispatch:
+    inputs:
+      pytorch_release_tag:
+        description: 'The GitHub release tag for the pre-compiled PyTorch wheel (e.g., torch-v2.9.0)'
+        required: true
+        default: 'torch-v2.9.0'
+      image_tag:
+        description: 'The tag for the final Docker image (e.g., v1.2.3)'
+        required: true
+        default: 'latest'
 
 env:
   REGISTRY: ghcr.io
-  # Le nom de l'image sera basé sur le nom de votre dépôt (ex: grokuku/aikore)
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
     runs-on: self-hosted
-    #runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -38,14 +41,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest
-
-      - name: Download PyTorch wheel artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: pytorch-wheel
-          path: ./pytorch-wheel
+            type=raw,value=${{ github.event.inputs.image_tag }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -54,3 +50,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GITHUB_REPO=${{ github.repository }}
+            PYTORCH_RELEASE_TAG=${{ github.event.inputs.pytorch_release_tag }}
