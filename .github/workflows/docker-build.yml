@@ -41,6 +41,12 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest
 
+      - name: Download PyTorch wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pytorch-wheel
+          path: ./pytorch-wheel
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
