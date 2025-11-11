@@ -55,7 +55,7 @@ jobs:
         id: wheel_path
         run: |
           ls -R ./wheel_output
-          echo "WHEEL_FILE=$(find ./wheel_output/dist -name "torch-*.whl")" >> $GITHUB_OUTPUT
+          echo "WHEEL_FILE=$(find ./wheel_output/dist -name 'torch-*.whl' | head -n 1)" >> $GITHUB_OUTPUT
 
       - name: Build and push wheel container to GHCR
         uses: docker/build-push-action@v6
