@@ -25,7 +25,7 @@ ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 # --- Python Packages ---
 # Install the correct stable build for CUDA 13.0 to ensure a clean build environment.
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130 \
+    && python3.12 -m pip install --no-cache-dir /wheels/torch-*.whl \
     && python3.12 -m pip install --no-cache-dir cython==0.29.37
 
 # --- Wheel Compilation ---
@@ -34,7 +34,8 @@ RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
 # flash-attn
 RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-attention \
     && cd /build/flash-attention \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && export TORCH_CUDA_ARCH_LIST="8.9" \
     && export FLASH_ATTENTION_FORCE_BUILD=TRUE \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
@@ -43,23 +44,26 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-atte
 # sageattention
 RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build/SageAttention \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && export TORCH_CUDA_ARCH_LIST="8.9" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf SageAttention
 
 # bitsandbytes
-#RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
-#    && cd /build/bitsandbytes \
-#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
-#    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
-#    && cd /build \
-#    && rm -rf bitsandbytes
+RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
+    && cd /build/bitsandbytes \
+    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
+    && cd /build \
+    && rm -rf bitsandbytes
 
 # diso
 RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodules \
     && cd /build/diso \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && export TORCH_CUDA_ARCH_LIST="8.9" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf diso
@@ -67,43 +71,48 @@ RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodule
 # nvdiffrast
 RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
     && cd /build/nvdiffrast \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && export TORCH_CUDA_ARCH_LIST="8.9" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf nvdiffrast
 
 # xformers
-#RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
-#    && cd /build/xformers \
-#    && git submodule update --init --recursive \
-#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
-#    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
-#    && cd /build \
-#    && rm -rf xformers
+RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
+    && cd /build/xformers \
+    && git submodule update --init --recursive \
+    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
+    && cd /build \
+    && rm -rf xformers
 
 # kaolin
-#RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
-#    && cd /build/kaolin_5090 \
-#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
-#    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
-#    && cd /build \
-#    && rm -rf kaolin_5090
+RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
+    && cd /build/kaolin_5090 \
+    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
+    && cd /build \
+    && rm -rf kaolin_5090
 
 # mip-splatting / diff-gaussian-rasterization
-#RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
-#    && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
-#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
-#    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
-#    && cd /build \
-#    && rm -rf mip-splatting
+RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
+    && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
+    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
+    && cd /build \
+    && rm -rf mip-splatting
 
 # vox2seq / TRELLIS
-#RUN git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
-#    && cd /build/TRELLIS/extensions/vox2seq \
-#    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
-#    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
-#    && cd /build \
-#    && rm -rf TRELLIS
+RUN git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
+    && cd /build/TRELLIS/extensions/vox2seq \
+    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10" \
+    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
+    && cd /build \
+    && rm -rf TRELLIS
 
 # --- Final Stage ---
 # This ensures the final image is also based on Ubuntu 24.04 (noble)
