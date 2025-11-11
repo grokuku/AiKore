@@ -30,6 +30,7 @@ class FileContent(BaseModel):
 # NEW: System Information Schema
 class SystemInfo(BaseModel):
     gpu_count: int
+    gpus: List[dict] = [] # To provide more details if needed
 
 def get_db():
     db = SessionLocal()
@@ -58,22 +59,22 @@ def get_instance_file_path(db_instance):
 @router.get("/system/info", response_model=SystemInfo, tags=["System"])
 def get_system_info():
     """
-    Provides general system information, such as the number of available GPUs.
+    Provides general system information, such as the number and details of available GPUs.
     """
-    gpu_count = 0
+    gpus_info = []
     try:
-        # Using nvidia-smi to get the count of GPUs
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"],
-            capture_output=True,
-            text=True,
-            check=True
+            ["nvidia-smi", "--query-gpu=index,name", "--format=csv,noheader"],
+            capture_output=True, text=True, check=True
         )
-        gpu_count = int(result.stdout.strip())
+        for line in result.stdout.strip().split('\n'):
+            if not line: continue
+            parts = line.split(', ')
+            gpus_info.append({"id": int(parts[0]), "name": parts[1]})
     except (FileNotFoundError, subprocess.CalledProcessError, ValueError):
-        # Handle cases where nvidia-smi is not found or fails
-        gpu_count = 0
-    return {"gpu_count": gpu_count}
+        pass # Handles cases where nvidia-smi is not found or fails
+    
+    return {"gpu_count": len(gpus_info), "gpus": gpus_info}
 
 def _allocate_ports(db: Session, persistent_mode: bool, requested_port: int | None, instance_to_exclude_id: int | None = None) -> dict:
     """
@@ -163,7 +164,6 @@ def read_all_instances(skip: int = 0, limit: int = 100, db: Session = Depends(ge
     instances = crud.get_instances(db, skip=skip, limit=limit)
     return instances
 
-# NEW: Endpoint to update an instance's details
 @router.put("/instances/{instance_id}", response_model=schemas.Instance)
 def update_instance_details(
     instance_id: int,
@@ -175,18 +175,39 @@ def update_instance_details(
         raise HTTPException(status_code=404, detail="Instance not found")
 
     update_data = instance_update.model_dump(exclude_unset=True)
-    
     if not update_data:
         return db_instance
 
-    # --- Autostart-only case (no restart needed) ---
-    if list(update_data.keys()) == ['autostart']:
-        return crud.update_instance(db, db_instance=db_instance, instance_update=instance_update)
+    # --- BUGFIX 1: Smart update logic ---
+    # Define fields that require a full stop/start cycle
+    restart_fields = {
+        'name', 'base_blueprint', 'output_path', 'gpu_ids', 'persistent_mode', 'port'
+    }
 
-    # --- For all other updates, handle stop/start ---
+    requires_restart = any(field in restart_fields for field in update_data.keys())
+
+    if not requires_restart:
+        # Handle safe updates (autostart, hostname, etc.) without restart
+        print(f"Performing safe update for instance '{db_instance.name}'. No restart needed.")
+        
+        updated_instance = crud.update_instance(db, db_instance=db_instance, instance_update=instance_update)
+        
+        if 'hostname' in update_data or 'use_custom_hostname' in update_data:
+            print("Hostname-related change detected. Updating NGINX configuration.")
+            try:
+                # This function must exist in process_manager. It should
+                # regenerate the NGINX config and reload the service.
+                process_manager.update_nginx_config(db)
+            except Exception as e:
+                print(f"WARNING: Could not dynamically update NGINX config: {e}. Change will apply on next restart.")
+        
+        db.refresh(updated_instance)
+        return updated_instance
+
+    # --- For all other updates, handle stop/start (original logic) ---
     was_running = db_instance.status != "stopped"
     if was_running:
-        print(f"Instance '{db_instance.name}' is running. Stopping it before update.")
+        print(f"Instance '{db_instance.name}' is running. Stopping it before disruptive update.")
         process_manager.stop_instance_process(db=db, instance=db_instance)
         db.refresh(db_instance)
 
@@ -194,106 +215,65 @@ def update_instance_details(
     original_name = db_instance.name
     final_update_data = update_data.copy()
 
-    # 1. Name Change (most disruptive)
+    # 1. Name Change
     if "name" in update_data and update_data["name"] != original_name:
         new_name = update_data["name"]
-        print(f"Processing name change from '{original_name}' to '{new_name}'")
-        
         if crud.get_instance_by_name(db, name=new_name):
             raise HTTPException(status_code=400, detail=f"An instance with the name '{new_name}' already exists.")
-        
         try:
             old_dir = os.path.join(INSTANCES_DIR, original_name)
             new_dir = os.path.join(INSTANCES_DIR, new_name)
             if os.path.isdir(old_dir):
-                print(f"Renaming directory from '{old_dir}' to '{new_dir}'")
                 os.rename(old_dir, new_dir)
                 rebuild_trigger_path = os.path.join(new_dir, ".rebuild-env")
-                print(f"Creating rebuild trigger file at '{rebuild_trigger_path}'")
-                with open(rebuild_trigger_path, 'w') as f:
-                    f.write('') # Create empty file
-            else:
-                print(f"Instance directory '{old_dir}' not found. Only DB name will be updated.")
-
+                with open(rebuild_trigger_path, 'w') as f: f.write('')
         except OSError as e:
-            if 'new_dir' in locals() and not os.path.isdir(old_dir) and os.path.isdir(new_dir):
-                os.rename(new_dir, old_dir)
+            if 'new_dir' in locals() and not os.path.isdir(old_dir) and os.path.isdir(new_dir): os.rename(new_dir, old_dir)
             raise HTTPException(status_code=500, detail=f"Failed to rename instance directory: {e}")
 
     # 2. Blueprint Change
     if "base_blueprint" in update_data and update_data["base_blueprint"] != db_instance.base_blueprint:
         new_blueprint = update_data["base_blueprint"]
-        print(f"Processing blueprint change to '{new_blueprint}'")
-        
         current_name = update_data.get("name", original_name)
         instance_conf_dir = os.path.join(INSTANCES_DIR, current_name)
         os.makedirs(instance_conf_dir, exist_ok=True)
         instance_file_path = os.path.join(instance_conf_dir, "launch.sh")
-
-        custom_blueprint_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, new_blueprint)
-        stock_blueprint_path = os.path.join(BLUEPRINTS_DIR, new_blueprint)
-        
-        blueprint_to_copy = None
-        if os.path.exists(custom_blueprint_path):
-            blueprint_to_copy = custom_blueprint_path
-        elif os.path.exists(stock_blueprint_path):
-            blueprint_to_copy = stock_blueprint_path
-        
+        custom_bp_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, new_blueprint)
+        stock_bp_path = os.path.join(BLUEPRINTS_DIR, new_blueprint)
+        blueprint_to_copy = custom_bp_path if os.path.exists(custom_bp_path) else stock_bp_path if os.path.exists(stock_bp_path) else None
         if blueprint_to_copy:
             try:
-                print(f"Copying '{blueprint_to_copy}' to '{instance_file_path}'")
                 shutil.copy(blueprint_to_copy, instance_file_path)
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to update launch script: {e}")
-        else:
-            print(f"WARNING: New blueprint file '{new_blueprint}' not found. Skipping script update.")
 
-    # 3. Port-related changes (persistent_mode or port itself)
+    # 3. Port-related changes
     persistent_mode_changed = "persistent_mode" in update_data and update_data["persistent_mode"] != db_instance.persistent_mode
-    port_changed = "port" in update_data and update_data["port"] != db_instance.port
+    port_changed = "port" in update_data and update_data.get("port") is not None and update_data["port"] != db_instance.port
 
     if persistent_mode_changed or port_changed:
         new_persistent_mode = update_data.get("persistent_mode", db_instance.persistent_mode)
         new_requested_port = update_data.get("port", db_instance.port)
-        
-        print(f"Processing port-related change. New persistent_mode: {new_persistent_mode}, new requested_port: {new_requested_port}")
-
         port_allocations = _allocate_ports(db, new_persistent_mode, new_requested_port, instance_to_exclude_id=db_instance.id)
         final_update_data.update(port_allocations)
-
-        # If we just enabled persistent mode, install dependencies
         if new_persistent_mode and not db_instance.persistent_mode:
-            print(f"Enabling persistent mode for '{db_instance.name}'. Installing dependencies.")
-            # We need to apply the name change to the db_instance object before running this
-            # so it can find the correct directory if the name was also changed.
             temp_instance_for_cmd = schemas.Instance.model_validate(db_instance)
             temp_instance_for_cmd.name = update_data.get("name", original_name)
-
-            success, output = process_manager.run_command_in_instance_venv(
-                temp_instance_for_cmd,
-                "pip install websockify numpy"
-            )
+            success, output = process_manager.run_command_in_instance_venv(temp_instance_for_cmd, "pip install websockify numpy")
             if not success:
-                # We don't raise an exception, but we should log this failure.
-                # The instance will likely fail to start, but the update itself is saved.
                 print(f"WARNING: Failed to install persistent mode dependencies for '{db_instance.name}': {output}")
 
     # --- Finalize ---
-    print("Updating instance record in database with final data:", final_update_data)
-    
-    # We need to construct a new InstanceUpdate object for the CRUD function
     final_instance_update = schemas.InstanceUpdate(**final_update_data)
-    
     updated_instance = crud.update_instance(db, instance_id=db_instance.id, instance_update=final_instance_update)
     db.refresh(updated_instance)
 
     if was_running:
-        print(f"Restarting instance '{updated_instance.name}'.")
+        print(f"Restarting instance '{updated_instance.name}' after disruptive update.")
         try:
             process_manager.start_instance_process(db=db, instance=updated_instance)
         except Exception as e:
             print(f"CRITICAL: Failed to restart instance after update: {e}")
-            pass
 
     return updated_instance
 

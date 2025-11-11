@@ -383,7 +383,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const gpuContainer = document.createElement('div');
         gpuContainer.className = 'gpu-checkbox-container';
         const assignedGpus = (instance.gpu_ids || '').split(',').filter(id => id);
-        for (let i = 0; i < systemInfo.gpu_count; i++) {
+        
+        // --- BUGFIX 2: Make GPU counting robust ---
+        const gpuCount = (systemInfo.gpus && Array.isArray(systemInfo.gpus)) ? systemInfo.gpus.length : (systemInfo.gpu_count || 0);
+        
+        for (let i = 0; i < gpuCount; i++) {
             const label = document.createElement('label');
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
@@ -394,7 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
             label.appendChild(document.createTextNode(` ${i}`));
             gpuContainer.appendChild(label);
         }
-        if (systemInfo.gpu_count === 0) gpuContainer.textContent = 'N/A';
+        if (gpuCount === 0) gpuContainer.textContent = 'N/A';
         gpuCell.appendChild(gpuContainer);
 
         const autostartCheckbox = document.createElement('input');
@@ -517,7 +521,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchAndRenderInstances() {
         try {
-            if (document.activeElement && document.activeElement.closest('#instances-tbody tr:not([data-is-new="true"])')) {
+            // --- BUGFIX 3: Prevent refresh when editing ANY row ---
+            if (document.activeElement && document.activeElement.closest('#instances-tbody tr')) {
                 return;
             }
 
