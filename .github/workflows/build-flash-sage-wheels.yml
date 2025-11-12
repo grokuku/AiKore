@@ -46,30 +46,14 @@ jobs:
         with:
           context: .
           file: ./flash-sage.Dockerfile
-          push: false
-          load: true
-          tags: local-flash-sage-builder:latest
-          build-args: |
-            PYTORCH_WHEEL_IMAGE=${{ env.REGISTRY }}/${{ env.WHEELS_IMAGE_NAME }}
-            PYTORCH_RELEASE_TAG=${{ github.event.inputs.pytorch_release_tag }}
-            BASE_IMAGE_TAG=13.0.1-cudnn-devel-ubuntu24.04
-            TORCH_CUDA_ARCH_LIST=8.9
-
-      - name: Create output directory
-        run: mkdir -p ./wheel_output
-
-      - name: Extract wheels from builder image
-        run: |
-          docker run --rm --entrypoint "" \
-            -v ./wheel_output:/output \
-            local-flash-sage-builder:latest \
-            /bin/bash -c "cp /*.whl /output"
+          target: builder
+          outputs: type=local,dest=./wheel_output
 
       - name: List output files
         id: wheel_path
         run: |
-          ls -R ./wheel_output
-          echo "WHEEL_DIR=./wheel_output" >> $GITHUB_OUTPUT
+          ls -R ./wheel_output/wheels
+          echo "WHEEL_DIR=./wheel_output/wheels" >> $GITHUB_OUTPUT
 
       - name: Build and push wheel container to GHCR
         uses: docker/build-push-action@v6
