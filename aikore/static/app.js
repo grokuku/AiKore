@@ -383,7 +383,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const gpuContainer = document.createElement('div');
         gpuContainer.className = 'gpu-checkbox-container';
         const assignedGpus = (instance.gpu_ids || '').split(',').filter(id => id);
-        for (let i = 0; i < systemInfo.gpu_count; i++) {
+        
+        // --- BUGFIX 2: Make GPU counting robust ---
+        const gpuCount = (systemInfo.gpus && Array.isArray(systemInfo.gpus)) ? systemInfo.gpus.length : (systemInfo.gpu_count || 0);
+        
+        for (let i = 0; i < gpuCount; i++) {
             const label = document.createElement('label');
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
@@ -394,7 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
             label.appendChild(document.createTextNode(` ${i}`));
             gpuContainer.appendChild(label);
         }
-        if (systemInfo.gpu_count === 0) gpuContainer.textContent = 'N/A';
+        if (gpuCount === 0) gpuContainer.textContent = 'N/A';
         gpuCell.appendChild(gpuContainer);
 
         const autostartCheckbox = document.createElement('input');
@@ -491,6 +495,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const bp = row.querySelector('select[data-field="base_blueprint"]').value;
                 saveButton.disabled = !name || !bp;
             }));
+
+            // --- NEW: Logic to auto-fill output path ---
+            let isOutputPathDirty = false;
+            outputPathInput.addEventListener('input', () => {
+                isOutputPathDirty = true;
+            });
+            nameInput.addEventListener('input', () => {
+                if (!isOutputPathDirty) {
+                    outputPathInput.value = nameInput.value;
+                }
+            });
+            
         } else {
             allFields.forEach(field => {
                 if (field.dataset.field !== 'autostart') {
@@ -505,7 +521,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchAndRenderInstances() {
         try {
-            if (document.activeElement && document.activeElement.closest('#instances-tbody tr:not([data-is-new="true"])')) {
+            // --- BUGFIX 3: Prevent refresh when editing ANY row ---
+            if (document.activeElement && document.activeElement.closest('#instances-tbody tr')) {
                 return;
             }
 
@@ -818,6 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = {
                 name: row.querySelector('input[data-field="name"]').value,
                 base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
+                output_path: row.querySelector('input[data-field="output_path"]').value || null,
                 gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
                 autostart: row.querySelector('input[data-field="autostart"]').checked,
                 persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
@@ -891,6 +909,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 warning.textContent = 'This instance is running. Applying these changes will require a restart.';
             } else {
                 warning.textContent = 'These changes will be applied the next time the instance is started.';
+            }
+
+            // --- NEW: Output path change warning ---
+            const outputPathWarning = document.getElementById('update-output-path-warning');
+            if (changes.output_path) {
+                outputPathWarning.textContent = `Warning: This does not move existing files. The old folder '.../outputs/${changes.output_path.old}' will be preserved.`;
+                outputPathWarning.style.display = 'block';
+            } else {
+                outputPathWarning.style.display = 'none';
             }
 
             updateConfirmModal.classList.remove('hidden');
