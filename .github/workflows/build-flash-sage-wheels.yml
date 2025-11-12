@@ -50,7 +50,7 @@ jobs:
           load: true
           tags: local-flash-sage-builder:latest
           build-args: |
-            GITHUB_REPO=${{ github.repository }}
+            GITHUB_REPO=${{ env.IMAGE_NAME }}
             PYTORCH_RELEASE_TAG=${{ github.event.inputs.pytorch_release_tag }}
             BASE_IMAGE_TAG=13.0.1-cudnn-devel-ubuntu24.04
             TORCH_CUDA_ARCH_LIST=8.9
