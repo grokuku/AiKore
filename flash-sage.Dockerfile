@@ -26,6 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Add CUDA to PATH
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 
+# --- DEBUG: Inspect the PyTorch wheel image ---
+RUN mkdir -p /tmp/torch_image_contents
+COPY --from=pytorch_wheel_image / /tmp/torch_image_contents/
+RUN echo "--- Contents of PyTorch wheel image: ---" && ls -lR /tmp/torch_image_contents && echo "--- End of inspection ---"
+
 # --- Install PyTorch ---
 # Copy the pre-compiled PyTorch wheel from its container and install it.
 COPY --from=pytorch_wheel_image / /wheels_torch/
