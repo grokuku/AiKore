@@ -2,13 +2,15 @@
 name: "Build and Push PyTorch Wheel"
 
 on:
-  push:
-    tags:
-      - 'torch-v*.*.*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'The release tag for the wheel (e.g., torch-v2.9.0)'
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/wheels
 
 jobs:
   build-pytorch:
@@ -22,6 +24,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set lower-case repository name
+        run: echo "IMAGE_NAME=$(echo ${{ github.repository }}/wheels | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -32,10 +37,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Extract PyTorch version from Git tag
+      - name: Extract PyTorch version from release tag
         id: get_version
         # Extracts 'vX.Y.Z' from 'torch-vX.Y.Z'
-        run: echo "PYTORCH_VERSION=$(echo ${{ github.ref_name }} | cut -d '-' -f 2-)" >> $GITHUB_ENV
+        run: echo "PYTORCH_VERSION=$(echo ${{ github.event.inputs.release_tag }} | cut -d '-' -f 2-)" >> $GITHUB_ENV
 
       - name: Build PyTorch wheel
         id: build
@@ -63,6 +68,6 @@ jobs:
           context: .
           file: ./wheel-container.Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.release_tag }}
           build-args: |
             WHEEL_PATH=${{ steps.wheel_path.outputs.WHEEL_FILE }}
