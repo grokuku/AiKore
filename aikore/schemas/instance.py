@@ -16,6 +16,7 @@ class InstanceBase(BaseModel):
 # Inherits from Base and is used specifically when creating a new instance via the API.
 class InstanceCreate(InstanceBase):
     port: int | None = None
+    source_instance_id: int | None = None
 
 # --- Update Schema ---
 # Defines the fields that are allowed to be updated on an existing instance.

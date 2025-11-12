@@ -1,0 +1,82 @@
+name: "Build and Push Flash+Sage Wheels"
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'The release tag for the wheel container (e.g., flash-sage-v1)'
+        required: true
+        type: string
+      pytorch_release_tag:
+        description: 'The corresponding PyTorch wheel release tag (e.g., torch-v2.9.0)'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-wheels:
+    name: Compile and Push Flash+Sage wheels
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set lower-case repository name
+        run: echo "IMAGE_NAME=$(echo ${{ github.repository }}/wheels | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build flash-attn and sageattention wheels
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./flash-sage.Dockerfile
+          push: false
+          load: true
+          tags: local-flash-sage-builder:latest
+          build-args: |
+            GITHUB_REPO=${{ github.repository }}
+            PYTORCH_RELEASE_TAG=${{ github.event.inputs.pytorch_release_tag }}
+            BASE_IMAGE_TAG=13.0.1-cudnn-devel-ubuntu24.04
+            TORCH_CUDA_ARCH_LIST=8.9
+
+      - name: Create output directory
+        run: mkdir -p ./wheel_output
+
+      - name: Extract wheels from builder image
+        run: |
+          docker run --rm --entrypoint "" \
+            -v ./wheel_output:/output \
+            local-flash-sage-builder:latest \
+            /bin/bash -c "cp /*.whl /output"
+
+      - name: List output files
+        id: wheel_path
+        run: |
+          ls -R ./wheel_output
+          echo "WHEEL_DIR=./wheel_output" >> $GITHUB_OUTPUT
+
+      - name: Build and push wheel container to GHCR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./wheel-container.Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.release_tag }}
+          build-args: |
+            WHEEL_PATH=${{ steps.wheel_path.outputs.WHEEL_DIR }}

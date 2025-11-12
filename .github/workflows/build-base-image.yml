@@ -4,13 +4,15 @@ name: Build and Push Base Image
 on:
   # Permet de lancer le workflow manuellement depuis l'onglet "Actions" de GitHub
   workflow_dispatch:
-  # Se déclenche automatiquement quand on pousse des changements sur la branche 'main'
-  push:
-    branches:
-      - main
-    # MAIS UNIQUEMENT si le fichier Dockerfile.buildbase a été modifié
-    paths:
-      - 'Dockerfile.buildbase'
+    inputs:
+      pytorch_release_tag:
+        description: 'The release tag for the PyTorch wheel (e.g., torch-v2.9.0)'
+        required: true
+        type: string
+      flash_sage_release_tag:
+        description: 'The release tag for the Flash/Sage wheel container (e.g., flash-sage-v1)'
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -61,5 +63,9 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           platforms: linux/amd64
+          build-args: |
+            GITHUB_REPO=${{ github.repository }}
+            PYTORCH_RELEASE_TAG=${{ github.event.inputs.pytorch_release_tag }}
+            FLASH_SAGE_RELEASE_TAG=${{ github.event.inputs.flash_sage_release_tag }}
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-cache,mode=max
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-cache

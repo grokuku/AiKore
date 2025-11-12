@@ -1,6 +1,9 @@
 from sqlalchemy.orm import Session
+import os
+import shutil
 from . import models
 from ..schemas import instance as schemas
+from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR
 
 def get_instance_by_name(db: Session, name: str):
     """
@@ -28,11 +31,46 @@ def create_instance(
     persistent_display: int | None
 ):
     """
-    Create a new instance record in the database, including pre-allocated ports.
+    Create a new instance record in the database and prepare its directory and files.
     """
+    instance_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
+
+    # Filesystem operations
+    if instance.source_instance_id:
+        # This is a copy operation
+        source_instance = get_instance(db, instance_id=instance.source_instance_id)
+        if not source_instance:
+            raise FileNotFoundError(f"Source instance with ID {instance.source_instance_id} not found.")
+        
+        source_path = os.path.join(INSTANCES_DIR, source_instance.name)
+        if not os.path.isdir(source_path):
+            raise FileNotFoundError(f"Source instance directory not found at {source_path}.")
+
+        # Copy the directory, ignoring the virtual environment
+        shutil.copytree(source_path, instance_conf_dir, ignore=shutil.ignore_patterns('env'))
+
+    else:
+        # This is a standard creation from a blueprint
+        os.makedirs(instance_conf_dir, exist_ok=True)
+        
+        # Find the correct blueprint file path
+        custom_blueprint_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, instance.base_blueprint)
+        stock_blueprint_path = os.path.join(BLUEPRINTS_DIR, instance.base_blueprint)
+        
+        if os.path.exists(custom_blueprint_path):
+            blueprint_file_path = custom_blueprint_path
+        elif os.path.exists(stock_blueprint_path):
+            blueprint_file_path = stock_blueprint_path
+        else:
+            raise FileNotFoundError(f"Blueprint '{instance.base_blueprint}' not found.")
+            
+        # Copy the blueprint to the instance's launch.sh
+        shutil.copy(blueprint_file_path, os.path.join(instance_conf_dir, "launch.sh"))
+
+    # Database operation
     instance_data = instance.model_dump()
-    # The port can be in the schema for creation, so pop it to avoid conflicts
     instance_data.pop('port', None)
+    instance_data.pop('source_instance_id', None) # Don't save this to the DB
     db_instance = models.Instance(
         **instance_data,
         port=port,
