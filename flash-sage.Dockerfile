@@ -1,12 +1,12 @@
 # Global ARGs for dynamic image sources
 ARG GITHUB_REPO
 ARG PYTORCH_RELEASE_TAG
+ARG BASE_IMAGE_TAG=13.0.1-cudnn-devel-ubuntu24.04
 
 # Stage to pull the dynamic PyTorch wheel image
 FROM ghcr.io/${GITHUB_REPO}/wheels:${PYTORCH_RELEASE_TAG} AS pytorch_wheel_image
 
 # Use the same CUDA base image as other builds
-ARG BASE_IMAGE_TAG=13.0.1-cudnn-devel-ubuntu24.04
 FROM nvidia/cuda:${BASE_IMAGE_TAG} AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
