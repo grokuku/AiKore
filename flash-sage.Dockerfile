@@ -1,10 +1,13 @@
+# Global ARGs for dynamic image sources
+ARG GITHUB_REPO
+ARG PYTORCH_RELEASE_TAG
+
+# Stage to pull the dynamic PyTorch wheel image
+FROM ghcr.io/${GITHUB_REPO}/wheels:${PYTORCH_RELEASE_TAG} AS pytorch_wheel_image
+
 # Use the same CUDA base image as other builds
 ARG BASE_IMAGE_TAG=13.0.1-cudnn-devel-ubuntu24.04
 FROM nvidia/cuda:${BASE_IMAGE_TAG} AS builder
-
-# Arguments to get the correct PyTorch wheel
-ARG GITHUB_REPO
-ARG PYTORCH_RELEASE_TAG
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
@@ -25,7 +28,7 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 
 # --- Install PyTorch ---
 # Copy the pre-compiled PyTorch wheel from its container and install it.
-COPY --from=ghcr.io/${GITHUB_REPO}/wheels:${PYTORCH_RELEASE_TAG} /*.whl /wheels_torch/
+COPY --from=pytorch_wheel_image /*.whl /wheels_torch/
 RUN python3.12 -m pip install --no-cache-dir /wheels_torch/torch-*.whl
 
 # --- Compile Wheels ---
