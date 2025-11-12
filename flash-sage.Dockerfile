@@ -28,7 +28,7 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 
 # --- Install PyTorch ---
 # Copy the pre-compiled PyTorch wheel from its container and install it.
-COPY --from=pytorch_wheel_image /*.whl /wheels_torch/
+COPY --from=pytorch_wheel_image / /wheels_torch/
 RUN python3.12 -m pip install --no-cache-dir /wheels_torch/torch-*.whl
 
 # --- Compile Wheels ---
