@@ -30,7 +30,8 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 # Copy the pre-compiled PyTorch wheel from its container and install it.
 # The debug logs showed the wheel is located in /wheel_output/dist/ inside the source image.
 COPY --from=pytorch_wheel_image /wheel_output/dist/torch-*.whl /wheels_torch/
-RUN python3.12 -m pip install --no-cache-dir /wheels_torch/torch-*.whl
+RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
+    && python3.12 -m pip install --no-cache-dir /wheels_torch/torch-*.whl
 
 # --- Compile Wheels ---
 WORKDIR /build
