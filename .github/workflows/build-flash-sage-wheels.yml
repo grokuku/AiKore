@@ -48,6 +48,11 @@ jobs:
           file: ./flash-sage.Dockerfile
           target: builder
           outputs: type=local,dest=./wheel_output
+          build-args: |
+            PYTORCH_WHEEL_IMAGE=${{ env.REGISTRY }}/${{ env.WHEELS_IMAGE_NAME }}
+            PYTORCH_RELEASE_TAG=${{ github.event.inputs.pytorch_release_tag }}
+            BASE_IMAGE_TAG=13.0.1-cudnn-devel-ubuntu24.04
+            TORCH_CUDA_ARCH_LIST=8.9
 
       - name: List output files
         id: wheel_path
