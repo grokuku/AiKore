@@ -39,33 +39,38 @@ jobs:
           swap-storage: true
 
       # ÉTAPE 2 : Récupération de votre code
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # ÉTAPE 3 : Connexion au registre de conteneurs de GitHub
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # ÉTAPE 4 : Mise en place de Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # ÉTAPE 5 : Construction et publication de l'image de base
-      - name: Build and push base Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.buildbase
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          platforms: linux/amd64
-          build-args: |
-            GITHUB_REPO=${{ github.repository }}
-            PYTORCH_RELEASE_TAG=${{ github.event.inputs.pytorch_release_tag }}
-            FLASH_SAGE_RELEASE_TAG=${{ github.event.inputs.flash_sage_release_tag }}
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-cache,mode=max
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-cache
+            - name: Checkout repository
+              uses: actions/checkout@v4
+      
+            - name: Set wheels image name
+              run: echo "WHEELS_IMAGE_NAME=$(echo ${{ github.repository }}/wheels | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+      
+            # ÉTAPE 3 : Connexion au registre de conteneurs de GitHub
+            - name: Log in to the Container registry
+              uses: docker/login-action@v3
+              with:
+                registry: ${{ env.REGISTRY }}
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+      
+            # ÉTAPE 4 : Mise en place de Docker Buildx
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+      
+            # ÉTAPE 5 : Construction et publication de l'image de base
+            - name: Build and push base Docker image
+              uses: docker/build-push-action@v6
+              with:
+                context: .
+                file: ./Dockerfile.buildbase
+                push: true
+                tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+                platforms: linux/amd64
+                build-args: |
+                  PYTORCH_WHEEL_IMAGE=${{ env.REGISTRY }}/${{ env.WHEELS_IMAGE_NAME }}
+                  FLASH_SAGE_WHEEL_IMAGE=${{ env.REGISTRY }}/${{ env.WHEELS_IMAGE_NAME }}
+                  PYTORCH_RELEASE_TAG=${{ github.event.inputs.pytorch_release_tag }}
+                  FLASH_SAGE_RELEASE_TAG=${{ github.event.inputs.flash_sage_release_tag }}
+                cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-cache,mode=max
+                cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:build-cache
+      
