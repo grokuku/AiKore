@@ -1,10 +1,5 @@
 # Global ARGs for dynamic image sources
-ARG PYTORCH_WHEEL_IMAGE
-ARG PYTORCH_RELEASE_TAG
 ARG BASE_IMAGE_TAG=12.9.1-cudnn-devel-ubuntu24.04
-
-# Stage to pull the dynamic PyTorch wheel image
-FROM ${PYTORCH_WHEEL_IMAGE}:${PYTORCH_RELEASE_TAG} AS pytorch_wheel_image
 
 # Use the same CUDA base image as other builds
 FROM nvidia/cuda:${BASE_IMAGE_TAG} AS builder
@@ -27,11 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 
 # --- Install PyTorch ---
-# Copy the pre-compiled PyTorch wheel from its container and install it.
-# The debug logs showed the wheel is located in /wheel_output/dist/ inside the source image.
-COPY --from=pytorch_wheel_image /wheel_output/dist/torch-*.whl /wheels_torch/
+# Install PyTorch, TorchVision, and TorchAudio from the official index for CUDA 12.1
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install --no-cache-dir /wheels_torch/torch-*.whl
+    && python3.12 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
 # --- Compile Wheels ---
 WORKDIR /build
@@ -39,7 +32,7 @@ WORKDIR /build
 # flash-attn
 RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-attention \
     && cd /build/flash-attention \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0" \
     && export FLASH_ATTENTION_FORCE_BUILD=TRUE \
     && python3.12 -m pip wheel --no-build-isolation . -w /wheels \
     && cd /build \
@@ -48,7 +41,7 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-atte
 # sageattention
 RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build/SageAttention \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /wheels \
     && cd /build \
     && rm -rf SageAttention

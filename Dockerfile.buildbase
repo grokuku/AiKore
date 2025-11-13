@@ -1,15 +1,12 @@
 # Global ARGs for dynamic image sources
-ARG PYTORCH_WHEEL_IMAGE
 ARG FLASH_SAGE_WHEEL_IMAGE
-ARG PYTORCH_RELEASE_TAG
 ARG FLASH_SAGE_RELEASE_TAG
 
 # --- Intermediate stages for wheel images ---
-FROM ${PYTORCH_WHEEL_IMAGE}:${PYTORCH_RELEASE_TAG} AS pytorch_wheel_src
 FROM ${FLASH_SAGE_WHEEL_IMAGE}:${FLASH_SAGE_RELEASE_TAG} AS flash_sage_wheel_src
 
 # --- Builder Stage ---
-# Using the correct Ubuntu 24.04 base image with CUDA 13.0
+# Using the correct Ubuntu 24.04 base image with CUDA 12.9.1
 FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -33,11 +30,13 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 
 # --- Python Packages ---
-# Copy the pre-compiled wheels from their respective source stages
-COPY --from=pytorch_wheel_src /wheel_output/dist/*.whl /wheels/
-COPY --from=flash_sage_wheel_src /*.whl /wheels/
+# 1. Install PyTorch from official index
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install --no-cache-dir /wheels/*.whl \
+    && python3.12 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# 2. Copy and install the pre-compiled flash-sage wheels
+COPY --from=flash_sage_wheel_src /*.whl /wheels/
+RUN python3.12 -m pip install --no-cache-dir /wheels/*.whl \
     && python3.12 -m pip install --no-cache-dir cython==0.29.37
 
 # --- Wheel Compilation ---
@@ -46,7 +45,7 @@ RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
 # bitsandbytes
 RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
     && cd /build/bitsandbytes \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf bitsandbytes
@@ -54,7 +53,7 @@ RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbyte
 # diso
 RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodules \
     && cd /build/diso \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf diso
@@ -62,7 +61,7 @@ RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodule
 # nvdiffrast
 RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
     && cd /build/nvdiffrast \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf nvdiffrast
@@ -71,7 +70,7 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
     && cd /build/xformers \
     && git submodule update --init --recursive \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf xformers
@@ -88,7 +87,7 @@ RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
 # mip-splatting / diff-gaussian-rasterization
 RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
     && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
-    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf mip-splatting
@@ -102,8 +101,9 @@ RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splat
 #    && rm -rf TRELLIS
 
 # --- Final Stage ---
-# This ensures the final image is also based on Ubuntu 22.04 (jammy)
+# This ensures the final image is also based on Ubuntu 24.04 (noble)
 FROM ghcr.io/linuxserver/baseimage-kasmvnc:ubuntunoble
 
+# Copy all wheels from the builder stage to the final image
 COPY --from=builder /build/*.whl /wheels/
 COPY --from=builder /wheels/*.whl /wheels/
