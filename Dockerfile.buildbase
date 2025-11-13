@@ -1,12 +1,16 @@
-# --- Builder Stage ---
-# Using the correct Ubuntu 24.04 base image with CUDA 13.0
-FROM nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 AS builder
-
-# Arguments to control the build
+# Global ARGs for dynamic image sources
 ARG PYTORCH_WHEEL_IMAGE
 ARG FLASH_SAGE_WHEEL_IMAGE
 ARG PYTORCH_RELEASE_TAG
 ARG FLASH_SAGE_RELEASE_TAG
+
+# --- Intermediate stages for wheel images ---
+FROM ${PYTORCH_WHEEL_IMAGE}:${PYTORCH_RELEASE_TAG} AS pytorch_wheel_src
+FROM ${FLASH_SAGE_WHEEL_IMAGE}:${FLASH_SAGE_RELEASE_TAG} AS flash_sage_wheel_src
+
+# --- Builder Stage ---
+# Using the correct Ubuntu 24.04 base image with CUDA 13.0
+FROM nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
@@ -29,10 +33,9 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 
 # --- Python Packages ---
-# Copy the pre-compiled PyTorch wheel from its container on GHCR
-# and then install it.
-COPY --from=${PYTORCH_WHEEL_IMAGE}:${PYTORCH_RELEASE_TAG} /wheel_output/dist/*.whl /wheels/
-COPY --from=${FLASH_SAGE_WHEEL_IMAGE}:${FLASH_SAGE_RELEASE_TAG} /*.whl /wheels/
+# Copy the pre-compiled wheels from their respective source stages
+COPY --from=pytorch_wheel_src /wheel_output/dist/*.whl /wheels/
+COPY --from=flash_sage_wheel_src /*.whl /wheels/
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
     && python3.12 -m pip install --no-cache-dir /wheels/*.whl \
     && python3.12 -m pip install --no-cache-dir cython==0.29.37
