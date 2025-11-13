@@ -53,7 +53,7 @@ RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build \
     && rm -rf SageAttention
 
-# --- Final Stage ---
-# Create a clean final stage with only the wheels
-FROM scratch
+# --- Final Stage (Exporter) ---
+# This stage contains only the compiled wheels for export.
+FROM scratch AS exporter
 COPY --from=builder /wheels/*.whl /

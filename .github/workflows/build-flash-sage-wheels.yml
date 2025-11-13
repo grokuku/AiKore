@@ -46,7 +46,7 @@ jobs:
         with:
           context: .
           file: ./flash-sage.Dockerfile
-          target: builder
+          target: exporter
           outputs: type=local,dest=./wheel_output
           build-args: |
             PYTORCH_WHEEL_IMAGE=${{ env.REGISTRY }}/${{ env.WHEELS_IMAGE_NAME }}
@@ -57,8 +57,8 @@ jobs:
       - name: List output files
         id: wheel_path
         run: |
-          ls -R ./wheel_output/wheels
-          echo "WHEEL_DIR=./wheel_output/wheels" >> $GITHUB_OUTPUT
+          ls -R ./wheel_output
+          echo "WHEEL_DIR=./wheel_output" >> $GITHUB_OUTPUT
 
       - name: Build and push wheel container to GHCR
         uses: docker/build-push-action@v6
