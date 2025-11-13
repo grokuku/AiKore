@@ -53,7 +53,7 @@ jobs:
           outputs: type=local,dest=./wheel_output
           build-args: |
             PYTORCH_TAG=${{ env.PYTORCH_VERSION }}
-            BASE_IMAGE_TAG=13.0.1-cudnn-devel-ubuntu24.04
+            BASE_IMAGE_TAG=12.9.1-cudnn-devel-ubuntu24.04
             TORCH_CUDA_ARCH_LIST=8.9
 
       - name: List output files

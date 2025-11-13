@@ -10,7 +10,7 @@ FROM ${FLASH_SAGE_WHEEL_IMAGE}:${FLASH_SAGE_RELEASE_TAG} AS flash_sage_wheel_src
 
 # --- Builder Stage ---
 # Using the correct Ubuntu 24.04 base image with CUDA 13.0
-FROM nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04 AS builder
+FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
@@ -46,7 +46,7 @@ RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
 # bitsandbytes
 RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
     && cd /build/bitsandbytes \
-    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf bitsandbytes
@@ -54,7 +54,7 @@ RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbyte
 # diso
 RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodules \
     && cd /build/diso \
-    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf diso
@@ -62,7 +62,7 @@ RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodule
 # nvdiffrast
 RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
     && cd /build/nvdiffrast \
-    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf nvdiffrast
@@ -71,7 +71,7 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
     && cd /build/xformers \
     && git submodule update --init --recursive \
-    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf xformers
@@ -88,7 +88,7 @@ RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
 # mip-splatting / diff-gaussian-rasterization
 RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
     && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
-    && export TORCH_CUDA_ARCH_LIST="8.9" \
+    && export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf mip-splatting
@@ -102,7 +102,8 @@ RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splat
 #    && rm -rf TRELLIS
 
 # --- Final Stage ---
-# This ensures the final image is also based on Ubuntu 24.04 (noble)
+# This ensures the final image is also based on Ubuntu 22.04 (jammy)
 FROM ghcr.io/linuxserver/baseimage-kasmvnc:ubuntunoble
 
 COPY --from=builder /build/*.whl /wheels/
+COPY --from=builder /wheels/*.whl /wheels/

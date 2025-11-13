@@ -3,10 +3,10 @@
 # This Dockerfile is dedicated to compiling a specific version of PyTorch from source.
 # It is designed to be used with a GitHub Actions workflow that passes build arguments.
 
-ARG BASE_IMAGE_TAG=13.0.2-cudnn-devel-ubuntu24.04
+ARG BASE_IMAGE_TAG=12.9.1-cudnn-devel-ubuntu24.04
 FROM nvidia/cuda:${BASE_IMAGE_TAG}
 
-ARG PYTORCH_TAG=v2.9.0
+ARG PYTORCH_TAG=v2.9.1
 ARG TORCH_CUDA_ARCH_LIST="8.0 8.6 8.7 8.9 9.0 9.0a 10 12"
 ARG PYTHON_VERSION=3.12
 
@@ -36,7 +36,7 @@ RUN git clone --branch ${PYTORCH_TAG} https://github.com/pytorch/pytorch.git . \
     && echo "Starting PyTorch ${PYTORCH_TAG} compilation for CUDA arches: ${TORCH_CUDA_ARCH_LIST}"&& echo "============================================================================" \
     && export CMAKE_BUILD_TYPE=Release \
     && export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
-    && export TORCH_CUDA_VERSION="13.0" \
+    && export TORCH_CUDA_VERSION="12.9" \
     && export USE_CUDA=1 \
     && export BUILD_TEST=0 \
     && export CUDACXX=/usr/local/cuda/bin/nvcc \
