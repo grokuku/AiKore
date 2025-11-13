@@ -70,21 +70,52 @@ source activate "${VENV_DIR}"
 # --- Dependency Installation ---
 echo "--- Installing dependencies ---"
 
-# 1. Install PyTorch first, as many packages depend on it for their build process.
-#    We use a nightly build to ensure compatibility with the CUDA 13.x toolkit in the container.
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu130
+# 1. Install pre-built performance and utility libraries from wheels first.
+# This ensures our GPU-optimized versions are used.
+echo "--- Installing pre-built libraries from /wheels/ ---"
+pip install /wheels/*.whl
 
-# 2. Install dependencies from ComfyUI's requirements file.
-#    This ensures all versions are compatible as tested by the ComfyUI developers.
-pip install -r "${COMFYUI_DIR}/requirements.txt"
+# 2. Prepare a filtered requirements file for ComfyUI
+# We remove packages that we just installed from wheels to avoid conflicts.
+echo "--- Filtering ComfyUI requirements ---"
+# Create a pattern for grep. Note that some packages might be specified with '=='
+# so we match the package name at the beginning of the line.
+# The list should include all packages that are built into wheels.
+PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|xformers|bitsandbytes|flash-attn|sageattention|diso|nvdiffrast|kaolin|diff-gaussian-rasterization|vox2seq"
+
+grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "${COMFYUI_DIR}/requirements.txt" > "${COMFYUI_DIR}/requirements-filtered.txt"
+
+echo "--- Installing dependencies from filtered requirements.txt ---"
+pip install -r "${COMFYUI_DIR}/requirements-filtered.txt"
 
 # 3. Install dependencies for ComfyUI-Manager.
 pip install -r "${MANAGER_DIR}/requirements.txt"
 
-# 4. Install pre-built performance and utility libraries from wheels
-echo "--- Installing pre-built performance libraries from wheels ---"
-# The wheels are copied into /wheels/ by the Dockerfile
-pip install /wheels/*.whl
+# 4. Find and install dependencies for all other custom nodes
+echo "--- Installing dependencies for other custom nodes ---"
+CUSTOM_NODES_DIR="${COMFYUI_DIR}/custom_nodes"
+PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|xformers|bitsandbytes|flash-attn|sageattention|diso|nvdiffrast|kaolin|diff-gaussian-rasterization|vox2seq"
+
+find "${CUSTOM_NODES_DIR}" -name "requirements.txt" -print0 | while IFS= read -r -d $'\0' req_file; do
+    # Exclude the ComfyUI-Manager's requirements file as we've already installed it
+    if [ "$req_file" != "${MANAGER_DIR}/requirements.txt" ]; then
+        echo "--- Processing custom node requirements: $req_file ---"
+        
+        TEMP_REQ_FILE=$(mktemp)
+        
+        grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "$req_file" > "$TEMP_REQ_FILE"
+        
+        # Only run pip if the filtered file is not empty
+        if [ -s "$TEMP_REQ_FILE" ]; then
+            echo "Installing filtered dependencies from $req_file"
+            pip install -r "$TEMP_REQ_FILE"
+        else
+            echo "No dependencies to install from $req_file after filtering."
+        fi
+        
+        rm "$TEMP_REQ_FILE"
+    fi
+done
 
 # 5. Install other packages
 pip install peft opencv-python nunchaku
