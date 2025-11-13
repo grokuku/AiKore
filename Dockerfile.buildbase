@@ -45,7 +45,7 @@ RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
 
 # bitsandbytes
 RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
-    && # export TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 10"
+    && cd /build/bitsandbytes \
     && export TORCH_CUDA_ARCH_LIST="8.9" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
