@@ -32,7 +32,7 @@ ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 # --- Python Packages ---
 # 1. Install PyTorch from official index
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    && python3.12 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # 2. Copy and install the pre-compiled flash-sage wheels
 COPY --from=flash_sage_wheel_src /*.whl /wheels/

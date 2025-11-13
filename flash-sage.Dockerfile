@@ -24,7 +24,7 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 # --- Install PyTorch ---
 # Install PyTorch, TorchVision, and TorchAudio from the official index for CUDA 12.1
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    && python3.12 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # --- Compile Wheels ---
 WORKDIR /build
