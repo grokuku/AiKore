@@ -20,7 +20,7 @@ WORKDIR /build
 # --- System Dependencies ---
 # The CUDA toolkit is already included in the 'devel' base image
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential wget curl git cmake gnupg bc rsync ffmpeg ninja-build \
+    build-essential wget curl git cmake gnupg bc rsync ffmpeg ninja-build libopenblas-dev \
     libxft2 xvfb \
     python3.12 python3.12-dev python3.12-venv python3-setuptools python3-pip \
     && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
