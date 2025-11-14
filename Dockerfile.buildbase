@@ -35,7 +35,7 @@ RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
     && python3.12 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 # 2. Copy and install the pre-compiled flash-sage wheels
-COPY --from=flash_sage_wheel_src /*.whl /wheels/
+COPY --from=flash_sage_wheel_src /wheel_output/*.whl /wheels/
 RUN python3.12 -m pip install --no-cache-dir /wheels/*.whl \
     && python3.12 -m pip install --no-cache-dir cython==0.29.37
 
