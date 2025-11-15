@@ -67,14 +67,14 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
     && rm -rf nvdiffrast
 
 # xformers
-RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
-    && cd /build/xformers \
-    && git submodule update --init --recursive \
-    && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0" \
-    && export MAX_JOBS=1 \
-    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
-    && cd /build \
-    && rm -rf xformers
+#RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
+#    && cd /build/xformers \
+#    && git submodule update --init --recursive \
+#    && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0" \
+#    && export MAX_JOBS=1 \
+#    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
+#    && cd /build \
+#    && rm -rf xformers
 
 # kaolin
 #RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
