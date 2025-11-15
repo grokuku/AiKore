@@ -19,6 +19,7 @@ class Instance(Base):
     __tablename__ = "instances"
 
     id = Column(Integer, primary_key=True, index=True)
+    parent_instance_id = Column(Integer, nullable=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     base_blueprint = Column(String, nullable=False)
     gpu_ids = Column(String, nullable=True)

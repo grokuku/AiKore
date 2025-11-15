@@ -248,87 +248,97 @@ def rebuild_instance_env(db: Session, instance: models.Instance):
 def start_instance_process(db: Session, instance: models.Instance):
     """
     Starts the instance process and its associated monitoring thread.
+    Handles both normal instances and 'satellite' instances linked to a parent.
     """
     if instance.id in running_instances:
         raise Exception(f"Instance {instance.id} is already running.")
 
-    instance_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
+    # --- NEW: Logic to handle satellite vs. normal instances ---
+    is_satellite = instance.parent_instance_id is not None
     
-    # --- NEW: Determine output directory ---
+    # The directory for logs and where the process will run from.
+    log_and_cwd_dir = os.path.join(INSTANCES_DIR, instance.name)
+    
+    if is_satellite:
+        from aikore.database import crud  # Local import to avoid circular dependency
+        parent_instance = crud.get_instance(db, instance_id=instance.parent_instance_id)
+        if not parent_instance:
+            raise Exception(f"Parent instance with ID {instance.parent_instance_id} not found for satellite instance {instance.name}.")
+        
+        print(f"[Manager] Starting '{instance.name}' as a satellite of '{parent_instance.name}'.")
+        # A satellite uses its parent's directory for scripts and environment.
+        effective_conf_dir = os.path.join(INSTANCES_DIR, parent_instance.name)
+        effective_instance_name = parent_instance.name
+    else:
+        print(f"[Manager] Starting '{instance.name}' as a normal instance.")
+        # A normal instance uses its own directory for everything.
+        effective_conf_dir = log_and_cwd_dir
+        effective_instance_name = instance.name
+
+    # --- Filesystem and Path Setup ---
+    dest_script_path = os.path.join(effective_conf_dir, "launch.sh")
+    
     # Use the custom output_path if available, otherwise fall back to the instance name.
-    # This provides backward compatibility for instances created before the output_path field existed.
     output_folder_name = instance.output_path or instance.name
     instance_output_dir = os.path.join(OUTPUTS_DIR, output_folder_name)
-
     instance_slug = _slugify(instance.name)
 
-    os.makedirs(instance_conf_dir, exist_ok=True)
+    os.makedirs(log_and_cwd_dir, exist_ok=True)
     os.makedirs(instance_output_dir, exist_ok=True)
     os.makedirs(NGINX_SITES_AVAILABLE, exist_ok=True)
 
     global_tmp_dir = "/config/tmp"
     os.makedirs(global_tmp_dir, exist_ok=True)
 
-    dest_script_path = os.path.join(instance_conf_dir, "launch.sh")
+    # For normal instances, ensure the launch script exists, copying from blueprint if needed.
+    # For satellites, we assume the parent's script is already there.
+    if not is_satellite:
+        if not os.path.exists(dest_script_path):
+            print(f"[Manager] launch.sh not found for '{instance.name}'. Creating from blueprint '{instance.base_blueprint}'.")
+            custom_blueprint_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, instance.base_blueprint)
+            stock_blueprint_path = os.path.join(BLUEPRINTS_DIR, instance.base_blueprint)
+            
+            source_script_path = custom_blueprint_path if os.path.exists(custom_blueprint_path) else stock_blueprint_path
 
-    # --- BUG FIX: Only copy from blueprint if launch.sh doesn't exist ---
-    if not os.path.exists(dest_script_path):
-        print(f"[Manager] launch.sh not found for '{instance.name}'. Creating from blueprint '{instance.base_blueprint}'.")
-        
-        # Find the source blueprint, checking custom directory first
-        custom_blueprint_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, instance.base_blueprint)
-        stock_blueprint_path = os.path.join(BLUEPRINTS_DIR, instance.base_blueprint)
-        
-        if os.path.exists(custom_blueprint_path):
-            source_script_path = custom_blueprint_path
+            try:
+                shutil.copy(source_script_path, dest_script_path)
+            except FileNotFoundError:
+                raise Exception(f"Blueprint file not found at {source_script_path}")
         else:
-            source_script_path = stock_blueprint_path
+            print(f"[Manager] Existing launch.sh found for '{instance.name}'. Using it directly.")
 
-        try:
-            with open(source_script_path, 'r') as src, open(dest_script_path, 'w') as dest:
-                dest.write(src.read())
-        except FileNotFoundError:
-            raise Exception(f"Blueprint file not found at {source_script_path}")
-    else:
-        print(f"[Manager] Existing launch.sh found for '{instance.name}'. Using it directly.")
+    if not os.path.exists(dest_script_path):
+        raise FileNotFoundError(f"Launch script not found for instance '{instance.name}' at expected path '{dest_script_path}'. The parent instance may be missing its script.")
 
     os.chmod(dest_script_path, os.stat(dest_script_path).st_mode | stat.S_IEXEC)
 
+    # --- Environment Setup ---
     env = os.environ.copy()
     env["TMPDIR"] = global_tmp_dir
     if instance.gpu_ids:
         env["CUDA_VISIBLE_DEVICES"] = instance.gpu_ids
     
     env["WEBUI_PORT"] = str(instance.port)
-    env["INSTANCE_NAME"] = instance.name
-    env["INSTANCE_CONF_DIR"] = instance_conf_dir
-    env["INSTANCE_OUTPUT_DIR"] = instance_output_dir
+    # CRITICAL: These env vars must point to the correct context.
+    # The running script needs to know the name/dirs of the *effective* instance (the parent for satellites).
+    env["INSTANCE_NAME"] = effective_instance_name
+    env["INSTANCE_CONF_DIR"] = effective_conf_dir
+    env["INSTANCE_OUTPUT_DIR"] = instance_output_dir # Output dir is unique to the child
     env["BLUEPRINT_ID"] = os.path.splitext(instance.base_blueprint)[0]
     env["SUBFOLDER"] = f"/instance/{instance_slug}/"
     
     port_to_monitor = instance.port
     internal_app_port = instance.port
 
+    # --- Command Execution ---
     if instance.persistent_mode:
         kasm_launcher_path = os.path.join(SCRIPTS_DIR, "kasm_launcher.sh")
-        main_cmd = [
-            'bash', 
-            kasm_launcher_path, 
-            instance.name, 
-            str(instance.persistent_port),
-            dest_script_path
-        ]
+        main_cmd = ['bash', kasm_launcher_path, instance.name, str(instance.persistent_port), dest_script_path]
         port_to_monitor = instance.persistent_port
-        
-        # --- CRITICAL FIX ---
-        # Pass the determined display number to the launcher script.
         env["DISPLAY"] = f":{instance.persistent_display}"
-
         print(f"[Manager] Persistent mode: Bypassing NGINX proxy. Instance will be directly accessible on port {instance.persistent_port}.")
-
     else:
         main_cmd = ['bash', dest_script_path]
-        
         nginx_conf_path = os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf")
         nginx_conf = textwrap.dedent(f"""
             location /instance/{instance_slug}/ {{
@@ -344,9 +354,9 @@ def start_instance_process(db: Session, instance: models.Instance):
             f.write(nginx_conf)
         _reload_nginx()
 
-    output_log_path = os.path.join(instance_conf_dir, "output.log")
+    output_log_path = os.path.join(log_and_cwd_dir, "output.log")
     with open(output_log_path, 'w') as output_log:
-        main_process = subprocess.Popen(main_cmd, cwd=instance_conf_dir, env=env, stdout=output_log, stderr=output_log, preexec_fn=os.setsid)
+        main_process = subprocess.Popen(main_cmd, cwd=log_and_cwd_dir, env=env, stdout=output_log, stderr=output_log, preexec_fn=os.setsid)
     
     instance.pid = main_process.pid
     instance.status = "starting"

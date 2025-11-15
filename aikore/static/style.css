@@ -989,3 +989,27 @@ body {
     margin-bottom: 15px;
     font-weight: bold;
 }
+
+/* --- SATELLITE INSTANCE STYLES --- */
+.satellite-instance {
+    background-color: #242440; /* Slightly different background */
+}
+
+.satellite-instance .drag-handle {
+    color: #666;
+    cursor: default;
+}
+
+.indented-cell {
+    position: relative;
+}
+
+.indented-cell::before {
+    content: '↳';
+    position: absolute;
+    left: var(--level-indent, 10px); /* Use CSS variable for indent */
+    top: 50%;
+    transform: translateY(-50%);
+    color: #888;
+    font-weight: bold;
+}

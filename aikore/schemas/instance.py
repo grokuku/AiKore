@@ -45,3 +45,9 @@ class Instance(InstanceBase):
         # This tells Pydantic to read the data even if it is not a dict,
         # but an ORM model (like our SQLAlchemy model).
         from_attributes = True
+
+class InstanceCopy(BaseModel):
+    new_name: str
+
+class InstanceInstantiate(BaseModel):
+    new_name: str

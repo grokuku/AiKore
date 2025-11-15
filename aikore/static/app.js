@@ -331,10 +331,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderInstanceRow(instance, isNew = false) {
+function renderInstanceRow(instance, isNew = false, level = 0) {
         const row = document.createElement('tr');
         row.dataset.id = instance.id;
         row.dataset.isNew = String(isNew);
+        row.dataset.parentId = instance.parent_instance_id || '';
+
+        if (level > 0) {
+            row.classList.add('satellite-instance');
+        }
 
         row.dataset.originalName = instance.name || '';
         row.dataset.originalBlueprint = instance.base_blueprint || '';
@@ -359,16 +364,23 @@ document.addEventListener('DOMContentLoaded', () => {
             handleCell.innerHTML = '&#x2630;';
         }
 
+        const nameCell = row.insertCell();
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
         nameInput.value = instance.name || '';
         nameInput.dataset.field = 'name';
         nameInput.required = true;
         nameInput.disabled = false;
-        row.insertCell().appendChild(nameInput);
+        nameCell.appendChild(nameInput);
+        nameCell.style.paddingLeft = `${level * 20 + 5}px`;
+        if (level > 0) {
+            nameCell.style.setProperty('--level-indent', `${level * 20}px`);
+            nameCell.classList.add('indented-cell');
+        }
+
 
         const blueprintSelect = createBlueprintSelect(instance.base_blueprint);
-        blueprintSelect.disabled = false;
+        blueprintSelect.disabled = (level > 0); // Disable for satellites
         row.insertCell().appendChild(blueprintSelect);
 
         const outputPathInput = document.createElement('input');
@@ -384,7 +396,6 @@ document.addEventListener('DOMContentLoaded', () => {
         gpuContainer.className = 'gpu-checkbox-container';
         const assignedGpus = (instance.gpu_ids || '').split(',').filter(id => id);
         
-        // --- BUGFIX 2: Make GPU counting robust ---
         const gpuCount = (systemInfo.gpus && Array.isArray(systemInfo.gpus)) ? systemInfo.gpus.length : (systemInfo.gpu_count || 0);
         
         for (let i = 0; i < gpuCount; i++) {
@@ -496,16 +507,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 saveButton.disabled = !name || !bp;
             }));
 
-            // --- NEW: Logic to auto-fill output path ---
             let isOutputPathDirty = false;
-            outputPathInput.addEventListener('input', () => {
-                isOutputPathDirty = true;
-            });
-            nameInput.addEventListener('input', () => {
-                if (!isOutputPathDirty) {
-                    outputPathInput.value = nameInput.value;
-                }
-            });
+            outputPathInput.addEventListener('input', () => { isOutputPathDirty = true; });
+            nameInput.addEventListener('input', () => { if (!isOutputPathDirty) { outputPathInput.value = nameInput.value; } });
             
         } else {
             allFields.forEach(field => {
@@ -521,7 +525,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchAndRenderInstances() {
         try {
-            // --- BUGFIX 3: Prevent refresh when editing ANY row ---
             if (document.activeElement && document.activeElement.closest('#instances-tbody tr')) {
                 return;
             }
@@ -532,9 +535,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             let instances = await response.json();
 
+            // Build tree structure
+            const instanceMap = new Map(instances.map(inst => [inst.id, { ...inst, children: [] }]));
+            const rootInstances = [];
+            
+            instances.forEach(inst => {
+                if (inst.parent_instance_id && instanceMap.has(inst.parent_instance_id)) {
+                    instanceMap.get(inst.parent_instance_id).children.push(instanceMap.get(inst.id));
+                } else {
+                    rootInstances.push(instanceMap.get(inst.id));
+                }
+            });
+
             const savedOrder = JSON.parse(localStorage.getItem(INSTANCE_ORDER_KEY) || '[]');
             if (savedOrder.length > 0) {
-                instances.sort((a, b) => {
+                rootInstances.sort((a, b) => {
                     const indexA = savedOrder.indexOf(String(a.id));
                     const indexB = savedOrder.indexOf(String(b.id));
                     if (indexA !== -1 && indexB !== -1) return indexA - indexB;
@@ -545,10 +560,16 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             instancesTbody.innerHTML = '';
-            instances.forEach(instance => {
-                const row = renderInstanceRow(instance);
+            
+            function renderNode(node, level) {
+                const row = renderInstanceRow(node, false, level);
                 instancesTbody.appendChild(row);
-            });
+                if (node.children.length > 0) {
+                    node.children.forEach(child => renderNode(child, level + 1));
+                }
+            }
+
+            rootInstances.forEach(node => renderNode(node, 0));
 
             if (newInstanceRow) {
                 instancesTbody.appendChild(newInstanceRow);
@@ -741,10 +762,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function showToolsMenu(buttonEl) {
         const row = buttonEl.closest('tr');
         const status = row.dataset.status;
+        const isSatellite = row.classList.contains('satellite-instance');
+
         const rect = buttonEl.getBoundingClientRect();
         toolsContextMenu.style.display = 'block';
         toolsContextMenu.style.left = `${rect.left}px`;
         toolsContextMenu.style.top = `${rect.bottom + 5}px`;
+        
+        // Disable actions not applicable to satellites
+        toolsContextMenu.querySelector('[data-action="instantiate"]').disabled = isSatellite;
+        toolsContextMenu.querySelector('[data-action="script"]').disabled = isSatellite;
+        toolsContextMenu.querySelector('[data-action="rebuild-env"]').disabled = isSatellite;
+
         currentMenuInstance = { id: row.dataset.id, name: row.dataset.name, status: row.dataset.status };
     }
 
@@ -982,6 +1011,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('rebuild-modal-instance-name').textContent = name;
                 document.getElementById('rebuild-modal-message').textContent = message;
                 rebuildModal.classList.remove('hidden');
+            } else if (action === 'clone') {
+                const sourceName = currentMenuInstance.name;
+                const newName = prompt(`Enter a name for the clone of "${sourceName}":`, `${sourceName}_clone`);
+                if (newName) {
+                    (async () => {
+                        try {
+                            const response = await fetch(`/api/instances/${currentMenuInstance.id}/copy`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ new_name: newName })
+                            });
+                            if (!response.ok) {
+                                const err = await response.json();
+                                throw new Error(err.detail || 'Failed to clone instance.');
+                            }
+                            showToast(`Instance '${sourceName}' successfully cloned as '${newName}'.`);
+                            await fetchAndRenderInstances();
+                        } catch (error) {
+                            showToast(error.message, 'error');
+                        }
+                    })();
+                }
+            } else if (action === 'instantiate') {
+                const sourceName = currentMenuInstance.name;
+                const newName = prompt(`Enter a name for the new instance of "${sourceName}":`, `${sourceName}_instance`);
+                if (newName) {
+                    (async () => {
+                        try {
+                            const response = await fetch(`/api/instances/${currentMenuInstance.id}/instantiate`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ new_name: newName })
+                            });
+                            if (!response.ok) {
+                                const err = await response.json();
+                                throw new Error(err.detail || 'Failed to instantiate instance.');
+                            }
+                            showToast(`Instance '${sourceName}' successfully instantiated as '${newName}'.`);
+                            await fetchAndRenderInstances();
+                        } catch (error) {
+                            showToast(error.message, 'error');
+                        }
+                    })();
+                }
             }
         }
         hideToolsMenu();

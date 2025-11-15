@@ -2,8 +2,8 @@ import os
 import sys
 import shutil
 import time
-from sqlalchemy import create_engine, inspect, Column, Integer, String, Boolean
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, inspect, Column, Integer, String, Boolean, text
+from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.ext.declarative import declarative_base
 
 from . import models
@@ -11,7 +11,7 @@ from .session import SessionLocal, DATABASE_URL, connect_args
 
 # --- AUTOMATED DATABASE MIGRATION LOGIC ---
 
-EXPECTED_DB_VERSION = 4
+EXPECTED_DB_VERSION = 5
 
 def _get_db_version(db_session):
     """Checks the version of the database."""
@@ -332,6 +332,44 @@ def _perform_v3_to_v4_migration():
     print("[DB Migration] 5. Migration from V3 to V4 complete. Please restart the application.")
     sys.exit(0)
 
+def _perform_v4_to_v5_migration():
+    """
+    Migrates the database from schema V4 to V5.
+    V4 -> V5 Change: Adds the `parent_instance_id` column to the `instances` table.
+    This migration uses a direct ALTER TABLE statement for simplicity.
+    """
+    print("[DB Migration] Starting migration from V4 to V5...")
+    engine = create_engine(DATABASE_URL, connect_args=connect_args)
+    
+    try:
+        with engine.connect() as connection:
+            with connection.begin():
+                inspector = inspect(engine)
+                columns = [col['name'] for col in inspector.get_columns('instances')]
+                
+                if 'parent_instance_id' not in columns:
+                    print("[DB Migration] 1. Adding column 'parent_instance_id' to 'instances' table...")
+                    connection.execute(text('ALTER TABLE instances ADD COLUMN parent_instance_id INTEGER'))
+                    # Add index separately for compatibility
+                    connection.execute(text('CREATE INDEX ix_instances_parent_instance_id ON instances (parent_instance_id)'))
+                else:
+                    print("[DB Migration] 1. Column 'parent_instance_id' already exists.")
+
+                print("[DB Migration] 2. Updating schema version to 5...")
+                # Use a session to update the meta table
+                with Session(bind=connection) as db:
+                    version_entry = db.query(models.AikoreMeta).filter_by(key="schema_version").first()
+                    if version_entry:
+                        version_entry.value = "5"
+                    else:
+                        db.add(models.AikoreMeta(key="schema_version", value="5"))
+                    db.commit()
+
+        print("[DB Migration] Migration from V4 to V5 complete.")
+    except Exception as e:
+        print(f"[DB Migration] FATAL: Error during V4 to V5 migration: {e}", file=sys.stderr)
+        print("[DB Migration] Manual inspection of the database is required.", file=sys.stderr)
+        sys.exit(1)
 
 def run_db_migration():
     # This is a hack to get the correct engine for the migration check
@@ -358,6 +396,8 @@ def run_db_migration():
                 _perform_v2_to_v3_migration()
             elif current_version == 3:
                 _perform_v3_to_v4_migration()
+            elif current_version == 4:
+                _perform_v4_to_v5_migration()
             else:
                 print(f"[DB Migration] FATAL: Unsupported migration path from v{current_version} to v{EXPECTED_DB_VERSION}.", file=sys.stderr)
                 sys.exit(1)

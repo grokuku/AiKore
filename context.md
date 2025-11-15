@@ -152,10 +152,117 @@
             1.  **Correction du bug d'affichage multi-GPU :** La logique de rendu dans `app.js` a été rendue plus robuste. Elle inspecte désormais la structure de données des GPUs retournée par l'API pour s'assurer que toutes les cartes graphiques disponibles s'affichent correctement sous forme de cases à cocher, au lieu d'afficher "N/A".
             2.  **Correction du bug de perte de focus :** La boucle de rafraîchissement automatique dans `app.js` a été modifiée pour ne plus s'exécuter si l'utilisateur a le focus sur un champ de saisie dans *n'importe quelle* ligne de la table (y compris la ligne de création). Cela empêche la table de se redessiner et de voler le focus pendant la saisie.
         *   **Problèmes Non Résolus :**
-            *   Le bug de redémarrage intempestif lors de la mise à jour du `hostname` persiste. Bien que la logique de distinction entre les mises à jour "sûres" et "disruptives" ait été implémentée dans `api/instances.py`, l'étape finale de rechargement de NGINX sans redémarrer l'instance n'est pas encore fonctionnelle.
+            *   Le bug de redémarrage intempestif lors de la mise à jour du `hostname` persiste. Bien que la logique de distinction entre les mises à jour "sûres" et "disruptives` ait été implémentée dans `api/instances.py`, l'étape finale de rechargement de NGINX sans redémarrer l'instance n'est pas encore fonctionnelle.
         *   **État à la fin de la session :** L'interface est significativement plus stable et intuitive pour la création et la modification d'instances. Le dernier bug majeur identifié est localisé côté backend.
     
     ### 6.4. Plan d'Action pour la Prochaine Session
     
     *   **Priorité 1 :** Finaliser la correction du bug de redémarrage intempestif. Cela nécessitera d'inspecter et potentiellement de modifier `aikore/core/process_manager.py` pour implémenter une fonction `update_nginx_config` qui régénère le fichier de configuration NGINX et recharge le service sans interrompre les instances en cours d'exécution.
     *   **Priorité 2 :** Améliorer la gestion globale des erreurs en standardisant l'utilisation des notifications "toast" pour tous les retours d'API (succès et erreurs), afin de fournir un feedback utilisateur plus cohérent et moins intrusif.
+    
+---
+
+## 7. Nouvelles Fonctionnalités : Copie et Instanciation d'Instances
+
+### 7.1. Fonctionnalité "Copie" (Duplication d'Instance)
+
+Cette fonctionnalité permet de créer un clone parfait et totalement indépendant d'une instance existante. La nouvelle instance aura sa propre configuration, son propre environnement virtuel et ses propres dossiers, initialisés avec les mêmes valeurs que l'original.
+
+#### Plan d'implémentation :
+
+**1. Backend - API (`aikore/api/instances.py`)**
+
+*   **Nouvelle route d'API :** `POST /api/instances/{id}/copy`
+    *   Prend l'ID de l'instance à copier.
+    *   Attend en entrée le nom de la nouvelle instance : `{ "new_name": "..." }`.
+
+**2. Logique Principale (`aikore/database/crud.py`)**
+
+*   **Nouvelle fonction :** `copy_instance(db: Session, source_instance_id: int, new_name: str)`
+    *   **Étape 1 (Validation) :** Vérifier que le `new_name` n'est pas déjà utilisé.
+    *   **Étape 2 (Base de données) :**
+        *   Lire les données de l'instance source.
+        *   Créer une nouvelle entrée pour le clone en copiant les champs suivants de la source :
+            *   `base_blueprint`
+            *   `gpu_ids`
+            *   `autostart`
+            *   `persistent_mode`
+            *   `output_path` (Le chemin de sortie est conservé)
+            *   `hostname` (L'adresse custom est conservée)
+        *   Définir les champs spécifiques pour le clone :
+            *   `name` = `new_name`
+            *   `status` = `"stopped"`
+            *   `use_custom_hostname` = `False` (L'adresse custom est désactivée)
+            *   Les champs `pid`, `port`, `persistent_port`, etc., sont laissés à `NULL`.
+        *   Sauvegarder la nouvelle instance.
+    *   **Étape 3 (Dossiers) :** Copier le dossier de configuration de la source vers le nouveau dossier du clone.
+    *   **Étape 4 (Environnement Conda) :** Exécuter `conda create --prefix /path/to/new/env --clone /path/to/source/env`.
+    *   **Étape 5 (Mise à jour du script) :** Modifier le `launch.sh` du clone pour qu'il utilise le chemin du nouvel environnement.
+    *   **Étape 6 (Retour) :** Renvoyer l'objet de la nouvelle instance.
+
+**3. Frontend (`aikore/static/app.js` et `aikore/static/index.html`)**
+
+*   **Activer le bouton "Clone"** dans le menu contextuel des instances.
+*   **Ajouter un gestionnaire d'événement :**
+    *   Au clic sur "Clone", demander le nom de la nouvelle instance.
+    *   Envoyer la requête `POST` à l'API.
+    *   Après une réponse positive, rafraîchir la liste des instances.
+
+### 7.2. Fonctionnalité "Instancier" (Référencement d'Instance)
+
+Cette fonctionnalité permet de créer une instance "satellite" ou "liée" qui partage le script et l'environnement Conda d'une instance "mère", tout en ayant ses propres paramètres d'exécution (Output Path, GPU, Autostart, Persistent Mode, Custom Address, Port).
+
+#### Plan d'implémentation :
+
+**1. Base de Données (`aikore/database/models.py`)**
+
+*   **Ajouter une colonne à la table `Instance` :**
+    *   `parent_instance_id = Column(Integer, nullable=True)`
+    *   Cette colonne contiendra l'ID de l'instance "mère". Si elle est `NULL`, c'est une instance normale/mère.
+
+**2. Backend - API (`aikore/api/instances.py`)**
+
+*   **Nouvelle route d'API :** `POST /api/instances/{id}/instantiate`
+    *   Prend l'ID de l'instance mère.
+    *   Attend en entrée le nom de la nouvelle instance satellite : `{ "new_name": "..." }`.
+
+**3. Logique Principale (`aikore/database/crud.py`)**
+
+*   **Nouvelle fonction :** `instantiate_instance(db: Session, parent_instance_id: int, new_name: str)`
+    *   **Étape 1 (Validation) :** Vérifier que le `new_name` n'est pas déjà utilisé.
+    *   **Étape 2 (Base de données) :**
+        *   Lire les données de l'instance mère.
+        *   Créer une nouvelle entrée pour l'instance satellite.
+        *   **Définir les liens et le statut :**
+            *   `name` = `new_name`
+            *   `parent_instance_id` = `parent_instance_id` (l'ID de la mère)
+            *   `status` = `"stopped"`
+        *   **Copier les paramètres de la mère comme base pour le satellite (ce seront ses propres valeurs modifiables) :**
+            *   `base_blueprint`
+            *   `output_path`
+            *   `gpu_ids`
+            *   `autostart`
+            *   `persistent_mode`
+            *   `hostname` et `use_custom_hostname`
+        *   **Réinitialiser les valeurs d'exécution :** `pid`, `port`, etc., à `NULL`.
+        *   Sauvegarder la nouvelle instance satellite.
+    *   **Étape 3 (Système de fichiers) :** Aucune opération. Pas de copie de dossier, pas de création d'environnement.
+
+**4. Logique de Démarrage (`aikore/core/process_manager.py`)**
+
+*   **Modifier la fonction `start_instance` :**
+    *   Au début, vérifier si `instance.parent_instance_id` n'est pas `NULL`.
+    *   Si c'est un satellite :
+        1.  Charger l'instance mère depuis la base de données.
+        2.  Déterminer le chemin du dossier de configuration et de l'environnement Conda en se basant sur l'instance **mère**.
+        3.  Lancer le `launch.sh` qui se trouve dans le dossier de la **mère**.
+        4.  Utiliser les paramètres (`gpu_ids`, `port`, etc.) de l'instance **satellite** pour configurer les variables d'environnement du processus.
+
+**5. Frontend (`aikore/static/app.js` et `aikore/static/index.html`)**
+
+*   **Ajouter un bouton "Instancier"** dans le menu.
+*   **Au clic :** Demander le nom, appeler l'API, et rafraîchir la liste.
+*   **Adapter l'affichage :**
+    *   Regrouper visuellement les satellites sous leur mère (indentation, ligne de connexion).
+    *   Pour une instance satellite, **griser/désactiver** les contrôles qui modifient les ressources partagées (ex: le bouton "Éditer le script", le choix du blueprint).
+    *   S'assurer que les contrôles pour les paramètres indépendants (`Output Path`, `GPU`, `Autostart`, `Persistent`, `Custom Address`, `Port`) sont **actifs et modifiables**.

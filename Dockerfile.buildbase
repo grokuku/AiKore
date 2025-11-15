@@ -7,7 +7,7 @@ FROM ${FLASH_SAGE_WHEEL_IMAGE}:${FLASH_SAGE_RELEASE_TAG} AS flash_sage_wheel_src
 
 # --- Builder Stage ---
 # Using the correct Ubuntu 24.04 base image with CUDA 12.9.1
-FROM nvidia/cuda:12.9.1-cudnn-devel-ubuntu24.04 AS builder
+FROM nvidia/cuda:13.0.2-cudnn-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
@@ -32,7 +32,7 @@ ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 # --- Python Packages ---
 # 1. Install PyTorch from official index
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+    && python3.12 -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 # 2. Copy and install the pre-compiled flash-sage wheels
 COPY --from=flash_sage_wheel_src /wheel_output/*.whl /wheels/

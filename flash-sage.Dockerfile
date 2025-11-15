@@ -1,5 +1,5 @@
 # Global ARGs for dynamic image sources
-ARG BASE_IMAGE_TAG=12.9.1-cudnn-devel-ubuntu24.04
+ARG BASE_IMAGE_TAG=13.0.2-cudnn-devel-ubuntu24.04
 
 # Use the same CUDA base image as other builds
 FROM nvidia/cuda:${BASE_IMAGE_TAG} AS builder
@@ -24,7 +24,7 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 # --- Install PyTorch ---
 # Install PyTorch, TorchVision, and TorchAudio from the official index for CUDA 12.1
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+    && python3.12 -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 
 # --- Compile Wheels ---
 WORKDIR /build

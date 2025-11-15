@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from ..database import crud
 from ..database.session import SessionLocal
-from ..schemas import instance as schemas
+from ..schemas.instance import Instance, InstanceCreate, InstanceUpdate, InstanceCopy, InstanceInstantiate
 from ..core import process_manager
 from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR, _find_free_port, _find_free_display
 
@@ -158,6 +158,56 @@ def create_new_instance(instance: schemas.InstanceCreate, db: Session = Depends(
         persistent_port=port_allocations["persistent_port"],
         persistent_display=port_allocations["persistent_display"]
     )
+
+@router.post("/instances/{instance_id}/copy", response_model=schemas.Instance, tags=["Instance Actions"])
+def copy_instance(
+    instance_id: int,
+    instance_copy: schemas.InstanceCopy,
+    db: Session = Depends(get_db)
+):
+    """
+    Creates a new instance by copying an existing one.
+    """
+    source_instance = crud.get_instance(db, instance_id=instance_id)
+    if not source_instance:
+        raise HTTPException(status_code=404, detail="Source instance not found")
+
+    # The actual logic is in crud.copy_instance
+    try:
+        new_instance = crud.copy_instance(
+            db=db,
+            source_instance_id=instance_id,
+            new_name=instance_copy.new_name
+        )
+        return new_instance
+    except Exception as e:
+        # Catch potential errors from crud, like name conflict or file system errors
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/instances/{instance_id}/instantiate", response_model=schemas.Instance, tags=["Instance Actions"])
+def instantiate_instance(
+    instance_id: int,
+    instance_instantiate: schemas.InstanceInstantiate,
+    db: Session = Depends(get_db)
+):
+    """
+    Creates a new instance by instantiating an existing one (linked).
+    """
+    source_instance = crud.get_instance(db, instance_id=instance_id)
+    if not source_instance:
+        raise HTTPException(status_code=404, detail="Source instance not found")
+
+    # The actual logic is in crud.instantiate_instance
+    try:
+        new_instance = crud.instantiate_instance(
+            db=db,
+            source_instance_id=instance_id,
+            new_name=instance_instantiate.new_name
+        )
+        return new_instance
+    except Exception as e:
+        # Catch potential errors from crud, like name conflict or file system errors
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/instances/", response_model=List[schemas.Instance])
 def read_all_instances(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
