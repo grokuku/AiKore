@@ -44,8 +44,8 @@ jobs:
           file: ./flash-sage.Dockerfile
           target: exporter
           outputs: type=local,dest=./wheel_output
-          build-args: |
-            BASE_IMAGE_TAG=12.9.1-cudnn-devel-ubuntu24.04
+#          build-args: |
+#            BASE_IMAGE_TAG=12.9.1-cudnn-devel-ubuntu24.04
 
       - name: List output files
         id: wheel_path
