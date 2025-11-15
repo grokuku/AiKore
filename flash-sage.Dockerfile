@@ -26,6 +26,10 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 # Install PyTorch, TorchVision, and TorchAudio from the official index for CUDA 12.1
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
     && python3.12 -m pip install torch torchvision
+# --- CLEANUP and PREPARATION before wheel compilation ---
+# Désinstalle TOUS les paquets nvidia-* pour s'assurer qu'il n'y a pas de conflit.
+# Les bonnes versions (cu13) seront réinstallées en tant que dépendances lors de la compilation.
+RUN python3.12 -m pip uninstall -y nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cufft-cu12 nvidia-cufile-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-cusparselt-cu12 nvidia-nccl-cu12 nvidia-nvjitlink-cu12 nvidia-nvshmem-cu12 nvidia-nvtx-cu12 || echo "No cu12 packages to uninstall"
 
 # --- Compile Wheels ---
 WORKDIR /build
