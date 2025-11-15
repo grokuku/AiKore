@@ -6,7 +6,8 @@ FROM nvidia/cuda:${BASE_IMAGE_TAG} AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
-ENV MAX_JOBS=2
+ENV MAX_JOBS=8
+ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu130
 WORKDIR /build
 
 # --- System Dependencies ---
@@ -24,7 +25,7 @@ ENV PATH="/usr/local/cuda/bin:${PATH}"
 # --- Install PyTorch ---
 # Install PyTorch, TorchVision, and TorchAudio from the official index for CUDA 12.1
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+    && python3.12 -m pip install torch torchvision
 
 # --- Compile Wheels ---
 WORKDIR /build
@@ -34,7 +35,7 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-atte
     && cd /build/flash-attention \
     && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0 10 12" \
     && export FLASH_ATTENTION_FORCE_BUILD=TRUE \
-    && python3.12 -m pip wheel --no-build-isolation --index-url https://download.pytorch.org/whl/cu130 . -w /wheels \
+    && python3.12 -m pip wheel --no-build-isolation . -w /wheels \
     && cd /build \
     && rm -rf flash-attention
 
@@ -42,7 +43,7 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-atte
 RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build/SageAttention \
     && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0 10 12" \
-    && python3.12 -m pip wheel --no-build-isolation --index-url https://download.pytorch.org/whl/cu130 . -w /wheels \
+    && python3.12 -m pip wheel --no-build-isolation . -w /wheels \
     && cd /build \
     && rm -rf SageAttention
 
