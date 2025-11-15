@@ -39,6 +39,8 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-atte
     && cd /build/flash-attention \
     && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0 10 12" \
     && export FLASH_ATTENTION_FORCE_BUILD=TRUE \
+    # Ajout de CUDA_HOME pour guider le script de build
+    && export CUDA_HOME=/usr/local/cuda \
     && python3.12 -m pip wheel --no-build-isolation . -w /wheels \
     && cd /build \
     && rm -rf flash-attention
@@ -47,6 +49,8 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-atte
 RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build/SageAttention \
     && export TORCH_CUDA_ARCH_LIST="7.0 7.5 8.0 8.6 9.0 10 12" \
+    # Ajout de CUDA_HOME pour guider le script de build
+    && export CUDA_HOME=/usr/local/cuda \
     && python3.12 -m pip wheel --no-build-isolation . -w /wheels \
     && cd /build \
     && rm -rf SageAttention
