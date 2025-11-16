@@ -266,3 +266,23 @@ Cette fonctionnalité permet de créer une instance "satellite" ou "liée" qui p
     *   Regrouper visuellement les satellites sous leur mère (indentation, ligne de connexion).
     *   Pour une instance satellite, **griser/désactiver** les contrôles qui modifient les ressources partagées (ex: le bouton "Éditer le script", le choix du blueprint).
     *   S'assurer que les contrôles pour les paramètres indépendants (`Output Path`, `GPU`, `Autostart`, `Persistent`, `Custom Address`, `Port`) sont **actifs et modifiables**.
+
+### 6.5. Journal d'Investigation (Suite)
+
+*   **Session du 2025-11-15 :**
+    *   **Objectif :** Implémentation de la fonctionnalité "Instancier" (instances satellites).
+    *   **Problèmes Résolus & Améliorations :**
+        1.  **Modification du Schéma de DB :** Ajout de la colonne `parent_instance_id` à la table `Instance` pour créer la relation parent-enfant.
+        2.  **Migration de la DB :** Création d'un script de migration (v4 vers v5) pour ajouter la nouvelle colonne de manière non destructive.
+        3.  **Backend Complet :** Implémentation de la route d'API `POST /api/instances/{id}/instantiate` et de la logique CRUD `instantiate_instance` correspondante.
+        4.  **Mise à jour du Process Manager :** La fonction `start_instance_process` a été modifiée pour gérer les instances satellites. Elle utilise désormais le script et l'environnement de l'instance parente tout en appliquant les paramètres d'exécution (GPU, port, etc.) du satellite.
+        5.  **Interface Utilisateur :** Le frontend a été mis à jour pour permettre l'instanciation via le menu contextuel. La logique de rendu a été modifiée pour afficher les instances de manière hiérarchique (parents et enfants indentés).
+        6.  **Correction de Bug :** Résolution d'une `NameError` dans `api/instances.py` due à une importation incorrecte du module `schemas`.
+    *   **État à la fin de la session :** La fonctionnalité "Instancier" est entièrement implémentée, du backend au frontend.
+
+### 6.6. Nouveaux Problèmes Identifiés
+
+*   **Bug - Rendu de l'Instanciation :** Il n'y a pas de ligne ou de repère visuel clair connectant une instance satellite à son parent, l'indentation seule peut ne pas être suffisante.
+*   **Bug - Contrôles de l'Instanciation :** Les contrôles de l'interface utilisateur (par exemple, le sélecteur de blueprint) ne sont pas correctement désactivés pour les instances satellites, ce qui pourrait prêter à confusion.
+*   **Bug - Contexte d'Exécution des Outils :** Les outils comme le terminal, lorsqu'ils sont lancés depuis une instance satellite, tentent de s'exécuter dans le dossier de configuration vide du satellite au lieu de celui du parent, ce qui les rend non fonctionnels.
+*   **Bug - Clonage Incomplet :** La fonctionnalité "Clone" ne copie actuellement que le dossier de l'environnement (`env`) et non les autres fichiers de configuration, ce qui rend le clone inutilisable.
