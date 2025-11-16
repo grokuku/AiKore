@@ -1,7 +1,8 @@
 import { state, DOM } from './state.js';
-import { deleteInstance, rebuildInstance, saveCustomBlueprint, performFullInstanceUpdate } from './api.js';
-import { updateInstanceScript } from './api.js';
-import { checkRowForChanges } from './ui.js';
+import * as api from './api.js';
+import { checkRowForChanges, showToast } from './ui.js';
+import { fetchAndRenderInstances } from './main.js';
+import { exitEditor } from './tools.js';
 
 export function showToolsMenu(buttonEl) {
     const row = buttonEl.closest('tr');
@@ -37,9 +38,23 @@ export function hideAllModals() {
     state.instanceToUpdate = null;
 }
 
-function handleDelete(options) {
+async function handleDelete(options) {
     if (!state.instanceToDeleteId) return;
-    deleteInstance(state.instanceToDeleteId, options);
+    try {
+        const result = await api.deleteInstance(state.instanceToDeleteId, options);
+        if (result.conflict) {
+            hideAllModals();
+            document.getElementById('overwrite-modal-instance-name').textContent = document.getElementById('delete-modal-instance-name').textContent;
+            DOM.overwriteModal.classList.remove('hidden');
+            return;
+        }
+        showToast("Instance moved to trashcan.");
+        hideAllModals();
+        await fetchAndRenderInstances();
+    } catch (error) {
+        showToast(error.message, 'error');
+        hideAllModals();
+    }
 }
 
 export function setupModalEventHandlers() {
@@ -66,23 +81,46 @@ export function setupModalEventHandlers() {
                 hideAllModals();
                 return;
             }
-            const instanceName = state.instanceToRebuild.name;
-            const instanceId = state.instanceToRebuild.id;
+            const { id, name } = state.instanceToRebuild;
             hideAllModals();
-            rebuildInstance(instanceId, instanceName);
+            try {
+                await api.rebuildInstance(id);
+                showToast(`Rebuild process for '${name}' has been successfully initiated.`);
+                await fetchAndRenderInstances();
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
         }
     });
 
-    DOM.restartConfirmModal.addEventListener('click', (e) => {
+    DOM.restartConfirmModal.addEventListener('click', async (e) => {
         const action = e.target.id;
         if (action === 'restart-btn-cancel') {
             hideAllModals();
         } else if (action === 'restart-btn-confirm') {
-            updateInstanceScript(true);
+            const { instanceId, fileType } = state.editorState;
+            const content = state.codeEditor.getValue();
+            hideAllModals();
+            
+            const button = DOM.editorUpdateBtn;
+            button.textContent = 'Updating...';
+            button.disabled = true;
+
+            try {
+                await api.updateInstanceScript(instanceId, fileType, content, true);
+                showToast('Instance script updated. Restarting instance...', 'success');
+                exitEditor();
+                await fetchAndRenderInstances();
+            } catch (error) {
+                showToast(`Error updating script: ${error.message}`, 'error');
+            } finally {
+                button.textContent = 'Update Instance';
+                button.disabled = false;
+            }
         }
     });
 
-    DOM.updateConfirmModal.addEventListener('click', (e) => {
+    DOM.updateConfirmModal.addEventListener('click', async (e) => {
         const action = e.target.id;
         if (action === 'update-confirm-btn-cancel') {
             if (state.instanceToUpdate) {
@@ -100,12 +138,12 @@ export function setupModalEventHandlers() {
                     cb.checked = originalGpus.includes(cb.value);
                 });
     
-                checkRowForChanges(row); // This will disable the update button
+                checkRowForChanges(row);
             }
             hideAllModals();
         } else if (action === 'update-confirm-btn-confirm') {
             if (state.instanceToUpdate) {
-                const { row, button } = state.instanceToUpdate;
+                const { row } = state.instanceToUpdate;
                 const instanceId = row.dataset.id;
                 const data = {
                     name: row.querySelector('input[data-field="name"]').value,
@@ -116,19 +154,33 @@ export function setupModalEventHandlers() {
                     hostname: row.querySelector('input[data-field="hostname"]').value || null,
                     use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
                 };
-                performFullInstanceUpdate(instanceId, data, button);
+                
+                const button = e.target;
+                const originalButtonText = button.textContent;
+                button.textContent = 'Updating...';
+                button.disabled = true;
+
+                try {
+                    await api.performFullInstanceUpdate(instanceId, data);
+                    showToast(`Instance '${data.name}' is being updated.`, 'success');
+                    await fetchAndRenderInstances();
+                } catch (error) {
+                    showToast(error.message, 'error');
+                } finally {
+                    button.textContent = originalButtonText;
+                    button.disabled = false;
+                    hideAllModals();
+                }
             }
-            hideAllModals();
         }
     });
 
     DOM.saveBlueprintModal.addEventListener('click', async (e) => {
         const action = e.target.id;
         if (action === 'save-blueprint-btn-cancel') {
-            DOM.saveBlueprintModal.classList.add('hidden');
+            hideAllModals();
         } else if (action === 'save-blueprint-btn-confirm') {
             let filename = DOM.blueprintFilenameInput.value.trim();
-            const content = state.codeEditor.getValue();
             if (!filename) {
                 showToast('Filename cannot be empty.', 'error');
                 return;
@@ -136,7 +188,25 @@ export function setupModalEventHandlers() {
             if (!filename.endsWith('.sh')) {
                 filename += '.sh';
             }
-            saveCustomBlueprint(filename, content, e.target);
+            const content = state.codeEditor.getValue();
+            
+            const button = e.target;
+            button.textContent = 'Saving...';
+            button.disabled = true;
+
+            try {
+                const savedData = await api.saveCustomBlueprint(filename, content);
+                hideAllModals();
+                showToast(`Custom blueprint '${savedData.filename}' saved successfully.`, 'success');
+                const blueprints = await api.fetchAndStoreBlueprints();
+                state.availableBlueprints = blueprints;
+                await fetchAndRenderInstances();
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                button.textContent = 'Save Blueprint';
+                button.disabled = false;
+            }
         }
     });
 }

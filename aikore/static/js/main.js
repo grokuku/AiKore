@@ -69,9 +69,27 @@ export async function fetchAndRenderInstances() {
 }
 
 async function initializeApp() {
-    await fetchSystemInfo();
-    await fetchAndStoreBlueprints();
-    await fetchAvailablePorts();
+    try {
+        const [systemInfo, blueprints, ports] = await Promise.all([
+            fetchSystemInfo(),
+            fetchAndStoreBlueprints(),
+            fetchAvailablePorts()
+        ]);
+
+        state.systemInfo = systemInfo;
+        state.availableBlueprints = blueprints;
+        state.availablePorts = ports.available_ports;
+
+    } catch (error) {
+        console.error("Failed to initialize application:", error);
+        document.body.innerHTML = `<div style="color: red; text-align: center; padding: 2rem;">
+            <h1>Error Initializing Application</h1>
+            <p>${error.message}</p>
+            <p>Please check the console and try refreshing the page.</p>
+        </div>`;
+        return;
+    }
+    
     await fetchAndRenderInstances();
     
     const initialStats = await getSystemStats();

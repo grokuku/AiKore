@@ -1,5 +1,4 @@
 import { state, DOM } from './state.js';
-import { updateInstanceAutostart } from './api.js';
 
 export function showToast(message, type = 'success') {
     const toastContainer = document.getElementById('toast-container');
@@ -62,7 +61,7 @@ function createBlueprintSelect(selectedValue = '') {
     return select;
 }
 
-function checkRowForChanges(row) {
+export function checkRowForChanges(row) {
     const updateButton = row.querySelector('button[data-action="update"]');
     if (!updateButton) return;
 
@@ -232,11 +231,6 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     autostartCheckbox.type = 'checkbox';
     autostartCheckbox.checked = instance.autostart;
     autostartCheckbox.dataset.field = 'autostart';
-    if (!isNew) {
-        autostartCheckbox.addEventListener('change', (e) => {
-            updateInstanceAutostart(instance.id, e.target.checked, instance.name);
-        });
-    }
     row.insertCell().appendChild(autostartCheckbox);
 
     const persistentModeCheckbox = document.createElement('input');
