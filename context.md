@@ -286,3 +286,40 @@ Cette fonctionnalité permet de créer une instance "satellite" ou "liée" qui p
 *   **Bug - Contrôles de l'Instanciation :** Les contrôles de l'interface utilisateur (par exemple, le sélecteur de blueprint) ne sont pas correctement désactivés pour les instances satellites, ce qui pourrait prêter à confusion.
 *   **Bug - Contexte d'Exécution des Outils :** Les outils comme le terminal, lorsqu'ils sont lancés depuis une instance satellite, tentent de s'exécuter dans le dossier de configuration vide du satellite au lieu de celui du parent, ce qui les rend non fonctionnels.
 *   **Bug - Clonage Incomplet :** La fonctionnalité "Clone" ne copie actuellement que le dossier de l'environnement (`env`) et non les autres fichiers de configuration, ce qui rend le clone inutilisable.
+---
+
+## 8. Session du 2025-11-16
+
+### 8.1. Objectifs de la session
+
+*   Vérifier et standardiser les installations de PyTorch.
+*   Refactoriser le frontend (CSS et JavaScript) pour améliorer la maintenabilité.
+*   Corriger les bugs introduits par la refactorisation.
+
+### 8.2. Actions et Résolutions
+
+1.  **Standardisation de PyTorch :**
+    *   Une recherche a été effectuée pour s'assurer que toutes les installations de `torch` et `torchvision` utilisaient l'index CUDA 13.0 (`--index-url https://download.pytorch.org/whl/cu130`).
+    *   Il a été constaté que les `Dockerfile` principaux étaient corrects.
+    *   Suite à la clarification de l'utilisateur, les scripts "legacy" ont été ignorés.
+    *   Le blueprint `ComfyUI.sh` a été modifié pour installer explicitement `torch` et `torchvision` au lieu de dépendre de wheels pré-compilés, conformément à la demande de l'utilisateur.
+
+2.  **Refactorisation du Frontend :**
+    *   **CSS :** Le fichier monolithique `style.css` a été divisé en cinq fichiers plus petits et spécialisés (`base.css`, `instances.css`, `modals.css`, `components.css`, `tools.css`) et placés dans un nouveau répertoire `aikore/static/css/`.
+    *   **JavaScript :** Le fichier `app.js` de plus de 1000 lignes a été entièrement refactorisé en une architecture modulaire (ESM) dans le nouveau répertoire `aikore/static/js/`. Les responsabilités ont été réparties entre `state.js`, `api.js`, `ui.js`, `modals.js`, `tools.js`, `eventHandlers.js`, et un point d'entrée `main.js`.
+    *   Le fichier `index.html` a été mis à jour pour charger les nouveaux fichiers CSS et le module JavaScript principal.
+
+3.  **Débogage Post-Refactorisation :**
+    *   **Bug d'affichage majeur :** Un bug bloquant l'affichage a été signalé. L'analyse a révélé des **dépendances circulaires** en JavaScript (ex: `main.js` important `api.js` qui importait `main.js`).
+    *   **Correction Architecturale :** La correction a consisté à redéfinir les responsabilités des modules. `api.js` a été rendu "aveugle" à l'interface, se contentant de retourner les résultats des appels serveur. Les modules d'UI (`eventHandlers.js`, `modals.js`) ont été modifiés pour attendre (`await`) les réponses de l'API avant de déclencher eux-mêmes les mises à jour de l'affichage.
+    *   **Bug des outils (Logs/Éditeur) :** Il a été découvert que la visionneuse de logs et l'éditeur de script ne s'affichaient plus. Deux bugs ont été identifiés et corrigés dans `tools.js` :
+        1.  Un appel à la fonction `fetchLogs` sans le paramètre `offset` requis.
+        2.  L'éditeur de code recevait un objet `{content: "..."}` au lieu de la chaîne de caractères attendue.
+    *   **Bug du bouton "Ouvrir" :** L'URL générée pour le bouton "Ouvrir" pointait vers le lien interne du reverse proxy au lieu de l'adresse directe `host:port`. La fonction `buildInstanceUrl` dans `ui.js` a été corrigée pour faire la distinction entre une "Vue" interne et une "Ouverture" externe.
+
+4.  **Vérification gRPC :**
+    *   Une recherche a confirmé que gRPC n'est pas utilisé dans le projet.
+
+### 8.3. État à la fin de la session
+
+Le frontend a été entièrement refactorisé avec une architecture modulaire plus saine et robuste. Les bugs critiques introduits par cette refactorisation ont été identifiés et corrigés. L'application est de nouveau dans un état fonctionnel et stable, avec une base de code frontend significativement améliorée pour la maintenance future.

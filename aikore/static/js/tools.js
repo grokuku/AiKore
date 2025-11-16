@@ -71,8 +71,12 @@ export async function openEditor(instanceId, instanceName, fileType) {
     const baseBlueprint = row ? row.dataset.originalBlueprint : null;
     state.editorState = { instanceId, instanceName, fileType, baseBlueprint };
 
-    const content = await fetchFileContent(instanceId, fileType);
-    state.codeEditor.setValue(content);
+    try {
+        const content = await fetchFileContent(instanceId, fileType);
+        state.codeEditor.setValue(content.content);
+    } catch (error) {
+        state.codeEditor.setValue(`[ERROR] Could not load file: ${error.message}`);
+    }
 }
 
 export function openInstanceView(instanceName, url) {
@@ -149,15 +153,21 @@ export async function showLogViewer(instanceId, instanceName) {
     
     const updateLogs = async () => {
         if (!state.activeLogInstanceId) return;
-        const data = await fetchLogs(state.activeLogInstanceId);
-        if (data) {
-            const isScrolled = DOM.logViewerContainer.scrollHeight - DOM.logViewerContainer.scrollTop <= DOM.logViewerContainer.clientHeight + 2;
-            if (data.content) {
-                if (DOM.logContentArea.textContent === 'Loading logs...') DOM.logContentArea.textContent = '';
-                DOM.logContentArea.appendChild(document.createTextNode(data.content));
-                state.logSize = data.size;
-                if (isScrolled) DOM.logViewerContainer.scrollTop = DOM.logViewerContainer.scrollHeight;
+        try {
+            const data = await fetchLogs(state.activeLogInstanceId, state.logSize);
+            if (data) {
+                const isScrolled = DOM.logViewerContainer.scrollHeight - DOM.logViewerContainer.scrollTop <= DOM.logViewerContainer.clientHeight + 2;
+                if (data.content) {
+                    if (DOM.logContentArea.textContent === 'Loading logs...') DOM.logContentArea.textContent = '';
+                    DOM.logContentArea.appendChild(document.createTextNode(data.content));
+                    state.logSize = data.size;
+                    if (isScrolled) DOM.logViewerContainer.scrollTop = DOM.logViewerContainer.scrollHeight;
+                }
             }
+        } catch (error) {
+            console.error("Failed to fetch logs:", error);
+            clearInterval(state.activeLogInterval);
+            state.activeLogInstanceId = null;
         }
     };
 

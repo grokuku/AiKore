@@ -109,6 +109,15 @@ export function buildInstanceUrl(row, forView = false) {
         return customHostname.startsWith('http') ? customHostname : `http://${customHostname}`;
     }
 
+    // If the user wants to "Open" (not "View") a normal instance, give them the direct port link.
+    if (!forView) {
+        const port = row.dataset.port;
+        if (port) {
+            return `${window.location.protocol}//${window.location.hostname}:${port}/`;
+        }
+    }
+
+    // Otherwise (for "View" or if no port), use the reverse-proxied slug.
     const instanceSlug = row.dataset.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
     return `/instance/${instanceSlug}/`;
 }
