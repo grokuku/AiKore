@@ -14,6 +14,7 @@ export function showToolsMenu(buttonEl) {
     DOM.toolsContextMenu.style.top = `${rect.bottom + 5}px`;
     
     DOM.toolsContextMenu.querySelector('[data-action="script"]').disabled = isSatellite;
+    DOM.toolsContextMenu.querySelector('[data-action="terminal"]').disabled = isSatellite;
     DOM.toolsContextMenu.querySelector('[data-action="rebuild-env"]').disabled = isSatellite;
     DOM.toolsContextMenu.querySelector('[data-action="clone"]').disabled = isSatellite;
     DOM.toolsContextMenu.querySelector('[data-action="instantiate"]').disabled = isSatellite;

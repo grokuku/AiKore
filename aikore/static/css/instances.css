@@ -90,6 +90,12 @@
     /* Allow text selection inside inputs */
 }
 
+.instances-table input[type="text"]:disabled,
+.instances-table select:disabled {
+    background-color: rgba(30, 30, 63, 0.5);
+    cursor: not-allowed;
+}
+
 .instances-table input[type="checkbox"] {
     width: 20px;
     height: 20px;
