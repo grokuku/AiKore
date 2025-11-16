@@ -1,0 +1,278 @@
+/* --- INSTANCE MANAGER --- */
+.add-new-btn {
+    background-color: #007bff;
+    color: white;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.add-new-btn:hover {
+    background-color: #0056b3;
+}
+
+.instances-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 var(--global-gutter-size);
+}
+
+/* STICKY HEADER IMPLEMENTATION */
+.instances-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: #2a2a4a;
+    /* Match pane background for solid effect */
+    border-bottom: var(--global-gutter-size) solid #2a2a4a;
+    /* Creates space between header and first row */
+}
+
+.instances-table th {
+    padding: 12px 15px;
+    text-align: left;
+    color: #e0e0e0;
+    font-weight: 500;
+    white-space: nowrap;
+    background-color: #1e1e3f;
+}
+
+.instances-table th.actions-column {
+    width: 1%;
+    /* Allow this column to be as wide as its content */
+}
+
+.instances-table th:first-child {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+.instances-table th:last-child {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+.instances-table td {
+    padding: 0 5px;
+    vertical-align: middle;
+}
+
+/* CENTER CHECKBOX COLUMNS & REDUCE WIDTH */
+.instances-table th:nth-child(4), /* GPU IDs */
+.instances-table th:nth-child(5), /* Autostart */
+.instances-table th:nth-child(6), /* Persistent UI */
+.instances-table td:nth-child(4),
+.instances-table td:nth-child(5),
+.instances-table td:nth-child(6) {
+    text-align: center;
+}
+
+.instances-table th:nth-child(5),
+.instances-table th:nth-child(6) {
+    width: 80px;
+}
+
+/* STYLING FOR "CASES" (INPUTS, SELECTS, ETC.) */
+.instances-table input[type="text"],
+.instances-table select {
+    width: 100%;
+    padding: 10px;
+    background-color: #1e1e3f;
+    border: 1px solid #3b3b6b;
+    color: #e0e0e0;
+    border-radius: 6px;
+    box-sizing: border-box;
+    font-size: 14px;
+    user-select: text;
+    /* Allow text selection inside inputs */
+}
+
+.instances-table input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    vertical-align: middle;
+}
+
+.status {
+    font-weight: bold;
+    padding: 11px 12px;
+    /* Adjusted vertical padding to match input height */
+    border-radius: 6px;
+    display: block;
+    text-align: center;
+    text-transform: capitalize;
+    box-sizing: border-box;
+    /* Ensures padding is calculated consistently */
+}
+
+.status-stopped {
+    background-color: #6c757d;
+    color: white;
+}
+
+/* Bootstrap Secondary Grey */
+.status-starting {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+/* Bootstrap Warning Yellow */
+.status-stalled {
+    background-color: #fd7e14;
+    color: white;
+}
+
+/* Bootstrap Orange */
+.status-started {
+    background-color: #28a745;
+    color: white;
+}
+
+/* Bootstrap Success Green */
+.status-error {
+    background-color: #dc3545;
+    color: white;
+}
+
+/* Bootstrap Danger Red */
+
+/* ACTION BUTTONS STYLING */
+.action-btn {
+    padding: 8px 12px;
+    border: none;
+    color: #ffffff;
+    cursor: pointer;
+    border-radius: 6px;
+    white-space: nowrap;
+    transition: filter 0.2s ease, opacity 0.2s ease;
+    font-weight: 500;
+    font-size: 13px;
+    /* Slightly smaller for more buttons */
+    text-decoration: none;
+    /* For <a> tags */
+    display: inline-block;
+    /* For <a> tags */
+}
+
+.action-btn:hover:not(:disabled):not(.disabled) {
+    filter: brightness(1.15);
+}
+
+/* Unified disabled style for both <button disabled> and <a class="disabled"> */
+.action-btn:disabled,
+.action-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+    /* Important for <a> tags */
+}
+
+.instances-table td.actions-column {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 5px;
+    padding: 8px 5px;
+    /* Add some vertical padding to the cell */
+}
+
+/* BUTTON COLORS */
+[data-action="start"],
+[data-action="save"],
+[data-action="update"] {
+    background-color: #28a745;
+}
+
+[data-action="stop"] {
+    background-color: #ffc107;
+    color: #333;
+}
+
+[data-action="delete"] {
+    background-color: #dc3545;
+}
+
+[data-action="logs"] {
+    background-color: #17a2b8;
+}
+
+[data-action="script"],
+[data-action="parameters"],
+[data-action="tools_menu"] {
+    background-color: #6f42c1;
+}
+
+[data-action="open"],
+[data-action="view"] {
+    background-color: #4a4a70;
+}
+
+[data-action="cancel_new"] {
+    background-color: #f8f9fa;
+    /* Light grey */
+    color: #212529;
+    /* Dark text */
+}
+
+.action-btn:not([data-action]) {
+    background-color: #4a4a70;
+}
+
+/* Drag and Drop Handle */
+.instances-table th.drag-handle-column {
+    width: 30px;
+    padding: 12px 0;
+}
+
+.drag-handle {
+    cursor: grab;
+    text-align: center;
+    color: #888;
+    font-size: 1.2rem;
+    vertical-align: middle;
+    padding-top: 4px; /* Fine-tune vertical alignment */
+}
+
+.drag-handle:hover {
+    color: #e0e0e0;
+}
+
+/* SortableJS helper classes */
+.sortable-ghost {
+    opacity: 0.4;
+    background-color: #4a4a70;
+}
+
+.sortable-drag .drag-handle {
+    cursor: grabbing;
+}
+
+/* --- SATELLITE INSTANCE STYLES --- */
+.satellite-instance {
+    background-color: #242440; /* Slightly different background */
+    border-left: 3px solid #4a4a70; /* NEW: Visual connector */
+}
+
+.satellite-instance .drag-handle {
+    color: #666;
+    cursor: default;
+    visibility: hidden; /* NEW: Hide non-functional drag handle */
+}
+
+.indented-cell {
+    position: relative;
+}
+
+.indented-cell::before {
+    content: '↳';
+    position: absolute;
+    left: var(--level-indent, 10px); /* Use CSS variable for indent */
+    top: 50%;
+    transform: translateY(-50%);
+    color: #aaa; /* MODIFIED: Brighter color */
+    font-weight: bold;
+    font-size: 1.4em; /* NEW: Larger symbol */
+}

@@ -5,7 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AiKore Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
+        <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/instances.css">
+    <link rel="stylesheet" href="/static/css/modals.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/tools.css">
     <!-- NEW: Xterm.js styles -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
     <!-- NEW: CodeMirror for syntax highlighting -->
@@ -182,7 +186,7 @@
     <!-- Sortable.js for drag-and-drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <!-- Our application script -->
-    <script src="/static/app.js"></script>
+    <script src="/static/js/main.js" type="module"></script>
 
     <!-- Modal for Delete Options -->
     <div id="delete-modal" class="modal-overlay hidden">
