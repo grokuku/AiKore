@@ -993,11 +993,13 @@ body {
 /* --- SATELLITE INSTANCE STYLES --- */
 .satellite-instance {
     background-color: #242440; /* Slightly different background */
+    border-left: 3px solid #4a4a70; /* NEW: Visual connector */
 }
 
 .satellite-instance .drag-handle {
     color: #666;
     cursor: default;
+    visibility: hidden; /* NEW: Hide non-functional drag handle */
 }
 
 .indented-cell {
@@ -1010,6 +1012,7 @@ body {
     left: var(--level-indent, 10px); /* Use CSS variable for indent */
     top: 50%;
     transform: translateY(-50%);
-    color: #888;
+    color: #aaa; /* MODIFIED: Brighter color */
     font-weight: bold;
+    font-size: 1.4em; /* NEW: Larger symbol */
 }

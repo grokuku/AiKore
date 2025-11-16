@@ -54,18 +54,34 @@ source activate "${INSTANCE_CONF_DIR}/env"
 echo "--- Updating Conda and installing base packages ---"
 conda update -n base conda -y
 conda install -n base conda-libmamba-solver -y
-conda install -c conda-forge python=3.10 pip gfortran --solver=libmamba -y
+conda install -c conda-forge python=3.12 pip gfortran --solver=libmamba -y
 
 # Install Python requirements
 echo "--- Installing Python dependencies ---"
 pip install --upgrade pip
+
+# Install our pre-built wheels first
+echo "--- Installing pre-built libraries from /wheels/ ---"
+pip install /wheels/*.whl
+
+# Now install app-specific requirements, excluding torch & torchvision
+PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio"
+
+# Filter and install requirements for sd-scripts
+echo "--- Installing dependencies for sd-scripts ---"
+cd "${APP_DIR}/sd-scripts"
+grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "requirements.txt" > "requirements-filtered.txt"
+pip install -r requirements-filtered.txt
+
+# Filter and install requirements for fluxgym
+echo "--- Installing dependencies for fluxgym ---"
+cd "${APP_DIR}"
+grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "requirements.txt" > "requirements-filtered.txt"
+pip install -r requirements-filtered.txt
+
+# Install other packages
 pip install python-slugify
 pip install gradio==3.50.2
-cd "${APP_DIR}/sd-scripts"
-pip install -r requirements.txt
-cd "${APP_DIR}"
-pip install -r requirements.txt
-pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
 
 if [ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then
     pip install -r "${INSTANCE_CONF_DIR}/requirements.txt"

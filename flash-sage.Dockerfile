@@ -23,9 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 
 # --- Install PyTorch ---
-# Install PyTorch, TorchVision, and TorchAudio from the official index for CUDA 12.1
+# Install PyTorch, TorchVision, from the official index for CUDA 13.0
 RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install torch torchvision
+    && python3.12 -m pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu130
 
 # --- Compile Wheels ---
 WORKDIR /build

@@ -43,7 +43,7 @@ fi
 # Install or update the ComfyUI-Manager custom node
 if [ ! -d "${MANAGER_DIR}/.git" ]; then
     echo "Cloning ComfyUI-Manager repository..."
-    git clone https://github.com/ltdrdata/ComfyUI-Manager.git "${MANAGER_DIR}"
+    git clone https://github.com/Comfy-Org/ComfyUI-Manager.git "${MANAGER_DIR}"
 else
     echo "Existing ComfyUI-Manager repository found. Synchronizing..."
     cd "${MANAGER_DIR}"
@@ -70,10 +70,18 @@ source activate "${VENV_DIR}"
 # --- Dependency Installation ---
 echo "--- Installing dependencies ---"
 
+echo "--- Installing PyTorch ---"
+pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu130
+
 # 1. Install pre-built performance and utility libraries from wheels first.
 # This ensures our GPU-optimized versions are used.
 echo "--- Installing pre-built libraries from /wheels/ ---"
-pip install /wheels/*.whl
+if ls /wheels/*.whl 1> /dev/null 2>&1; then
+    echo "Wheel files found, installing..."
+    pip install /wheels/*.whl
+else
+    echo "No wheel files found in /wheels/, skipping."
+fi
 
 # 2. Prepare a filtered requirements file for ComfyUI
 # We remove packages that we just installed from wheels to avoid conflicts.

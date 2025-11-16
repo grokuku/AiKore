@@ -11,7 +11,7 @@ set -e
 
 # --- Configuration ---
 # Variables to easily control the build process.
-PYTORCH_TAG="v2.9.0"
+PYTORCH_TAG="v2.9.1"
 TORCH_CUDA_ARCH_LIST="8.9" # Space-separated list
 WHEEL_DIR="/wheels"
 

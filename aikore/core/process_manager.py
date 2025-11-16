@@ -112,8 +112,25 @@ def parse_blueprint_metadata(blueprint_filename: str) -> dict:
 def start_terminal_process(instance: models.Instance):
     """
     Spawns a shell process inside a pseudo-terminal (PTY) for a given instance.
+    For satellite instances, it uses the parent's configuration directory.
     """
-    instance_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
+    # --- NEW: Logic to handle satellite vs. normal instances ---
+    is_satellite = instance.parent_instance_id is not None
+    
+    if is_satellite:
+        with SessionLocal() as db:
+            from aikore.database import crud # Local import to avoid circular dependency
+            parent_instance = crud.get_instance(db, instance_id=instance.parent_instance_id)
+            if not parent_instance:
+                raise Exception(f"Parent instance with ID {instance.parent_instance_id} not found for satellite instance {instance.name}.")
+        
+            print(f"[Terminal] Opening terminal for '{instance.name}' in context of parent '{parent_instance.name}'.")
+            # A satellite uses its parent's directory for scripts and environment.
+            effective_conf_dir = os.path.join(INSTANCES_DIR, parent_instance.name)
+    else:
+        # A normal instance uses its own directory.
+        effective_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
+
     metadata = parse_blueprint_metadata(instance.base_blueprint)
     
     venv_type = metadata.get('venv_type')
@@ -123,7 +140,7 @@ def start_terminal_process(instance: models.Instance):
     env = os.environ.copy()
 
     if venv_type and venv_path:
-        full_venv_path = os.path.join(instance_conf_dir, venv_path)
+        full_venv_path = os.path.join(effective_conf_dir, venv_path)
         if venv_type == 'conda':
             # This launches a shell, sources the activate script for the specific env,
             # then 'exec' replaces that shell with a new one that inherits the environment.
@@ -139,7 +156,7 @@ def start_terminal_process(instance: models.Instance):
 
     if pid == 0:  # Child process
         # Set the working directory for the new shell
-        os.chdir(instance_conf_dir)
+        os.chdir(effective_conf_dir)
         # Execute the shell command
         os.execve(command[0], command, env)
     else:  # Parent process

@@ -9,7 +9,7 @@ import json
 import subprocess # NEW
 from pydantic import BaseModel
 
-from ..database import crud
+from ..database import crud, models
 from ..database.session import SessionLocal
 from ..schemas import instance as schemas
 from ..core import process_manager
@@ -39,19 +39,30 @@ def get_db():
     finally:
         db.close()
 
-def get_instance_file_path(db_instance):
+def get_instance_file_path(db: Session, db_instance: models.Instance):
+    """
+    Gets the correct launch script path for an instance.
+    For satellite instances, this resolves to the parent's script path.
+    """
+    # If the instance is a satellite, we need to operate on the parent's directory.
+    if db_instance.parent_instance_id is not None:
+        parent_instance = crud.get_instance(db, instance_id=db_instance.parent_instance_id)
+        if not parent_instance:
+            # This is a critical data integrity issue if it happens.
+            raise HTTPException(status_code=404, detail=f"Parent instance for satellite '{db_instance.name}' not found.")
+        effective_instance_name = parent_instance.name
+    else:
+        effective_instance_name = db_instance.name
+
     base_script_name = db_instance.base_blueprint
-    instance_conf_dir = os.path.join(INSTANCES_DIR, db_instance.name)
+    instance_conf_dir = os.path.join(INSTANCES_DIR, effective_instance_name)
     instance_file_path = os.path.join(instance_conf_dir, "launch.sh")
     
-    # --- MODIFIED: Search for blueprint in custom then stock directory ---
+    # The logic for finding the fallback blueprint remains the same.
     custom_blueprint_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, base_script_name)
     stock_blueprint_path = os.path.join(BLUEPRINTS_DIR, base_script_name)
     
-    if os.path.exists(custom_blueprint_path):
-        blueprint_file_path = custom_blueprint_path
-    else:
-        blueprint_file_path = stock_blueprint_path
+    blueprint_file_path = custom_blueprint_path if os.path.exists(custom_blueprint_path) else stock_blueprint_path
         
     return instance_file_path, blueprint_file_path
 
@@ -490,7 +501,7 @@ def get_instance_file(instance_id: int, file_type: str, db: Session = Depends(ge
     if file_type != "script":
         raise HTTPException(status_code=400, detail="Invalid file type specified")
 
-    instance_file_path, blueprint_file_path = get_instance_file_path(db_instance)
+    instance_file_path, blueprint_file_path = get_instance_file_path(db, db_instance)
     read_path = instance_file_path if os.path.exists(instance_file_path) else blueprint_file_path
 
     try:
@@ -510,7 +521,14 @@ def update_instance_file(instance_id: int, file_type: str, file_content: FileCon
     if file_type != "script":
         raise HTTPException(status_code=400, detail="Invalid file type specified")
 
-    instance_file_path, _ = get_instance_file_path(db_instance)
+    # --- NEW: Enforce rule for satellite instances ---
+    if db_instance.parent_instance_id is not None:
+        raise HTTPException(
+            status_code=403, 
+            detail="Satellite instances share their parent's script. It cannot be edited directly. Please edit the parent instance's script."
+        )
+
+    instance_file_path, _ = get_instance_file_path(db, db_instance)
 
     try:
         os.makedirs(os.path.dirname(instance_file_path), exist_ok=True)

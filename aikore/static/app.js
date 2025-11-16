@@ -761,7 +761,6 @@ function renderInstanceRow(instance, isNew = false, level = 0) {
 
     function showToolsMenu(buttonEl) {
         const row = buttonEl.closest('tr');
-        const status = row.dataset.status;
         const isSatellite = row.classList.contains('satellite-instance');
 
         const rect = buttonEl.getBoundingClientRect();
@@ -769,10 +768,11 @@ function renderInstanceRow(instance, isNew = false, level = 0) {
         toolsContextMenu.style.left = `${rect.left}px`;
         toolsContextMenu.style.top = `${rect.bottom + 5}px`;
         
-        // Disable actions not applicable to satellites
-        toolsContextMenu.querySelector('[data-action="instantiate"]').disabled = isSatellite;
+        // --- NEW: Disable actions not applicable to satellites ---
         toolsContextMenu.querySelector('[data-action="script"]').disabled = isSatellite;
         toolsContextMenu.querySelector('[data-action="rebuild-env"]').disabled = isSatellite;
+        toolsContextMenu.querySelector('[data-action="clone"]').disabled = isSatellite;
+        toolsContextMenu.querySelector('[data-action="instantiate"]').disabled = isSatellite;
 
         currentMenuInstance = { id: row.dataset.id, name: row.dataset.name, status: row.dataset.status };
     }
