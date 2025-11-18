@@ -34,7 +34,7 @@ WORKDIR /build
 RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build/SageAttention \
     && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9" \
-    && python3.12 -m pip wheel --no-build-isolation . -w /wheels \
+    && python3.12 -m pip wheel --no-build-isolation . -w /wheels --config-settings="cmake.args=-DCMAKE_CUDA_ARCHITECTURES=75;86;89;120" \
     && cd /build \
     && rm -rf SageAttention
 
