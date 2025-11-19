@@ -48,7 +48,7 @@
     | `hostname`           | STRING          | **(V2)** Hostname/URL personnalisé pour l'accès direct à l'instance.      |
     | `use_custom_hostname`| BOOLEAN         | **(V3)** Si `true`, le `hostname` est utilisé pour construire l'URL d'accès. |
     | `output_path`        | STRING          | **(V4)** Nom du dossier de sortie sous `/config/outputs/`.                  |
-    | `status`             | STRING          | État actuel : 'stopped', 'starting', 'stalled', 'started', 'error'.         |
+    | `status`             | STRING          | État actuel : 'stopped', 'starting', 'stalled', 'started', 'error', 'installing'. |
     | `pid`                | INTEGER         | Process ID du processus principal de l'instance.                            |
     | `port`               | INTEGER         | Port interne de l'application (toujours utilisé, souvent éphémère).         |
     | `persistent_port`    | INTEGER         | Port exposé à l'utilisateur pour l'interface KasmVNC. Utilisé si `persistent_mode` est vrai. |
@@ -323,3 +323,45 @@ Cette fonctionnalité permet de créer une instance "satellite" ou "liée" qui p
 ### 8.3. État à la fin de la session
 
 Le frontend a été entièrement refactorisé avec une architecture modulaire plus saine et robuste. Les bugs critiques introduits par cette refactorisation ont été identifiés et corrigés. L'application est de nouveau dans un état fonctionnel et stable, avec une base de code frontend significativement améliorée pour la maintenance future.
+
+---
+
+## 9. Session du 2025-11-19
+
+### 9.1. Objectifs de la session
+
+*   Auditer la base de code pour identifier bugs critiques et problèmes de performance.
+*   Résoudre un crash API lors de la mise à jour du hostname.
+*   Optimiser le temps de démarrage du conteneur Docker.
+*   Améliorer et sécuriser la fonction de clonage d'instance.
+*   Protéger l'intégrité des données (Satellites orphelins).
+
+### 9.2. Actions et Résolutions
+
+1.  **Correction du Bug Critique (API Crash) :**
+    *   **Problème :** La fonction `update_nginx_config` était appelée dans `api/instances.py` mais n'existait pas dans `core/process_manager.py`, provoquant un crash lors de la mise à jour "douce" (ex: changement de hostname).
+    *   **Solution :** Implémentation de la fonction `update_nginx_config` dans `process_manager.py`. Elle régénère les fichiers `.conf` NGINX pour toutes les instances actives et recharge le service sans interruption.
+
+2.  **Optimisation des Performances au Démarrage :**
+    *   **Problème :** Le script `99-base-perms.sh` effectuait un `chown -R` sur `/data`. Pour les utilisateurs avec de grosses bibliothèques de modèles (plusieurs centaines de Go), cela bloquait le démarrage du conteneur pendant 10 à 30 minutes.
+    *   **Solution :** Modification du script pour appliquer `chown` uniquement sur la racine de `/data` (non récursif), tout en conservant le récursif sur `/config` (critique et léger).
+
+3.  **Refonte du Clonage d'Instance (Backend & UX) :**
+    *   **Problème technique :** `shutil.copytree` déréférençait les liens symboliques, dupliquant physiquement le contenu des dossiers de modèles (disque plein, lenteur extrême). De plus, le remplacement des chemins dans `launch.sh` était fragile.
+    *   **Problème UX :** Le clonage était synchrone, figeant l'interface utilisateur pendant toute la durée de l'opération.
+    *   **Solution Technique :**
+        *   Utilisation de `symlinks=True` dans `copy_instance` pour ne copier que les liens.
+        *   Amélioration de la logique de remplacement de texte dans le script de lancement.
+    *   **Solution UX (Asynchrone) :**
+        *   Séparation de la logique en deux fonctions : `create_copy_placeholder` (création immédiate en DB) et `process_background_copy` (tâche lourde).
+        *   Utilisation de `BackgroundTasks` de FastAPI pour exécuter la copie en arrière-plan.
+        *   Ajout d'un nouveau statut d'instance `installing`.
+        *   Mise à jour du CSS et du JS pour afficher une ligne "pulsante" (bleu cyan) et désactiver les boutons d'action tant que le clonage n'est pas terminé.
+
+4.  **Protection de l'Intégrité des Données (Satellites) :**
+    *   **Problème :** Il était possible de supprimer une instance "Mère" ayant des instances "Satellites", rendant ces dernières orphelines et inutilisables.
+    *   **Solution :** Ajout d'une vérification dans `api/instances.py` (fonction `delete_instance`) qui bloque la suppression et renvoie une erreur 409 si l'instance possède des enfants.
+
+### 9.3. État à la fin de la session
+
+L'application est désormais beaucoup plus robuste. Les opérations critiques (démarrage, clonage, suppression) sont sécurisées et optimisées. L'expérience utilisateur lors du clonage est fluide et non bloquante.
