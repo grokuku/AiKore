@@ -61,9 +61,12 @@
 }
 
 /* CENTER CHECKBOX COLUMNS & REDUCE WIDTH */
-.instances-table th:nth-child(4), /* GPU IDs */
-.instances-table th:nth-child(5), /* Autostart */
-.instances-table th:nth-child(6), /* Persistent UI */
+.instances-table th:nth-child(4),
+/* GPU IDs */
+.instances-table th:nth-child(5),
+/* Autostart */
+.instances-table th:nth-child(6),
+/* Persistent UI */
 .instances-table td:nth-child(4),
 .instances-table td:nth-child(5),
 .instances-table td:nth-child(6) {
@@ -141,6 +144,36 @@
 .status-error {
     background-color: #dc3545;
     color: white;
+}
+
+/* NEW STATUS FOR BACKGROUND CLONING */
+.status-installing {
+    background-color: #17a2b8;
+    /* Cyan */
+    color: white;
+    animation: pulse-install 1.5s infinite;
+    cursor: wait;
+}
+
+@keyframes pulse-install {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.6;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
+/* If the row is installing, make it look disabled/processing */
+tr[data-status="installing"] {
+    opacity: 0.7;
+    pointer-events: none;
+    /* Block clicks on the row */
 }
 
 /* Bootstrap Danger Red */
@@ -239,7 +272,8 @@
     color: #888;
     font-size: 1.2rem;
     vertical-align: middle;
-    padding-top: 4px; /* Fine-tune vertical alignment */
+    padding-top: 4px;
+    /* Fine-tune vertical alignment */
 }
 
 .drag-handle:hover {
@@ -258,14 +292,17 @@
 
 /* --- SATELLITE INSTANCE STYLES --- */
 .satellite-instance {
-    background-color: #242440; /* Slightly different background */
-    border-left: 3px solid #4a4a70; /* NEW: Visual connector */
+    background-color: #242440;
+    /* Slightly different background */
+    border-left: 3px solid #4a4a70;
+    /* NEW: Visual connector */
 }
 
 .satellite-instance .drag-handle {
     color: #666;
     cursor: default;
-    visibility: hidden; /* NEW: Hide non-functional drag handle */
+    visibility: hidden;
+    /* NEW: Hide non-functional drag handle */
 }
 
 .indented-cell {
@@ -275,10 +312,13 @@
 .indented-cell::before {
     content: '↳';
     position: absolute;
-    left: var(--level-indent, 10px); /* Use CSS variable for indent */
+    left: var(--level-indent, 10px);
+    /* Use CSS variable for indent */
     top: 50%;
     transform: translateY(-50%);
-    color: #aaa; /* MODIFIED: Brighter color */
+    color: #aaa;
+    /* MODIFIED: Brighter color */
     font-weight: bold;
-    font-size: 1.4em; /* NEW: Larger symbol */
+    font-size: 1.4em;
+    /* NEW: Larger symbol */
 }

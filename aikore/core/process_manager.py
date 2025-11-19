@@ -65,6 +65,51 @@ def _reload_nginx():
     except Exception as e:
         print(f"[ERROR] Failed to request NGINX reload: {e}")
 
+def update_nginx_config(db: Session):
+    """
+    Regenerates NGINX configuration for all active, non-persistent instances
+    and reloads the NGINX service. This allows updating routing (like hostnames)
+    without killing the instance processes.
+    """
+    # Find all instances that are ostensibly running
+    active_instances = db.query(models.Instance).filter(models.Instance.status != "stopped").all()
+    
+    updated_count = 0
+    
+    for instance in active_instances:
+        # Persistent instances use KasmVNC on a separate port, they don't use this NGINX proxy logic.
+        if instance.persistent_mode:
+            continue
+            
+        instance_slug = _slugify(instance.name)
+        nginx_conf_path = os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf")
+        
+        # Re-generate the standard location block.
+        # Currently, the proxy logic relies on relative paths (/instance/name/).
+        # If custom hostname logic requiring 'server_name' blocks is implemented later, 
+        # it should be added here.
+        nginx_conf = textwrap.dedent(f"""
+            location /instance/{instance_slug}/ {{
+                proxy_pass http://127.0.0.1:{instance.port}/;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_buffering off;
+            }}
+        """)
+        
+        try:
+            with open(nginx_conf_path, 'w') as f:
+                f.write(nginx_conf)
+            updated_count += 1
+        except Exception as e:
+            print(f"[Manager-Error] Could not update NGINX config for {instance.name}: {e}")
+
+    if updated_count > 0:
+        _reload_nginx()
+        print(f"[Manager] Refreshed NGINX configuration for {updated_count} active instances.")
+
 def _cleanup_instance_files(instance_slug: str):
     """Cleans up NGINX conf and other temp files for an instance."""
     nginx_conf_path = os.path.join(NGINX_SITES_AVAILABLE, f"{instance_slug}.conf")

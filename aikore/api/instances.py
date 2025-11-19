@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List
 import os
@@ -174,26 +174,34 @@ def create_new_instance(instance: schemas.InstanceCreate, db: Session = Depends(
 def copy_instance(
     instance_id: int,
     instance_copy: schemas.InstanceCopy,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
-    Creates a new instance by copying an existing one.
+    Creates a new instance by copying an existing one (Asynchronous).
     """
     source_instance = crud.get_instance(db, instance_id=instance_id)
     if not source_instance:
         raise HTTPException(status_code=404, detail="Source instance not found")
 
-    # The actual logic is in crud.copy_instance
     try:
-        new_instance = crud.copy_instance(
+        # 1. Create the DB entry immediately (Status: installing)
+        new_instance = crud.create_copy_placeholder(
             db=db,
             source_instance_id=instance_id,
             new_name=instance_copy.new_name
         )
+        
+        # 2. Launch the heavy work in background
+        # We pass the ID, not the object, to avoid session detachment issues in threads
+        background_tasks.add_task(crud.process_background_copy, db, new_instance.id, instance_id)
+        
         return new_instance
-    except Exception as e:
-        # Catch potential errors from crud, like name conflict or file system errors
+        
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/instances/{instance_id}/instantiate", response_model=schemas.Instance, tags=["Instance Actions"])
 def instantiate_instance(
@@ -416,6 +424,15 @@ def delete_instance(instance_id: int, options: DeleteOptions, db: Session = Depe
         raise HTTPException(status_code=404, detail="Instance not found")
     if db_instance.status != "stopped":
         raise HTTPException(status_code=400, detail="Cannot delete an active instance. Please stop it first.")
+
+    # --- NEW: Orphaned Satellite Protection ---
+    # Check if this instance is a parent to any satellites
+    children_count = db.query(models.Instance).filter(models.Instance.parent_instance_id == db_instance.id).count()
+    if children_count > 0:
+        raise HTTPException(
+            status_code=409, 
+            detail=f"Cannot delete instance '{db_instance.name}' because it is a parent to {children_count} satellite instance(s). Please delete them first."
+        )
 
     instance_dir = os.path.join(INSTANCES_DIR, db_instance.name)
     TRASH_DIR = os.path.join(os.path.dirname(INSTANCES_DIR), "trashcan")

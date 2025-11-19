@@ -124,6 +124,7 @@ export function buildInstanceUrl(row, forView = false) {
 
 export function updateInstanceRow(row, instance) {
     const isActive = instance.status !== 'stopped';
+    const isInstalling = instance.status === 'installing'; // CHECK INSTALLING STATUS
 
     row.dataset.status = instance.status;
     row.dataset.port = instance.port || '';
@@ -140,19 +141,44 @@ export function updateInstanceRow(row, instance) {
     const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
     row.cells[8].textContent = displayPort || 'N/A';
 
-    row.querySelector('[data-action="start"]').disabled = isActive;
-    row.querySelector('[data-action="stop"]').disabled = !isActive;
-    row.querySelector('[data-action="delete"]').disabled = isActive;
+    // UPDATE BUTTON STATE LOGIC
+    const allButtons = row.querySelectorAll('button.action-btn, a.action-btn');
+    allButtons.forEach(btn => {
+        if (isInstalling) {
+            btn.disabled = true;
+            btn.classList.add('disabled');
+        } else {
+            // Re-enable and apply normal logic
+            btn.classList.remove('disabled');
+            const action = btn.dataset.action;
+            if (action === 'start') btn.disabled = isActive;
+            else if (action === 'stop') btn.disabled = !isActive;
+            else if (action === 'delete') btn.disabled = isActive;
+            else if (action === 'view') btn.disabled = (instance.status !== 'started');
+            else if (action === 'update') {
+                // Update logic is handled below by checkRowForChanges
+                // Resetting here might be overwritten immediately, but safe default
+                // Actual disabled state depends on dirty check
+            }
+            // Other buttons like tools_menu, logs remain enabled if not installing
+            else if (action === 'tools_menu' || action === 'logs') btn.disabled = false;
+        }
+    });
 
     const openButton = row.querySelector('[data-action="open"]');
-    const viewButton = row.querySelector('[data-action="view"]');
     const openHref = buildInstanceUrl(row, false);
-
     openButton.href = openHref;
-    openButton.classList.toggle('disabled', openHref === '#');
-    viewButton.disabled = (instance.status !== 'started');
 
-    checkRowForChanges(row);
+    if (isInstalling) {
+        openButton.classList.add('disabled');
+    } else {
+        openButton.classList.toggle('disabled', openHref === '#');
+    }
+
+    // Check for changes only if not installing
+    if (!isInstalling) {
+        checkRowForChanges(row);
+    }
 }
 
 export function renderInstanceRow(instance, isNew = false, level = 0) {
@@ -219,9 +245,9 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     const gpuContainer = document.createElement('div');
     gpuContainer.className = 'gpu-checkbox-container';
     const assignedGpus = (instance.gpu_ids || '').split(',').filter(id => id);
-    
+
     const gpuCount = (state.systemInfo.gpus && Array.isArray(state.systemInfo.gpus)) ? state.systemInfo.gpus.length : (state.systemInfo.gpu_count || 0);
-    
+
     for (let i = 0; i < gpuCount; i++) {
         const label = document.createElement('label');
         const checkbox = document.createElement('input');
@@ -306,6 +332,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         const openHref = buildInstanceUrl(row, false);
         const isStarted = instance.status === 'started';
         const isStopped = instance.status === 'stopped';
+        // Buttons will be updated by updateInstanceRow, so standard structure here is fine
         actionsCell.innerHTML = `
             <button class="action-btn" data-action="start" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>Start</button>
             <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
@@ -329,13 +356,15 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         let isOutputPathDirty = false;
         outputPathInput.addEventListener('input', () => { isOutputPathDirty = true; });
         nameInput.addEventListener('input', () => { if (!isOutputPathDirty) { outputPathInput.value = nameInput.value; } });
-        
+
     } else {
         allFields.forEach(field => {
             if (field.dataset.field !== 'autostart') {
                 field.addEventListener('input', () => checkRowForChanges(row));
             }
         });
+        // Initial update to set button states based on status
+        updateInstanceRow(row, instance);
     }
     return row;
 }
