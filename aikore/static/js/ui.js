@@ -67,26 +67,27 @@ export function checkRowForChanges(row) {
 
     let changed = false;
 
+    // Defensive checks: ensure element exists before accessing .value or .checked
     const nameField = row.querySelector('input[data-field="name"]');
-    if (nameField.value !== row.dataset.originalName) changed = true;
+    if (nameField && nameField.value !== row.dataset.originalName) changed = true;
 
     const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
     if (blueprintField && blueprintField.value !== row.dataset.originalBlueprint) changed = true;
 
     const outputPathField = row.querySelector('input[data-field="output_path"]');
-    if ((outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) changed = true;
+    if (outputPathField && (outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) changed = true;
 
     const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
     if (selectedGpuIds !== row.dataset.originalGpuIds) changed = true;
 
     const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
-    if (persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) changed = true;
+    if (persistentModeField && persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) changed = true;
 
     const hostnameField = row.querySelector('input[data-field="hostname"]');
-    if ((hostnameField.value || '') !== (row.dataset.originalHostname || '')) changed = true;
+    if (hostnameField && (hostnameField.value || '') !== (row.dataset.originalHostname || '')) changed = true;
 
     const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
-    if (useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) changed = true;
+    if (useHostnameField && useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) changed = true;
 
     updateButton.disabled = !changed;
 }
@@ -124,7 +125,7 @@ export function buildInstanceUrl(row, forView = false) {
 
 export function updateInstanceRow(row, instance) {
     const isActive = instance.status !== 'stopped';
-    const isInstalling = instance.status === 'installing'; // CHECK INSTALLING STATUS
+    const isInstalling = instance.status === 'installing';
 
     row.dataset.status = instance.status;
     row.dataset.port = instance.port || '';
@@ -135,11 +136,13 @@ export function updateInstanceRow(row, instance) {
     row.dataset.useCustomHostname = String(instance.use_custom_hostname);
 
     const statusSpan = row.querySelector('.status');
-    statusSpan.textContent = instance.status;
-    statusSpan.className = `status status-${instance.status.toLowerCase()}`;
+    if (statusSpan) {
+        statusSpan.textContent = instance.status;
+        statusSpan.className = `status status-${instance.status.toLowerCase()}`;
+    }
 
     const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
-    row.cells[8].textContent = displayPort || 'N/A';
+    if (row.cells[8]) row.cells[8].textContent = displayPort || 'N/A';
 
     // UPDATE BUTTON STATE LOGIC
     const allButtons = row.querySelectorAll('button.action-btn, a.action-btn');
@@ -157,8 +160,6 @@ export function updateInstanceRow(row, instance) {
             else if (action === 'view') btn.disabled = (instance.status !== 'started');
             else if (action === 'update') {
                 // Update logic is handled below by checkRowForChanges
-                // Resetting here might be overwritten immediately, but safe default
-                // Actual disabled state depends on dirty check
             }
             // Other buttons like tools_menu, logs remain enabled if not installing
             else if (action === 'tools_menu' || action === 'logs') btn.disabled = false;
@@ -166,13 +167,15 @@ export function updateInstanceRow(row, instance) {
     });
 
     const openButton = row.querySelector('[data-action="open"]');
-    const openHref = buildInstanceUrl(row, false);
-    openButton.href = openHref;
+    if (openButton) {
+        const openHref = buildInstanceUrl(row, false);
+        openButton.href = openHref;
 
-    if (isInstalling) {
-        openButton.classList.add('disabled');
-    } else {
-        openButton.classList.toggle('disabled', openHref === '#');
+        if (isInstalling) {
+            openButton.classList.add('disabled');
+        } else {
+            openButton.classList.toggle('disabled', openHref === '#');
+        }
     }
 
     // Check for changes only if not installing
