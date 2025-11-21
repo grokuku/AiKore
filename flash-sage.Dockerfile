@@ -33,19 +33,18 @@ WORKDIR /build
 # sageattention
 RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build/SageAttention \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9" \
-    && python3.12 -m pip wheel --no-build-isolation . -w /wheels --verbose --config-settings="cmake.args=-DCMAKE_CUDA_ARCHITECTURES=75;80;86;87;89;120" \
+    && TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12" python3.12 -m pip wheel --no-build-isolation . -w /wheels --verbose --config-settings="cmake.args=-DCMAKE_CUDA_ARCHITECTURES=75;80;86;87;89;120" \
     && cd /build \
     && rm -rf SageAttention
 
 # flash-attn
 RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-attention \
     && cd /build/flash-attention \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12" \
-    && export FLASH_ATTENTION_FORCE_BUILD=TRUE \
-    && python3.12 -m pip wheel --verbose --no-build-isolation . -w /wheels \
+    && FLASH_ATTENTION_FORCE_BUILD=TRUE \
+    TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12" \
+    python3.12 -m pip wheel --verbose --no-build-isolation . -w /wheels \
     && cd /build \
-    && rm -rf flash-attention
+    && rm -rf SageAttention
 
 # --- Final Stage (Exporter) ---
 # This stage contains only the compiled wheels for export.
