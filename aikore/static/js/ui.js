@@ -6,7 +6,20 @@ export function showToast(message, type = 'success') {
 
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    toast.textContent = message;
+    
+    // Create content wrapper
+    const content = document.createElement('span');
+    content.textContent = message;
+    toast.appendChild(content);
+
+    // Create close button
+    const closeBtn = document.createElement('span');
+    closeBtn.className = 'toast-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = () => {
+        toast.remove();
+    };
+    toast.appendChild(closeBtn);
 
     toastContainer.appendChild(toast);
 
@@ -14,10 +27,13 @@ export function showToast(message, type = 'success') {
         toast.classList.add('show');
     }, 10);
 
+    // Extended timeout to 20 seconds
     setTimeout(() => {
-        toast.classList.remove('show');
-        toast.addEventListener('transitionend', () => toast.remove());
-    }, 3000);
+        if (toast.parentNode) {
+            toast.classList.remove('show');
+            toast.addEventListener('transitionend', () => toast.remove());
+        }
+    }, 20000);
 }
 
 function createBlueprintSelect(selectedValue = '') {
@@ -62,12 +78,10 @@ function createBlueprintSelect(selectedValue = '') {
 }
 
 export function checkRowForChanges(row) {
-    const updateButton = row.querySelector('button[data-action="update"]');
-    if (!updateButton) return;
-
+    // Instead of toggling a local button, we mark the row as dirty
     let changed = false;
 
-    // Defensive checks: ensure element exists before accessing .value or .checked
+    // Defensive checks
     const nameField = row.querySelector('input[data-field="name"]');
     if (nameField && nameField.value !== row.dataset.originalName) changed = true;
 
@@ -90,10 +104,36 @@ export function checkRowForChanges(row) {
     if (useHostnameField && useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) changed = true;
 
     const portField = row.querySelector('select[data-field="port"]');
-    // Check if port changed. originalPort can be empty string, convert to string for comparison
     if (portField && portField.value !== (row.dataset.originalPort || '')) changed = true;
 
-    updateButton.disabled = !changed;
+    const autostartField = row.querySelector('input[data-field="autostart"]');
+    // Note: autostart is often instant, but if we treat it as a batched change:
+    if (autostartField && autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
+
+    // Toggle dirty class
+    if (changed) {
+        row.classList.add('row-dirty');
+    } else {
+        row.classList.remove('row-dirty');
+    }
+
+    // Update Global Save Button visibility
+    updateGlobalSaveButton();
+}
+
+function updateGlobalSaveButton() {
+    const dirtyRows = document.querySelectorAll('tr.row-dirty');
+    const saveBtn = document.getElementById('global-save-btn');
+    const dirtyCountSpan = document.getElementById('dirty-count');
+
+    if (saveBtn) {
+        if (dirtyRows.length > 0) {
+            saveBtn.style.display = 'inline-block';
+            dirtyCountSpan.textContent = dirtyRows.length;
+        } else {
+            saveBtn.style.display = 'none';
+        }
+    }
 }
 
 export function buildInstanceUrl(row, forView = false) {
@@ -104,13 +144,10 @@ export function buildInstanceUrl(row, forView = false) {
     const customHostname = row.dataset.hostname;
     const isPersistent = row.dataset.persistentMode === 'true';
 
-    // Get the Public Port from the dataset (which should be populated correctly by updateInstanceRow)
-    // However, dataset values are strings.
     const persistentPort = row.dataset.persistentPort;
     const normalPort = row.dataset.port;
 
     if (isPersistent) {
-        // In persistent mode, the public port is the VNC port (persistentPort)
         const baseUrl = `${window.location.protocol}//${window.location.hostname}:${persistentPort}`;
         return forView ? `${baseUrl}/vnc.html?resize=remote` : baseUrl;
     }
@@ -119,15 +156,12 @@ export function buildInstanceUrl(row, forView = false) {
         return customHostname.startsWith('http') ? customHostname : `http://${customHostname}`;
     }
 
-    // Normal mode logic
     if (!forView) {
-        // "Open" -> Direct access to the Public Port
         if (normalPort) {
             return `${window.location.protocol}//${window.location.hostname}:${normalPort}/`;
         }
     }
 
-    // "View" (or fallback) -> Reverse Proxy
     const instanceSlug = row.dataset.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
     return `/instance/${instanceSlug}/`;
 }
@@ -144,13 +178,16 @@ export function updateInstanceRow(row, instance) {
     row.dataset.hostname = instance.hostname || '';
     row.dataset.useCustomHostname = String(instance.use_custom_hostname);
 
-    // Determine current effective PUBLIC port for display/selection
-    // If Persistent: Public = persistent_port
-    // If Normal: Public = port
     const currentPublicPort = instance.persistent_mode ? instance.persistent_port : instance.port;
     
-    // Update original port to current state to avoid phantom changes
-    row.dataset.originalPort = currentPublicPort || ''; 
+    // We do NOT update original datasets here automatically if the row is dirty,
+    // to preserve the "unsaved changes" state until the user explicitly saves.
+    // However, if the row is NOT dirty, we sync original to current to avoid phantom diffs.
+    if (!row.classList.contains('row-dirty')) {
+         row.dataset.originalPort = currentPublicPort || '';
+         // ... (sync other originals if needed, but usually rendering handles this. 
+         // Port is special because of the select logic)
+    }
 
     const statusSpan = row.querySelector('.status');
     if (statusSpan) {
@@ -158,52 +195,47 @@ export function updateInstanceRow(row, instance) {
         statusSpan.className = `status status-${instance.status.toLowerCase()}`;
     }
 
-    // Update Port Select
+    // Update Port Select logic...
     const portSelect = row.querySelector('select[data-field="port"]');
     if (portSelect && currentPublicPort) {
          let optionFound = false;
-         // Ensure "Auto" is removed if it exists (for existing instances)
          const autoOption = portSelect.querySelector('option[value=""]');
          if (autoOption) autoOption.remove();
 
          for (let i = 0; i < portSelect.options.length; i++) {
              if (portSelect.options[i].value == currentPublicPort) {
-                 portSelect.options[i].selected = true;
+                 // Only change selection if user hasn't touched it (row not dirty)
+                 if (!row.classList.contains('row-dirty')) {
+                    portSelect.options[i].selected = true;
+                 }
                  optionFound = true;
                  break;
              }
          }
-         // If not found (e.g. it's the assigned port but not in the "available" list because it's taken by us), add it
          if (!optionFound) {
              const option = document.createElement('option');
              option.value = currentPublicPort;
              option.textContent = currentPublicPort;
-             option.selected = true;
-             // Add it at the top (after auto if it existed, but we removed it)
+             if (!row.classList.contains('row-dirty')) {
+                option.selected = true;
+             }
              portSelect.insertBefore(option, portSelect.firstChild);
          }
     }
 
-
-    // UPDATE BUTTON STATE LOGIC
     const allButtons = row.querySelectorAll('button.action-btn, a.action-btn');
     allButtons.forEach(btn => {
         if (isInstalling) {
             btn.disabled = true;
             btn.classList.add('disabled');
         } else {
-            // Re-enable and apply normal logic
             btn.classList.remove('disabled');
             const action = btn.dataset.action;
             if (action === 'start') btn.disabled = isActive;
             else if (action === 'stop') btn.disabled = !isActive;
             else if (action === 'delete') btn.disabled = isActive;
             else if (action === 'view') btn.disabled = (instance.status !== 'started');
-            else if (action === 'update') {
-                // Update logic is handled below by checkRowForChanges
-            }
-            // Other buttons like tools_menu, logs remain enabled if not installing
-            else if (action === 'tools_menu' || action === 'logs') btn.disabled = false;
+            // No more 'update' button specific logic
         }
     });
 
@@ -211,7 +243,6 @@ export function updateInstanceRow(row, instance) {
     if (openButton) {
         const openHref = buildInstanceUrl(row, false);
         openButton.href = openHref;
-
         if (isInstalling) {
             openButton.classList.add('disabled');
         } else {
@@ -219,7 +250,6 @@ export function updateInstanceRow(row, instance) {
         }
     }
 
-    // Check for changes only if not installing
     if (!isInstalling) {
         checkRowForChanges(row);
     }
@@ -235,9 +265,9 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         row.classList.add('satellite-instance');
     }
 
-    // Determine current effective PUBLIC port
     const currentPublicPort = instance.persistent_mode ? instance.persistent_port : instance.port;
 
+    // Initial datasets (source of truth for changes)
     row.dataset.originalName = instance.name || '';
     row.dataset.originalBlueprint = instance.base_blueprint || '';
     row.dataset.originalGpuIds = instance.gpu_ids || '';
@@ -248,6 +278,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     row.dataset.originalOutputPath = instance.output_path || '';
     row.dataset.originalPort = currentPublicPort || '';
 
+    // Current data helpers
     row.dataset.status = instance.status;
     row.dataset.name = instance.name || '';
     row.dataset.port = instance.port || '';
@@ -258,42 +289,48 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
 
     const handleCell = row.insertCell();
     if (!isNew) {
+        // Satellites can be dragged, but sorting logic in main.js will visually re-group them
         handleCell.classList.add('drag-handle');
         handleCell.innerHTML = '&#x2630;';
     }
 
+    // Name Cell with Tree Visuals
     const nameCell = row.insertCell();
+    const nameWrapper = document.createElement('div');
+    nameWrapper.className = 'name-cell-wrapper';
+    
+    // Indentation + Connector
+    nameWrapper.style.paddingLeft = `${level * 20}px`;
+    if (level > 0) {
+        const connector = document.createElement('span');
+        connector.className = 'tree-connector';
+        nameWrapper.appendChild(connector);
+    }
+
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
     nameInput.value = instance.name || '';
     nameInput.dataset.field = 'name';
     nameInput.required = true;
-    nameInput.disabled = false;
-    nameCell.appendChild(nameInput);
-    nameCell.style.paddingLeft = `${level * 20 + 5}px`;
-    if (level > 0) {
-        nameCell.style.setProperty('--level-indent', `${level * 20}px`);
-        nameCell.classList.add('indented-cell');
-    }
-
+    nameWrapper.appendChild(nameInput);
+    nameCell.appendChild(nameWrapper);
 
     const blueprintSelect = createBlueprintSelect(instance.base_blueprint);
-    blueprintSelect.disabled = (level > 0); // Disable for satellites
+    blueprintSelect.disabled = (level > 0);
     row.insertCell().appendChild(blueprintSelect);
 
     const outputPathInput = document.createElement('input');
     outputPathInput.type = 'text';
     outputPathInput.value = instance.output_path || '';
     outputPathInput.dataset.field = 'output_path';
-    outputPathInput.placeholder = 'Optional: /path/to/outputs';
-    outputPathInput.disabled = false;
+    outputPathInput.placeholder = 'Optional';
     row.insertCell().appendChild(outputPathInput);
 
+    // GPU Cell
     const gpuCell = row.insertCell();
     const gpuContainer = document.createElement('div');
     gpuContainer.className = 'gpu-checkbox-container';
     const assignedGpus = (instance.gpu_ids || '').split(',').filter(id => id);
-
     const gpuCount = (state.systemInfo.gpus && Array.isArray(state.systemInfo.gpus)) ? state.systemInfo.gpus.length : (state.systemInfo.gpu_count || 0);
 
     for (let i = 0; i < gpuCount; i++) {
@@ -310,21 +347,23 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     if (gpuCount === 0) gpuContainer.textContent = 'N/A';
     gpuCell.appendChild(gpuContainer);
 
+    // Autostart
     const autostartCheckbox = document.createElement('input');
     autostartCheckbox.type = 'checkbox';
     autostartCheckbox.checked = instance.autostart;
     autostartCheckbox.dataset.field = 'autostart';
     row.insertCell().appendChild(autostartCheckbox);
 
+    // Persistent Mode
     const persistentModeCheckbox = document.createElement('input');
     persistentModeCheckbox.type = 'checkbox';
     persistentModeCheckbox.checked = instance.persistent_mode;
     persistentModeCheckbox.dataset.field = 'persistent_mode';
-    persistentModeCheckbox.disabled = false;
     row.insertCell().appendChild(persistentModeCheckbox);
 
     row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
 
+    // Hostname
     const hostnameCell = row.insertCell();
     const hostnameContainer = document.createElement('div');
     hostnameContainer.className = 'hostname-container';
@@ -347,12 +386,10 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     hostnameContainer.appendChild(hostnameInput);
     hostnameCell.appendChild(hostnameContainer);
 
-    // --- PORT LOGIC ---
+    // Port
     const portCell = row.insertCell();
     const portSelect = document.createElement('select');
     portSelect.dataset.field = 'port';
-    
-    // "Auto" option - Only for NEW instances
     if (isNew) {
         const autoOption = document.createElement('option');
         autoOption.value = '';
@@ -360,16 +397,12 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         autoOption.selected = true;
         portSelect.appendChild(autoOption);
     }
-    
-    // Add available ports
     state.availablePorts.forEach(port => {
         const option = document.createElement('option');
         option.value = port;
         option.textContent = port;
         portSelect.appendChild(option);
     });
-
-    // Ensure current port is present and selected (for Existing instances)
     if (!isNew && currentPublicPort) {
         let optionFound = false;
         for (let i = 0; i < portSelect.options.length; i++) {
@@ -388,28 +421,26 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         }
     }
     portCell.appendChild(portSelect);
-    // -----------------------
 
+    // Actions
     const actionsCell = row.insertCell();
     actionsCell.classList.add('actions-column');
     if (isNew) {
         actionsCell.innerHTML = `
-            <button class="action-btn" data-action="save" data-id="new" disabled>Save</button>
+            <button class="action-btn" data-action="save" data-id="new" disabled>Create</button>
             <button class="action-btn" data-action="cancel_new">Cancel</button>
-            <span class="action-btn-placeholder"></span><span class="action-btn-placeholder"></span>
-            <span class="action-btn-placeholder"></span><span class="action-btn-placeholder"></span>
-            <span class="action-btn-placeholder"></span><span class="action-btn-placeholder"></span>`;
+            <span class="action-btn-placeholder"></span>`;
     } else {
         const openHref = buildInstanceUrl(row, false);
         const isStarted = instance.status === 'started';
         const isStopped = instance.status === 'stopped';
-        // Buttons will be updated by updateInstanceRow, so standard structure here is fine
+        
+        // REMOVED UPDATE BUTTON
         actionsCell.innerHTML = `
             <button class="action-btn" data-action="start" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>Start</button>
             <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
             <button class="action-btn" data-action="logs" data-id="${instance.id}">Logs</button>
             <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">Tools</button>
-            <button class="action-btn" data-action="update" data-id="${instance.id}" disabled>Update</button>
             <button class="action-btn" data-action="delete" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>Delete</button>
             <button class="action-btn" data-action="view" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>View</button>
             <a href="${openHref}" class="action-btn ${openHref === '#' ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
@@ -423,18 +454,14 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
             const bp = row.querySelector('select[data-field="base_blueprint"]').value;
             saveButton.disabled = !name || !bp;
         }));
-
         let isOutputPathDirty = false;
         outputPathInput.addEventListener('input', () => { isOutputPathDirty = true; });
         nameInput.addEventListener('input', () => { if (!isOutputPathDirty) { outputPathInput.value = nameInput.value; } });
-
     } else {
         allFields.forEach(field => {
-            if (field.dataset.field !== 'autostart') {
-                field.addEventListener('input', () => checkRowForChanges(row));
-            }
+            field.addEventListener('input', () => checkRowForChanges(row));
+            field.addEventListener('change', () => checkRowForChanges(row)); // catch select changes
         });
-        // Initial update to set button states based on status
         updateInstanceRow(row, instance);
     }
     return row;

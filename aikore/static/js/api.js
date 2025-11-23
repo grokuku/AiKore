@@ -62,6 +62,11 @@ export async function createInstance(data) {
     return handleResponse(response);
 }
 
+// Renamed/Aliased function to match eventHandlers.js call
+export async function updateInstance(instanceId, data) {
+    return performFullInstanceUpdate(instanceId, data);
+}
+
 export async function performFullInstanceUpdate(instanceId, data) {
     const response = await fetch(`/api/instances/${instanceId}`, {
         method: 'PUT',

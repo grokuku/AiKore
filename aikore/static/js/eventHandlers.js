@@ -6,6 +6,8 @@ import { renderInstanceRow, buildInstanceUrl, showToast } from './ui.js';
 import { fetchAndRenderInstances } from './main.js';
 
 export function setupMainEventListeners() {
+    const globalSaveBtn = document.getElementById('global-save-btn');
+    
     DOM.addInstanceBtn.addEventListener('click', async () => {
         if (document.querySelector('tr[data-is-new="true"]')) return;
         const noInstancesRow = DOM.instancesTbody.querySelector('.no-instances-row');
@@ -37,26 +39,167 @@ export function setupMainEventListeners() {
         newRow.querySelector('input[data-field="name"]').focus();
     });
 
-    DOM.instancesTbody.addEventListener('change', async (event) => {
-        const target = event.target;
-        if (target.matches('[data-field="autostart"]')) {
-            const row = target.closest('tr');
-            const instanceId = row.dataset.id;
-            const instanceName = row.dataset.name;
-            const isChecked = target.checked;
+    // GLOBAL SAVE LISTENER
+    if (globalSaveBtn) {
+        globalSaveBtn.addEventListener('click', () => {
+            const dirtyRows = document.querySelectorAll('tr.row-dirty');
+            if (dirtyRows.length === 0) return;
 
+            state.pendingUpdates = []; // Store all pending updates
+            const changesContainer = document.getElementById('update-confirm-changes');
+            changesContainer.innerHTML = '';
+
+            let requiresRestart = false;
+            let hasOutputPathChange = false;
+
+            dirtyRows.forEach(row => {
+                const instanceName = row.dataset.originalName || 'Unknown';
+                const instanceId = row.dataset.id;
+                const status = row.dataset.status;
+                
+                const changes = {};
+                const fieldMap = {
+                    name: 'Name',
+                    base_blueprint: 'Blueprint',
+                    output_path: 'Output Path',
+                    gpu_ids: 'GPU IDs',
+                    persistent_mode: 'Persistent UI',
+                    use_custom_hostname: 'Use Custom Address',
+                    hostname: 'Custom Address',
+                    port: 'Port',
+                    autostart: 'Autostart'
+                };
+
+                const nameField = row.querySelector('input[data-field="name"]');
+                if (nameField.value !== row.dataset.originalName) {
+                    changes.name = { old: row.dataset.originalName, new: nameField.value };
+                }
+                const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
+                if (blueprintField && blueprintField.value !== row.dataset.originalBlueprint) {
+                    changes.base_blueprint = { old: row.dataset.originalBlueprint, new: blueprintField.value };
+                }
+                const outputPathField = row.querySelector('input[data-field="output_path"]');
+                if (outputPathField && (outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) {
+                    changes.output_path = { old: row.dataset.originalOutputPath || '', new: outputPathField.value };
+                    hasOutputPathChange = true;
+                }
+                const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
+                if (selectedGpuIds !== row.dataset.originalGpuIds) {
+                    changes.gpu_ids = { old: row.dataset.originalGpuIds, new: selectedGpuIds };
+                }
+                const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
+                if (persistentModeField && persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) {
+                    changes.persistent_mode = { old: row.dataset.originalPersistentMode, new: persistentModeField.checked ? 'true' : 'false' };
+                }
+                const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
+                if (useHostnameField && useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) {
+                    changes.use_custom_hostname = { old: row.dataset.originalUseCustomHostname, new: useHostnameField.checked ? 'true' : 'false' };
+                }
+                const hostnameField = row.querySelector('input[data-field="hostname"]');
+                if (hostnameField && (hostnameField.value || '') !== (row.dataset.originalHostname || '')) {
+                    changes.hostname = { old: row.dataset.originalHostname || '', new: hostnameField.value };
+                }
+                const portField = row.querySelector('select[data-field="port"]');
+                if (portField && portField.value !== (row.dataset.originalPort || '')) {
+                    changes.port = { old: row.dataset.originalPort || 'Auto', new: portField.value || 'Auto' };
+                }
+                const autostartField = row.querySelector('input[data-field="autostart"]');
+                if (autostartField && autostartField.checked.toString() !== row.dataset.originalAutostart) {
+                    changes.autostart = { old: row.dataset.originalAutostart, new: autostartField.checked ? 'true' : 'false' };
+                }
+
+                // Store for execution
+                if (Object.keys(changes).length > 0) {
+                    state.pendingUpdates.push({
+                        id: instanceId,
+                        row: row,
+                        changes: changes
+                    });
+
+                    // Visual list
+                    Object.keys(changes).forEach(key => {
+                        const div = document.createElement('div');
+                        div.innerHTML = `<strong>[${instanceName}] ${fieldMap[key]}:</strong> ${changes[key].old} &rarr; ${changes[key].new}`;
+                        changesContainer.appendChild(div);
+                    });
+
+                    // Check if restart is needed (if running and changed something critical)
+                    if (status !== 'stopped') {
+                        // Autostart change doesn't need restart. Others do.
+                        const criticalChanges = ['name', 'base_blueprint', 'output_path', 'gpu_ids', 'persistent_mode', 'port'];
+                        const hasCritical = Object.keys(changes).some(k => criticalChanges.includes(k));
+                        if (hasCritical) requiresRestart = true;
+                    }
+                }
+            });
+
+            const restartWarning = document.getElementById('update-restart-warning');
+            restartWarning.style.display = requiresRestart ? 'block' : 'none';
+
+            const outputPathWarning = document.getElementById('update-output-path-warning');
+            if (hasOutputPathChange) {
+                outputPathWarning.textContent = `Warning: Changing Output Path does not move existing files.`;
+                outputPathWarning.style.display = 'block';
+            } else {
+                outputPathWarning.style.display = 'none';
+            }
+
+            DOM.updateConfirmModal.classList.remove('hidden');
+        });
+    }
+
+    // Handle confirm click for global update
+    document.getElementById('update-confirm-btn-confirm').addEventListener('click', async () => {
+        DOM.updateConfirmModal.classList.add('hidden');
+        const updates = state.pendingUpdates || [];
+        
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const update of updates) {
             try {
-                await api.updateInstanceAutostart(instanceId, isChecked);
-                showToast(`Autostart for '${instanceName}' updated.`, 'success');
-                // Update the original-autostart dataset to prevent unsaved changes warnings
-                row.dataset.originalAutostart = String(isChecked);
-            } catch (error) {
-                showToast(`Error updating autostart: ${error.message}`, 'error');
-                // Revert the checkbox on failure
-                target.checked = !isChecked;
+                // Prepare API Payload
+                // We need to fetch current values from the inputs again or rely on the gathered changes
+                // Safest is to read from the row inputs one more time to build the full object expected by backend
+                const row = update.row;
+                const data = {
+                    name: row.querySelector('input[data-field="name"]').value,
+                    base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
+                    output_path: row.querySelector('input[data-field="output_path"]').value || null,
+                    gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
+                    autostart: row.querySelector('input[data-field="autostart"]').checked,
+                    persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
+                    hostname: row.querySelector('input[data-field="hostname"]').value || null,
+                    use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
+                    port: row.querySelector('select[data-field="port"]').value ? parseInt(row.querySelector('select[data-field="port"]').value, 10) : null
+                };
+
+                await api.updateInstance(update.id, data);
+                row.classList.remove('row-dirty'); // Clear dirty status on success
+                successCount++;
+            } catch (err) {
+                console.error(`Failed to update instance ${update.id}:`, err);
+                errorCount++;
+                showToast(`Failed to update instance ${update.id}: ${err.message}`, 'error');
             }
         }
+
+        if (successCount > 0) showToast(`${successCount} instance(s) updated successfully.`);
+        if (errorCount > 0) showToast(`${errorCount} update(s) failed.`, 'error');
+        
+        document.getElementById('global-save-btn').style.display = 'none'; // Hide button if all success (or refresh will handle it)
+        await fetchAndRenderInstances();
     });
+
+    document.getElementById('update-confirm-btn-cancel').addEventListener('click', () => {
+        DOM.updateConfirmModal.classList.add('hidden');
+    });
+
+    // Remove old autostart listener since it's now part of the batch update or simple change detection
+    // But the prompt asked to remove the "update" button. 
+    // If the user toggles autostart, it should just mark row dirty. 
+    // The previous logic saved autostart immediately. 
+    // We will disable the immediate autostart save to align with the "Global Save" philosophy requested.
 
     DOM.instancesTbody.addEventListener('click', async (event) => {
         const target = event.target.closest('[data-action]');
@@ -98,90 +241,11 @@ export function setupMainEventListeners() {
                     };
                     await api.createInstance(data);
                     showToast(`Instance '${data.name}' created successfully.`);
-                    row.remove(); // Remove the temporary creation row
+                    row.remove(); 
                     await fetchAndRenderInstances();
                     break;
 
-                case 'update':
-                    state.instanceToUpdate = { row, button: target };
-                    const changes = {};
-                    const fieldMap = {
-                        name: 'Name',
-                        base_blueprint: 'Blueprint',
-                        output_path: 'Output Path',
-                        gpu_ids: 'GPU IDs',
-                        persistent_mode: 'Persistent UI',
-                        use_custom_hostname: 'Use Custom Address',
-                        hostname: 'Custom Address',
-                        port: 'Port'
-                    };
-    
-                    const nameField = row.querySelector('input[data-field="name"]');
-                    if (nameField.value !== row.dataset.originalName) {
-                        changes.name = { old: row.dataset.originalName, new: nameField.value, label: fieldMap.name };
-                    }
-                    const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
-                    if (blueprintField.value !== row.dataset.originalBlueprint) {
-                        changes.base_blueprint = { old: row.dataset.originalBlueprint, new: blueprintField.value, label: fieldMap.base_blueprint };
-                    }
-                    const outputPathField = row.querySelector('input[data-field="output_path"]');
-                    if ((outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) {
-                        changes.output_path = { old: row.dataset.originalOutputPath || '', new: outputPathField.value, label: fieldMap.output_path };
-                    }
-                    const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
-                    if (selectedGpuIds !== row.dataset.originalGpuIds) {
-                        changes.gpu_ids = { old: row.dataset.originalGpuIds, new: selectedGpuIds, label: fieldMap.gpu_ids };
-                    }
-                    const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
-                    if (persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) {
-                        changes.persistent_mode = { old: row.dataset.originalPersistentMode === 'true' ? 'true' : 'false', new: persistentModeField.checked ? 'true' : 'false', label: fieldMap.persistent_mode };
-                    }
-                    const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
-                    if (useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) {
-                        changes.use_custom_hostname = { old: row.dataset.originalUseCustomHostname === 'true' ? 'true' : 'false', new: useHostnameField.checked ? 'true' : 'false', label: fieldMap.use_custom_hostname };
-                    }
-                    const hostnameField = row.querySelector('input[data-field="hostname"]');
-                    if ((hostnameField.value || '') !== (row.dataset.originalHostname || '')) {
-                        changes.hostname = { old: row.dataset.originalHostname || '', new: hostnameField.value, label: fieldMap.hostname };
-                    }
-                    
-                    // Port Change Detection
-                    const portField = row.querySelector('select[data-field="port"]');
-                    if (portField && portField.value !== (row.dataset.originalPort || '')) {
-                        changes.port = { 
-                            old: row.dataset.originalPort || 'Auto', 
-                            new: portField.value || 'Auto', 
-                            label: fieldMap.port 
-                        };
-                    }
-    
-                    const changesContainer = document.getElementById('update-confirm-changes');
-                    changesContainer.innerHTML = '';
-                    Object.values(changes).forEach(change => {
-                        const div = document.createElement('div');
-                        div.innerHTML = `<strong>${change.label}:</strong> ${change.old || '""'} &rarr; ${change.new || '""'}`;
-                        changesContainer.appendChild(div);
-                    });
-    
-                    const warning = document.getElementById('update-confirm-warning');
-                    const title = document.getElementById('update-confirm-title');
-                    title.textContent = `Confirm Changes for: ${row.dataset.name}`;
-                    if (row.dataset.status !== 'stopped') {
-                        warning.textContent = 'This instance is running. Applying these changes will require a restart.';
-                    } else {
-                        warning.textContent = 'These changes will be applied the next time the instance is started.';
-                    }
-    
-                    const outputPathWarning = document.getElementById('update-output-path-warning');
-                    if (changes.output_path) {
-                        outputPathWarning.textContent = `Warning: This does not move existing files. The old folder '.../outputs/${changes.output_path.old}' will be preserved.`;
-                        outputPathWarning.style.display = 'block';
-                    } else {
-                        outputPathWarning.style.display = 'none';
-                    }
-    
-                    DOM.updateConfirmModal.classList.remove('hidden');
-                    break;
+                // 'update' case removed as per requirements
 
                 case 'delete':
                     state.instanceToDeleteId = instanceId;

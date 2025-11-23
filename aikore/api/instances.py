@@ -6,7 +6,7 @@ import shutil
 import asyncio
 import psutil
 import json
-import subprocess # NEW
+import subprocess
 from pydantic import BaseModel
 
 from ..database import crud, models
@@ -251,8 +251,8 @@ def update_instance_details(
     if not update_data:
         return db_instance
 
-    # --- BUGFIX 1: Smart update logic ---
-    # Define fields that require a full stop/start cycle
+    # --- HOT-SWAP / SMART UPDATE LOGIC ---
+    # Define fields that require a full stop/start cycle if they are present
     restart_fields = {
         'name', 'base_blueprint', 'output_path', 'gpu_ids', 'persistent_mode', 'port'
     }
@@ -260,20 +260,19 @@ def update_instance_details(
     requires_restart = any(field in restart_fields for field in update_data.keys())
 
     if not requires_restart:
-        # Handle safe updates (autostart, hostname, etc.) without restart
-        print(f"Performing safe update for instance '{db_instance.name}'. No restart needed.")
+        # Handle safe updates (autostart, hostname, use_custom_hostname) without restart
+        print(f"[API] Performing hot-swap update for instance '{db_instance.name}'. No restart needed.")
         
-        # CRITICAL FIX: Was passing db_instance=db_instance, but crud expects instance_id=db_instance.id
+        # 1. Update DB
         updated_instance = crud.update_instance(db, instance_id=db_instance.id, instance_update=instance_update)
         
+        # 2. Refresh NGINX config if routing details changed
         if 'hostname' in update_data or 'use_custom_hostname' in update_data:
-            print("Hostname-related change detected. Updating NGINX configuration.")
+            print("[API] Hostname-related change detected. Updating NGINX configuration.")
             try:
-                # This function must exist in process_manager. It should
-                # regenerate the NGINX config and reload the service.
                 process_manager.update_nginx_config(db)
             except Exception as e:
-                print(f"WARNING: Could not dynamically update NGINX config: {e}. Change will apply on next restart.")
+                print(f"[API-WARNING] Could not dynamically update NGINX config: {e}. Change will apply on next restart.")
         
         db.refresh(updated_instance)
         return updated_instance
@@ -321,7 +320,7 @@ def update_instance_details(
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to update launch script: {e}")
 
-    # 3. Port & Mode Logic (CORRIGÉ pour éviter TypeError et gérer le transfert)
+    # 3. Port & Mode Logic
     persistent_mode_changed = "persistent_mode" in update_data and update_data["persistent_mode"] != db_instance.persistent_mode
     
     # Identify the current publicly exposed port
@@ -505,16 +504,52 @@ def version_check(instance_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to run version check: {str(e)}")
 
+# --- HELPER FUNCTION FOR BACKGROUND DELETION ---
+def _background_file_deletion(instance_name: str, mode: str, overwrite: bool):
+    """
+    Deletes or moves instance files in the background to avoid blocking the API response.
+    """
+    instance_dir = os.path.join(INSTANCES_DIR, instance_name)
+    TRASH_DIR = os.path.join(os.path.dirname(INSTANCES_DIR), "trashcan")
+    trash_path = os.path.join(TRASH_DIR, instance_name)
+
+    try:
+        if mode == "permanent":
+            if os.path.isdir(instance_dir):
+                print(f"[Background-Delete] Permanently deleting '{instance_name}'...")
+                shutil.rmtree(instance_dir)
+        elif mode == "trash":
+            if os.path.isdir(instance_dir):
+                os.makedirs(TRASH_DIR, exist_ok=True)
+                if os.path.exists(trash_path) and overwrite:
+                    print(f"[Background-Delete] Overwriting trashcan entry for '{instance_name}'...")
+                    shutil.rmtree(trash_path)
+                
+                # Check again if destination exists
+                if not os.path.exists(trash_path):
+                     print(f"[Background-Delete] Moving '{instance_name}' to trashcan...")
+                     shutil.move(instance_dir, TRASH_DIR)
+        
+        print(f"[Background-Delete] Cleanup for '{instance_name}' completed.")
+        
+    except Exception as e:
+        print(f"[Background-Delete-ERROR] Failed to process files for '{instance_name}': {e}")
+
+
 @router.delete("/instances/{instance_id}", status_code=200, tags=["Instance Actions"])
-def delete_instance(instance_id: int, options: DeleteOptions, db: Session = Depends(get_db)):
+def delete_instance(
+    instance_id: int, 
+    options: DeleteOptions, 
+    background_tasks: BackgroundTasks, # <--- Added for background processing
+    db: Session = Depends(get_db)
+):
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
         raise HTTPException(status_code=404, detail="Instance not found")
     if db_instance.status != "stopped":
         raise HTTPException(status_code=400, detail="Cannot delete an active instance. Please stop it first.")
 
-    # --- NEW: Orphaned Satellite Protection ---
-    # Check if this instance is a parent to any satellites
+    # --- Orphaned Satellite Protection ---
     children_count = db.query(models.Instance).filter(models.Instance.parent_instance_id == db_instance.id).count()
     if children_count > 0:
         raise HTTPException(
@@ -522,50 +557,25 @@ def delete_instance(instance_id: int, options: DeleteOptions, db: Session = Depe
             detail=f"Cannot delete instance '{db_instance.name}' because it is a parent to {children_count} satellite instance(s). Please delete them first."
         )
 
-    instance_dir = os.path.join(INSTANCES_DIR, db_instance.name)
+    instance_name = db_instance.name
     TRASH_DIR = os.path.join(os.path.dirname(INSTANCES_DIR), "trashcan")
-    trash_path = os.path.join(TRASH_DIR, db_instance.name)
+    trash_path = os.path.join(TRASH_DIR, instance_name)
 
-    if options.mode == "permanent":
-        if os.path.isdir(instance_dir):
-            try:
-                shutil.rmtree(instance_dir)
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Could not permanently delete instance folder: {e}")
+    # Pre-check for trash conflicts to return error immediately (if not overwriting)
+    if options.mode == "trash" and not options.overwrite and os.path.exists(trash_path) and os.path.isdir(os.path.join(INSTANCES_DIR, instance_name)):
+         raise HTTPException(status_code=409, detail=f"Destination path '{instance_name}' already exists in trashcan. Use 'overwrite=true' to replace it.")
+
+    # 1. DELETE FROM DB FIRST (Instant UI update)
+    try:
         crud.delete_instance(db, instance_id=instance_id)
-        return {"ok": True, "detail": "Instance permanently deleted."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database deletion failed: {e}")
 
-    elif options.mode == "trash":
-        if not os.path.isdir(instance_dir):
-            # If there's no folder, just delete from DB
-            crud.delete_instance(db, instance_id=instance_id)
-            return {"ok": True, "detail": "Instance record deleted (no folder found)."}
+    # 2. SCHEDULE FILE OPS IN BACKGROUND (No blocking)
+    background_tasks.add_task(_background_file_deletion, instance_name, options.mode, options.overwrite)
+    
+    return {"ok": True, "detail": "Instance deleted successfully."}
 
-        os.makedirs(TRASH_DIR, exist_ok=True)
-
-        if os.path.exists(trash_path):
-            if options.overwrite:
-                try:
-                    shutil.rmtree(trash_path) # Remove existing in trash
-                    shutil.move(instance_dir, TRASH_DIR)
-                except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"Could not overwrite destination in trashcan: {e}")
-            else:
-                # This is the case that needs the second modal.
-                # The backend should report the conflict.
-                raise HTTPException(status_code=409, detail=f"Destination path '{os.path.basename(trash_path)}' already exists in trashcan. Use 'overwrite=true' to replace it.")
-        else:
-            # Destination does not exist, just move it
-            try:
-                shutil.move(instance_dir, TRASH_DIR)
-            except shutil.Error as e:
-                raise HTTPException(status_code=500, detail=f"Could not move instance to trashcan: {e}")
-
-        crud.delete_instance(db, instance_id=instance_id)
-        return {"ok": True, "detail": "Instance deleted and moved to trashcan."}
-
-    else:
-        raise HTTPException(status_code=400, detail=f"Invalid delete mode: {options.mode}")
 @router.get("/instances/{instance_id}/logs", tags=["Instance Actions"])
 def get_instance_logs(
     instance_id: int, 

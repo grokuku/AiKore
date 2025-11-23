@@ -99,6 +99,7 @@ def create_copy_placeholder(db: Session, source_instance_id: int, new_name: str)
         raise ValueError(f"Source instance with ID {source_instance_id} not found.")
 
     # 2. Create Database Entry immediately
+    # explicitly set ports to None so they get allocated on first start (Self-Healing)
     db_instance = models.Instance(
         name=new_name,
         base_blueprint=source_instance.base_blueprint,
@@ -108,7 +109,10 @@ def create_copy_placeholder(db: Session, source_instance_id: int, new_name: str)
         output_path=source_instance.output_path,
         hostname=source_instance.hostname,
         use_custom_hostname=False,
-        status="installing" # <--- NEW STATUS indicating background work
+        status="installing", # <--- NEW STATUS indicating background work
+        port=None,
+        persistent_port=None,
+        persistent_display=None
     )
     db.add(db_instance)
     db.commit()
@@ -212,6 +216,7 @@ def instantiate_instance(db: Session, source_instance_id: int, new_name: str):
     os.makedirs(instance_dir, exist_ok=True)
 
     # 3. Database Entry
+    # Explicitly clear ports so they get allocated on start
     db_instance = models.Instance(
         name=new_name,
         parent_instance_id=source_instance.id,
@@ -222,8 +227,10 @@ def instantiate_instance(db: Session, source_instance_id: int, new_name: str):
         output_path=source_instance.output_path,
         hostname=None, # Satellites get their own hostname/port when started
         use_custom_hostname=False,
-        status="stopped"
-        # port, pid, etc., are left as None until started
+        status="stopped",
+        port=None,
+        persistent_port=None,
+        persistent_display=None
     )
     db.add(db_instance)
     db.commit()

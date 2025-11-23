@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AiKore Dashboard</title>
-        <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/base.css">
     <link rel="stylesheet" href="/static/css/instances.css">
     <link rel="stylesheet" href="/static/css/modals.css">
     <link rel="stylesheet" href="/static/css/components.css">
@@ -15,6 +15,64 @@
     <!-- NEW: CodeMirror for syntax highlighting -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/darcula.min.css" />
+
+    <style>
+        /* Satellite Tree Visuals */
+        .name-cell-wrapper {
+            display: flex;
+            align-items: center;
+            position: relative;
+        }
+
+        .tree-connector {
+            display: inline-block;
+            width: 15px;
+            height: 25px; /* Adjust based on row height */
+            border-bottom: 2px solid #555;
+            border-left: 2px solid #555;
+            margin-right: 8px;
+            margin-top: -14px; /* Lift the L shape to connect to parent */
+            opacity: 0.6;
+        }
+
+        /* Row "Dirty" State (Modified but not saved) */
+        tr.row-dirty td {
+            background-color: rgba(255, 193, 7, 0.1) !important; /* Subtle yellow tint */
+            border-top: 1px solid rgba(255, 193, 7, 0.3);
+            border-bottom: 1px solid rgba(255, 193, 7, 0.3);
+        }
+
+        /* Global Save Button */
+        #global-save-btn {
+            margin-left: 10px;
+            background-color: #28a745; /* Green */
+            color: white;
+            display: none; /* Hidden by default until changes exist */
+        }
+        #global-save-btn:hover {
+            background-color: #218838;
+        }
+
+        /* Toast Improvements */
+        .toast {
+            min-width: 300px;
+            padding-right: 30px; /* Space for close button */
+            position: relative;
+        }
+        .toast-close {
+            position: absolute;
+            top: 5px;
+            right: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            opacity: 0.7;
+            line-height: 1;
+        }
+        .toast-close:hover {
+            opacity: 1;
+        }
+    </style>
 </head>
 
 <body>
@@ -28,7 +86,10 @@
             <div id="instance-pane" class="pane">
                 <div class="pane-header">
                     <h2>Instances Manager</h2>
-                    <button class="add-new-btn">Add New Instance</button>
+                    <div>
+                        <button class="add-new-btn">Add New Instance</button>
+                        <button id="global-save-btn" class="action-btn">Save Changes (<span id="dirty-count">0</span>)</button>
+                    </div>
                 </div>
                 <div class="pane-content table-container">
                     <table class="instances-table">
@@ -255,14 +316,17 @@
     <!-- NEW: Modal for Update Confirmation -->
     <div id="update-confirm-modal" class="modal-overlay hidden">
         <div class="modal-content">
-            <h2 id="update-confirm-title">Confirm Changes</h2>
-            <p id="update-confirm-warning">The following changes will be applied.</p>
+            <h2 id="update-confirm-title">Confirm Global Changes</h2>
+            <p id="update-confirm-warning">The following changes will be applied:</p>
+            <p id="update-restart-warning" style="display:none; color: #dc3545; font-weight: bold;">
+                Warning: Some instances are currently running and will require a restart.
+            </p>
             <p id="update-output-path-warning" style="display: none;"></p>
             <div id="update-confirm-changes" class="changes-list">
                 <!-- Changes will be populated here -->
             </div>
             <div class="modal-actions">
-                <button id="update-confirm-btn-confirm" class="action-btn success-btn">Update</button>
+                <button id="update-confirm-btn-confirm" class="action-btn success-btn">Apply All Changes</button>
                 <button id="update-confirm-btn-cancel" class="action-btn danger-btn">Cancel</button>
             </div>
         </div>
