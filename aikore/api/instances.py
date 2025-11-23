@@ -108,9 +108,13 @@ def _allocate_ports(db: Session, persistent_mode: bool, requested_port: int | No
     for inst in instances:
         if inst.id == instance_to_exclude_id:
             continue
-        if inst.port in all_possible_ports:
+        # Mark ports as used
+        if inst.port and inst.port in all_possible_ports:
+            # If an instance is in persistent mode, its 'port' is internal/ephemeral and doesn't block the public pool.
+            # BUT: The current logic might have assigned a pool port to 'port' even in persistent mode in the past.
+            # To be safe: we block it if it falls in the range.
             used_pool_ports.add(inst.port)
-        if inst.persistent_port in all_possible_ports:
+        if inst.persistent_port and inst.persistent_port in all_possible_ports:
             used_pool_ports.add(inst.persistent_port)
 
     app_port = None
@@ -259,7 +263,8 @@ def update_instance_details(
         # Handle safe updates (autostart, hostname, etc.) without restart
         print(f"Performing safe update for instance '{db_instance.name}'. No restart needed.")
         
-        updated_instance = crud.update_instance(db, db_instance=db_instance, instance_update=instance_update)
+        # CRITICAL FIX: Was passing db_instance=db_instance, but crud expects instance_id=db_instance.id
+        updated_instance = crud.update_instance(db, instance_id=db_instance.id, instance_update=instance_update)
         
         if 'hostname' in update_data or 'use_custom_hostname' in update_data:
             print("Hostname-related change detected. Updating NGINX configuration.")
@@ -316,24 +321,85 @@ def update_instance_details(
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Failed to update launch script: {e}")
 
-    # 3. Port-related changes
+    # 3. Port & Mode Logic (CORRIGÉ pour éviter TypeError et gérer le transfert)
     persistent_mode_changed = "persistent_mode" in update_data and update_data["persistent_mode"] != db_instance.persistent_mode
-    port_changed = "port" in update_data and update_data.get("port") is not None and update_data["port"] != db_instance.port
+    
+    # Identify the current publicly exposed port
+    current_exposed_port = db_instance.persistent_port if db_instance.persistent_mode else db_instance.port
+    
+    # Identify if the user requested a NEW port
+    requested_port_val = update_data.get("port")
+    user_changed_port = False
+    
+    if requested_port_val is not None:
+        # User sent a port value. Is it different from what we have?
+        if str(requested_port_val) != str(current_exposed_port):
+            user_changed_port = True
 
-    if persistent_mode_changed or port_changed:
-        new_persistent_mode = update_data.get("persistent_mode", db_instance.persistent_mode)
-        new_requested_port = update_data.get("port", db_instance.port)
-        port_allocations = _allocate_ports(db, new_persistent_mode, new_requested_port, instance_to_exclude_id=db_instance.id)
-        final_update_data.update(port_allocations)
-        if new_persistent_mode and not db_instance.persistent_mode:
-            temp_instance_for_cmd = schemas.Instance.model_validate(db_instance)
-            temp_instance_for_cmd.name = update_data.get("name", original_name)
-            success, output = process_manager.run_command_in_instance_venv(temp_instance_for_cmd, "pip install websockify numpy")
-            if not success:
-                print(f"WARNING: Failed to install persistent mode dependencies for '{db_instance.name}': {output}")
+    if persistent_mode_changed or user_changed_port:
+        
+        # A. Determine the Target Public Port
+        if user_changed_port and requested_port_val:
+            target_public_port = int(requested_port_val)
+        else:
+            # If user didn't change port explicitly, we want to KEEP the current public port
+            target_public_port = current_exposed_port
+
+        # B. Determine the Target Mode
+        target_mode = update_data.get("persistent_mode", db_instance.persistent_mode)
+
+        # C. Conflict Check
+        port_range_str = os.environ.get("AIKORE_INSTANCE_PORT_RANGE", "19001-19020")
+        start_port, end_port = map(int, port_range_str.split('-'))
+        
+        # Only check range if we have a valid port. If it's None (orphaned/new), we skip range check but will allocate below.
+        if target_public_port is not None and start_port <= target_public_port <= end_port:
+            conflict = db.query(models.Instance).filter(
+                models.Instance.id != db_instance.id,
+                ((models.Instance.port == target_public_port) | (models.Instance.persistent_port == target_public_port))
+            ).first()
+            if conflict:
+                 raise HTTPException(status_code=400, detail=f"Port {target_public_port} is already in use by instance '{conflict.name}'.")
+        
+        # Fallback allocation if we somehow ended up with None (e.g. invalid state)
+        if target_public_port is None:
+             alloc = _allocate_ports(db, target_mode, None, instance_to_exclude_id=db_instance.id)
+             target_public_port = alloc['persistent_port'] if target_mode else alloc['port']
+
+        # D. Apply Logic based on Target Mode
+        if target_mode: # Persistent Mode
+            # Public port goes to VNC
+            final_update_data['persistent_port'] = target_public_port
+            # Application gets a new internal ephemeral port
+            final_update_data['port'] = _find_free_port()
+            
+            if not db_instance.persistent_display:
+                final_update_data['persistent_display'] = _find_free_display()
+                
+            # Install dependencies if switching to persistent for the first time
+            if not db_instance.persistent_mode:
+                temp_instance_for_cmd = schemas.Instance.model_validate(db_instance)
+                temp_instance_for_cmd.name = update_data.get("name", original_name)
+                success, output = process_manager.run_command_in_instance_venv(temp_instance_for_cmd, "pip install websockify numpy")
+                if not success:
+                     print(f"WARNING: Failed to install persistent mode dependencies for '{db_instance.name}': {output}")
+
+        else: # Normal Mode
+            # Public port goes to Application
+            final_update_data['port'] = target_public_port
+            # VNC ports are cleared
+            final_update_data['persistent_port'] = None
+            final_update_data['persistent_display'] = None
 
     # --- Finalize ---
     final_instance_update = schemas.InstanceUpdate(**final_update_data)
+    
+    # Force direct assignment to ensure fields like persistent_port are updated even if schema filters them
+    for field, value in final_update_data.items():
+        if hasattr(db_instance, field):
+            setattr(db_instance, field, value)
+    
+    # We still use the update function for standard behavior, but the important part was above
     updated_instance = crud.update_instance(db, instance_id=db_instance.id, instance_update=final_instance_update)
     db.refresh(updated_instance)
 
@@ -366,6 +432,28 @@ def start_instance(instance_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Instance not found")
     if db_instance.status != "stopped":
         raise HTTPException(status_code=400, detail=f"Instance cannot be started from status '{db_instance.status}'")
+
+    # --- SELF-HEALING (CORRECTION AUTO) ---
+    # Si une instance est en mode persistant mais n'a pas de ports définis, on les alloue maintenant.
+    needs_repair = False
+    if db_instance.persistent_mode:
+        if db_instance.persistent_port is None or db_instance.persistent_display is None:
+            needs_repair = True
+    else:
+        if db_instance.port is None:
+            needs_repair = True
+            
+    if needs_repair:
+        print(f"[API] Auto-healing instance '{db_instance.name}' configuration before start.")
+        # Force reallocation
+        alloc = _allocate_ports(db, db_instance.persistent_mode, None, instance_to_exclude_id=db_instance.id)
+        
+        db_instance.port = alloc['port']
+        db_instance.persistent_port = alloc['persistent_port']
+        db_instance.persistent_display = alloc['persistent_display']
+        
+        db.commit()
+        db.refresh(db_instance)
 
     try:
         process_manager.start_instance_process(db=db, instance=db_instance)

@@ -13,6 +13,7 @@ import pty
 import fcntl
 import termios
 import struct
+import shutil
 from pathlib import Path
 from subprocess import PIPE, STDOUT
 from sqlalchemy.orm import Session
@@ -183,6 +184,11 @@ def start_terminal_process(instance: models.Instance):
 
     command = ['/bin/bash']
     env = os.environ.copy()
+    
+    # --- Apply GPU settings to terminal as well ---
+    env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    if instance.gpu_ids and instance.gpu_ids.strip():
+        env["CUDA_VISIBLE_DEVICES"] = instance.gpu_ids.strip()
 
     if venv_type and venv_path:
         full_venv_path = os.path.join(effective_conf_dir, venv_path)
@@ -315,6 +321,13 @@ def start_instance_process(db: Session, instance: models.Instance):
     if instance.id in running_instances:
         raise Exception(f"Instance {instance.id} is already running.")
 
+    # --- SAFETY CHECK: Ensure ports are defined ---
+    if instance.persistent_mode and (instance.persistent_port is None or instance.persistent_display is None):
+        raise ValueError(f"Cannot start persistent instance '{instance.name}': persistent_port or persistent_display is missing. Please update configuration.")
+    if not instance.persistent_mode and instance.port is None:
+        raise ValueError(f"Cannot start instance '{instance.name}': port is missing. Please update configuration.")
+
+
     # --- NEW: Logic to handle satellite vs. normal instances ---
     is_satellite = instance.parent_instance_id is not None
     
@@ -377,8 +390,18 @@ def start_instance_process(db: Session, instance: models.Instance):
     # --- Environment Setup ---
     env = os.environ.copy()
     env["TMPDIR"] = global_tmp_dir
-    if instance.gpu_ids:
-        env["CUDA_VISIBLE_DEVICES"] = instance.gpu_ids
+    
+    # --- GPU Configuration ---
+    # Ensure PCI_BUS_ID ordering to prevent mismatches between expected and actual GPU indices
+    env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    
+    if instance.gpu_ids and instance.gpu_ids.strip():
+        env["CUDA_VISIBLE_DEVICES"] = instance.gpu_ids.strip()
+        print(f"[Manager] Instance '{instance.name}': GPU assignment set to '{env['CUDA_VISIBLE_DEVICES']}'")
+    else:
+        # If no GPUs are selected, we assume the user wants standard behavior (usually All GPUs or CPU only depending on app)
+        # Explicitly logging this condition for debugging.
+        print(f"[Manager] Instance '{instance.name}': No specific GPUs selected (gpu_ids is empty). Inheriting default visibility (usually ALL).")
     
     env["WEBUI_PORT"] = str(instance.port)
     # CRITICAL: These env vars must point to the correct context.

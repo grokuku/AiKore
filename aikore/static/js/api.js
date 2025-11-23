@@ -2,17 +2,25 @@ import { state, DOM } from './state.js';
 
 // Helper to handle API responses
 async function handleResponse(response) {
+    const text = await response.text();
     if (response.ok) {
         try {
             // Try to parse JSON, but return success if body is empty
-            const data = await response.text();
-            return data ? JSON.parse(data) : { success: true };
+            return text ? JSON.parse(text) : { success: true };
         } catch (e) {
             return { success: true }; // Empty response is also a success
         }
     } else {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+        let errorDetail;
+        try {
+            // Try to parse as JSON error (FastAPI standard format)
+            const json = JSON.parse(text);
+            errorDetail = json.detail;
+        } catch (e) {
+            // If parsing fails, use the raw text (e.g. NGINX HTML error or Python traceback)
+            errorDetail = text;
+        }
+        throw new Error(errorDetail || `HTTP error! status: ${response.status}`);
     }
 }
 

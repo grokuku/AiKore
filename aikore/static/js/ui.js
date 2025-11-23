@@ -89,6 +89,10 @@ export function checkRowForChanges(row) {
     const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
     if (useHostnameField && useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) changed = true;
 
+    const portField = row.querySelector('select[data-field="port"]');
+    // Check if port changed. originalPort can be empty string, convert to string for comparison
+    if (portField && portField.value !== (row.dataset.originalPort || '')) changed = true;
+
     updateButton.disabled = !changed;
 }
 
@@ -100,9 +104,14 @@ export function buildInstanceUrl(row, forView = false) {
     const customHostname = row.dataset.hostname;
     const isPersistent = row.dataset.persistentMode === 'true';
 
+    // Get the Public Port from the dataset (which should be populated correctly by updateInstanceRow)
+    // However, dataset values are strings.
+    const persistentPort = row.dataset.persistentPort;
+    const normalPort = row.dataset.port;
+
     if (isPersistent) {
-        const port = row.dataset.persistentPort;
-        const baseUrl = `${window.location.protocol}//${window.location.hostname}:${port}`;
+        // In persistent mode, the public port is the VNC port (persistentPort)
+        const baseUrl = `${window.location.protocol}//${window.location.hostname}:${persistentPort}`;
         return forView ? `${baseUrl}/vnc.html?resize=remote` : baseUrl;
     }
 
@@ -110,15 +119,15 @@ export function buildInstanceUrl(row, forView = false) {
         return customHostname.startsWith('http') ? customHostname : `http://${customHostname}`;
     }
 
-    // If the user wants to "Open" (not "View") a normal instance, give them the direct port link.
+    // Normal mode logic
     if (!forView) {
-        const port = row.dataset.port;
-        if (port) {
-            return `${window.location.protocol}//${window.location.hostname}:${port}/`;
+        // "Open" -> Direct access to the Public Port
+        if (normalPort) {
+            return `${window.location.protocol}//${window.location.hostname}:${normalPort}/`;
         }
     }
 
-    // Otherwise (for "View" or if no port), use the reverse-proxied slug.
+    // "View" (or fallback) -> Reverse Proxy
     const instanceSlug = row.dataset.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
     return `/instance/${instanceSlug}/`;
 }
@@ -135,14 +144,46 @@ export function updateInstanceRow(row, instance) {
     row.dataset.hostname = instance.hostname || '';
     row.dataset.useCustomHostname = String(instance.use_custom_hostname);
 
+    // Determine current effective PUBLIC port for display/selection
+    // If Persistent: Public = persistent_port
+    // If Normal: Public = port
+    const currentPublicPort = instance.persistent_mode ? instance.persistent_port : instance.port;
+    
+    // Update original port to current state to avoid phantom changes
+    row.dataset.originalPort = currentPublicPort || ''; 
+
     const statusSpan = row.querySelector('.status');
     if (statusSpan) {
         statusSpan.textContent = instance.status;
         statusSpan.className = `status status-${instance.status.toLowerCase()}`;
     }
 
-    const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
-    if (row.cells[8]) row.cells[8].textContent = displayPort || 'N/A';
+    // Update Port Select
+    const portSelect = row.querySelector('select[data-field="port"]');
+    if (portSelect && currentPublicPort) {
+         let optionFound = false;
+         // Ensure "Auto" is removed if it exists (for existing instances)
+         const autoOption = portSelect.querySelector('option[value=""]');
+         if (autoOption) autoOption.remove();
+
+         for (let i = 0; i < portSelect.options.length; i++) {
+             if (portSelect.options[i].value == currentPublicPort) {
+                 portSelect.options[i].selected = true;
+                 optionFound = true;
+                 break;
+             }
+         }
+         // If not found (e.g. it's the assigned port but not in the "available" list because it's taken by us), add it
+         if (!optionFound) {
+             const option = document.createElement('option');
+             option.value = currentPublicPort;
+             option.textContent = currentPublicPort;
+             option.selected = true;
+             // Add it at the top (after auto if it existed, but we removed it)
+             portSelect.insertBefore(option, portSelect.firstChild);
+         }
+    }
+
 
     // UPDATE BUTTON STATE LOGIC
     const allButtons = row.querySelectorAll('button.action-btn, a.action-btn');
@@ -194,6 +235,9 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         row.classList.add('satellite-instance');
     }
 
+    // Determine current effective PUBLIC port
+    const currentPublicPort = instance.persistent_mode ? instance.persistent_port : instance.port;
+
     row.dataset.originalName = instance.name || '';
     row.dataset.originalBlueprint = instance.base_blueprint || '';
     row.dataset.originalGpuIds = instance.gpu_ids || '';
@@ -202,6 +246,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     row.dataset.originalHostname = instance.hostname || '';
     row.dataset.originalUseCustomHostname = String(instance.use_custom_hostname);
     row.dataset.originalOutputPath = instance.output_path || '';
+    row.dataset.originalPort = currentPublicPort || '';
 
     row.dataset.status = instance.status;
     row.dataset.name = instance.name || '';
@@ -302,25 +347,48 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     hostnameContainer.appendChild(hostnameInput);
     hostnameCell.appendChild(hostnameContainer);
 
+    // --- PORT LOGIC ---
     const portCell = row.insertCell();
+    const portSelect = document.createElement('select');
+    portSelect.dataset.field = 'port';
+    
+    // "Auto" option - Only for NEW instances
     if (isNew) {
-        const portSelect = document.createElement('select');
-        portSelect.dataset.field = 'port';
         const autoOption = document.createElement('option');
         autoOption.value = '';
         autoOption.textContent = 'Auto';
+        autoOption.selected = true;
         portSelect.appendChild(autoOption);
-        state.availablePorts.forEach(port => {
-            const option = document.createElement('option');
-            option.value = port;
-            option.textContent = port;
-            portSelect.appendChild(option);
-        });
-        portCell.appendChild(portSelect);
-    } else {
-        const displayPort = instance.persistent_mode ? instance.persistent_port : instance.port;
-        portCell.textContent = displayPort || 'N/A';
     }
+    
+    // Add available ports
+    state.availablePorts.forEach(port => {
+        const option = document.createElement('option');
+        option.value = port;
+        option.textContent = port;
+        portSelect.appendChild(option);
+    });
+
+    // Ensure current port is present and selected (for Existing instances)
+    if (!isNew && currentPublicPort) {
+        let optionFound = false;
+        for (let i = 0; i < portSelect.options.length; i++) {
+            if (portSelect.options[i].value == currentPublicPort) {
+                portSelect.options[i].selected = true;
+                optionFound = true;
+                break;
+            }
+        }
+        if (!optionFound) {
+            const option = document.createElement('option');
+            option.value = currentPublicPort;
+            option.textContent = currentPublicPort;
+            option.selected = true;
+            portSelect.insertBefore(option, portSelect.firstChild);
+        }
+    }
+    portCell.appendChild(portSelect);
+    // -----------------------
 
     const actionsCell = row.insertCell();
     actionsCell.classList.add('actions-column');

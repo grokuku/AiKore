@@ -84,7 +84,7 @@ export function setupMainEventListeners() {
                     break;
 
                 case 'save':
-                    const portValue = row.querySelector('[data-field="port"]').value;
+                    const portValue = row.querySelector('select[data-field="port"]').value;
                     const data = {
                         name: row.querySelector('input[data-field="name"]').value,
                         base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
@@ -98,6 +98,7 @@ export function setupMainEventListeners() {
                     };
                     await api.createInstance(data);
                     showToast(`Instance '${data.name}' created successfully.`);
+                    row.remove(); // Remove the temporary creation row
                     await fetchAndRenderInstances();
                     break;
 
@@ -111,7 +112,8 @@ export function setupMainEventListeners() {
                         gpu_ids: 'GPU IDs',
                         persistent_mode: 'Persistent UI',
                         use_custom_hostname: 'Use Custom Address',
-                        hostname: 'Custom Address'
+                        hostname: 'Custom Address',
+                        port: 'Port'
                     };
     
                     const nameField = row.querySelector('input[data-field="name"]');
@@ -141,6 +143,16 @@ export function setupMainEventListeners() {
                     const hostnameField = row.querySelector('input[data-field="hostname"]');
                     if ((hostnameField.value || '') !== (row.dataset.originalHostname || '')) {
                         changes.hostname = { old: row.dataset.originalHostname || '', new: hostnameField.value, label: fieldMap.hostname };
+                    }
+                    
+                    // Port Change Detection
+                    const portField = row.querySelector('select[data-field="port"]');
+                    if (portField && portField.value !== (row.dataset.originalPort || '')) {
+                        changes.port = { 
+                            old: row.dataset.originalPort || 'Auto', 
+                            new: portField.value || 'Auto', 
+                            label: fieldMap.port 
+                        };
                     }
     
                     const changesContainer = document.getElementById('update-confirm-changes');
@@ -263,8 +275,6 @@ export function setupMainEventListeners() {
             document.getElementById('restart-modal-instance-name').textContent = instanceName;
             DOM.restartConfirmModal.classList.remove('hidden');
         } else {
-            // The actual update is handled in the modal's event handler,
-            // but we can trigger it directly if the instance is stopped.
             const { fileType } = state.editorState;
             const content = state.codeEditor.getValue();
             
