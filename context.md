@@ -1,149 +1,144 @@
-### 1. Vision et Objectifs du Projet
-    
-    **Mission :** Transformer un ensemble de scripts de gestion d'outils d'IA en **AiKore**, une plateforme de gestion unifiée, accessible via une interface web, pour lancer, administrer et superviser des applications (WebUIs) d'intelligence artificielle.
-    
-    L'objectif principal est de fournir un panneau de contrôle unique, simple et puissant, qui abstrait la complexité de la configuration manuelle. AiKore vise à offrir une expérience robuste et conviviale, particulièrement pour la gestion de tâches de longue durée (entraînement, génération) ou de configurations multi-GPU.
-    
-    ---
-    
-    ## 2. Principes d'Architecture Fondamentaux
-    
-    1.  **Conteneur Docker Unique :** L'intégralité du système (backend, frontend, reverse proxy) et tous les processus des applications d'IA tournent au sein d'un unique conteneur Docker pour une simplicité d'installation maximale.
-    2.  **Gestion Dynamique par Instances :** Le système est passé d'une configuration statique (un dossier par application) à un modèle dynamique où les utilisateurs peuvent créer, configurer et gérer de multiples "instances" indépendantes de n'importe quelle application via des "blueprints".
-    3.  **Interface Web Centralisée :** Toutes les opérations de gestion courantes sont effectuées via l'interface web. Aucune modification manuelle de fichiers de configuration n'est requise pour l'utilisation standard.
-    4.  **Base de Données pour la Persistance :** Les configurations des instances sont stockées dans une base de données SQLite, garantissant leur persistance entre les redémarrages du conteneur.
-    5.  **Accès aux Instances :** L'accès utilisateur final se fait selon trois modes distincts :
-        *   **Mode Proxy NGINX :** Pour les instances standards sans nom d'hôte personnalisé. L'accès se fait via une URL relative (`/instance/<nom_instance>/`), et NGINX route les requêtes vers le port interne de l'application.
-        *   **Mode Hostname Personnalisé :** Si `use_custom_hostname` est activé, l'accès se fait via l'URL absolue définie dans le champ `hostname` (ex: `http://mon-app.local`).
-        *   **Mode Persistant (KasmVNC) :** L'instance est directement exposée sur un port dédié du conteneur (ex: 19001), et l'accès se fait via `http://<hôte_aikore>:<port_persistant>`. NGINX n'est pas utilisé pour ce mode.
-    6.  **Mode d'Interface Persistante (KasmVNC) :** Pour les applications nécessitant une session de bureau graphique persistante, AiKore utilise **KasmVNC**.
-    
-    ---
-    
-    ## 3. Architecture et Technologies
-    
-    *   **Orchestration :** Docker, s6-overlay
-    *   **Backend API :** FastAPI (Python)
-    *   **Serveur Applicatif :** Uvicorn (pour FastAPI), NGINX (comme reverse proxy)
-    *   **Frontend :** SPA (Single Page Application) en HTML, CSS, JavaScript (vanilla)
-    *   **Base de Données :** SQLite (via SQLAlchemy)
-    *   **Migration de Schéma :** Un script de migration automatisé est intégré au démarrage de l'application.
-    *   **Gestion des Processus :** Le module `subprocess` de Python, géré par `process_manager.py`.
-    *   **Terminal Interactif :** `xterm.js` côté frontend, `pty` côté backend.
-    *   **Éditeur de Code :** CodeMirror
-    *   **Interface Persistante :** KasmVNC (Xvnc, Openbox)
-    
-    ---
-    
-    ## 4. Modèle de Données (Table `instances`, Schéma v4)
-    
-    | Nom de la Colonne     | Type de Données | Description                                                                 |
-    |----------------------|-----------------|-----------------------------------------------------------------------------|
-    | `id`                 | INTEGER         | Clé primaire.                                                               |
-    | `name`               | STRING          | Nom unique défini par l'utilisateur pour l'instance.                         |
-    | `base_blueprint`     | STRING          | Nom du fichier script de base (ex: "ComfyUI.sh").                           |
-    | `gpu_ids`            | STRING          | Chaîne de caractères des ID de GPU (ex: "0,1"), passée à `CUDA_VISIBLE_DEVICES`. |
-    | `autostart`          | BOOLEAN         | Si `true`, l'instance est lancée au démarrage d'AiKore.                     |
-    | `persistent_mode`    | BOOLEAN         | Si `true`, l'instance est lancée dans une session de bureau KasmVNC.        |
-    | `hostname`           | STRING          | **(V2)** Hostname/URL personnalisé pour l'accès direct à l'instance.      |
-    | `use_custom_hostname`| BOOLEAN         | **(V3)** Si `true`, le `hostname` est utilisé pour construire l'URL d'accès. |
-    | `output_path`        | STRING          | **(V4)** Nom du dossier de sortie sous `/config/outputs/`.                  |
-    | `status`             | STRING          | État actuel : 'stopped', 'starting', 'stalled', 'started', 'error', 'installing'. |
-    | `pid`                | INTEGER         | Process ID du processus principal de l'instance.                            |
-    | `port`               | INTEGER         | Port interne de l'application (toujours utilisé, souvent éphémère).         |
-    | `persistent_port`    | INTEGER         | Port exposé à l'utilisateur pour l'interface KasmVNC. Utilisé si `persistent_mode` est vrai. |
-    | `persistent_display` | INTEGER         | Numéro de l'affichage X11 virtuel utilisé par la session KasmVNC.           |
-    | `parent_instance_id` | INTEGER         | **(V5)** ID de l'instance parente (pour les instances satellites).          |
-    
-    ---
-    
-    ## 5. Arborescence Détaillée du Projet
-    
-    ```
-    .
-    ├── 📁 aikore/                     # Racine du code source de l'application Python AiKore.
-    │   ├── 📁 api/                   # Contient les modules définissant les endpoints de l'API FastAPI.
-    │   │   ├── - __init__.py         # Marqueur de package Python.
-    │   │   ├── - instances.py        # Gère toutes les routes API liées aux instances (CRUD, start/stop, logs, terminal...).
-    │   │   └── - system.py           # Gère les routes API liées au système (infos GPU, stats, liste des blueprints...).
-    │   ├── 📁 core/                  # Cœur de la logique métier de l'application.
-    │   │   ├── - __init__.py         # Marqueur de package Python.
-    │   │   └── - process_manager.py  # Le "cerveau" : gère le cycle de vie des processus (démarrage, arrêt, monitoring), la création des PTY pour le terminal, et la gestion des fichiers de configuration NGINX.
-    │   ├── 📁 database/              # Module pour l'interaction avec la base de données.
-    │   │   ├── - __init__.py         # Marqueur de package Python.
-    │   │   ├── - crud.py             # Fonctions "Create, Read, Update, Delete" pour manipuler les objets de la base de données.
-    │   │   ├── - migration.py        # Script crucial qui gère la migration du schéma de la base de données entre les versions.
-    │   │   ├── - models.py           # Définition des modèles de tables SQLAlchemy (ex: la table "Instance").
-    │   │   └── - session.py          # Configuration et initialisation de la connexion à la base de données SQLite.
-    │   ├── 📁 schemas/               # Modèles de données Pydantic pour la validation des requêtes et réponses de l'API.
-    │   │   ├── - __init__.py         # Marqueur de package Python.
-    │   │   └── - instance.py         # Définit les schémas pour la création, la mise à jour et la lecture des données d'instance.
-    │   ├── 📁 static/                # Fichiers statiques du frontend (servis directement au navigateur).
-    │   │   ├── 📁 js/                # Scripts JavaScript modulaires (ESM).
-    │   │   │   ├── - api.js          # Communication avec le backend.
-    │   │   │   ├── - ui.js           # Rendu de l'interface (tableaux, stats).
-    │   │   │   ├── - eventHandlers.js# Gestion des clics et interactions.
-    │   │   │   ├── - tools.js        # Gestion des outils (terminal, éditeur).
-    │   │   │   ├── - modals.js       # Gestion des fenêtres modales.
-    │   │   │   └── - main.js         # Point d'entrée.
-    │   │   └── - index.html          # La structure HTML unique de la page principale.
-    │   ├── - main.py                 # Point d'entrée de l'application FastAPI. Initialise l'app, les routes, et lance la migration de la DB au démarrage.
-    │   └── - requirements.txt        # Liste des dépendances Python pour le backend AiKore.
-    ├── 📁 blueprints/                # Collection de scripts "modèles" définissant comment installer et lancer chaque application d'IA.
-    │   ├── 📁 legacy/               # Anciens scripts qui ne suivent pas la nouvelle convention des blueprints. Conservés pour référence.
-    │   └── - *.sh                    # Chaque script est un "blueprint" autonome pour une application (ex: ComfyUI.sh).
-    ├── 📁 docker/                    # Fichiers de configuration spécifiques à l'environnement Docker.
-    │   └── 📁 root/                  # Contenu copié à la racine `/` du conteneur.
-    ├── 📁 scripts/                   # Scripts utilitaires appelés par l'application ou les blueprints.
-    │   └── - kasm_launcher.sh        # Script crucial qui orchestre le lancement d'une session KasmVNC (Xvnc, Openbox) pour les instances en mode persistant.
-    ├── - context.md                  # Ce fichier. Documentation de haut niveau et mémoire de session.
-    ├── - docker-compose.yml          # Fichier Docker Compose simplifié pour le déploiement.
-    ├── - Dockerfile                  # Script de build principal pour l'image Docker finale d'AiKore.
-    └── - features.md                 # Suivi de l'implémentation des fonctionnalités du projet.
-    ```
-    
-    ---
-    
-    ## 6. État Actuel et Plan d'Action
-    
-    ### 6.1. Fonctionnalités Implémentées (Snapshot)
-    
-    *   **Gestion CRUD+U d'Instances :** Création, lecture, **mise à jour** et suppression d'instances.
-    *   **Architecture Parent/Satellite :** Instanciation d'environnements liés.
-    *   **Mode Persistant (KasmVNC) :** Bascule dynamique entre mode API (headless) et mode Bureau (VNC).
-    *   **Système de Migration de Base de Données :** Mise à jour automatique du schéma.
-    *   **Interface Web Réactive :** Tableau de bord modulaire et temps réel.
-    *   **Outils Avancés :** Visionneuse de Logs, Éditeur de Script, Terminal Intégré.
-    *   **Auto-Réparation :** Le système détecte et répare les configurations de ports invalides au démarrage d'une instance.
-    
-    ### 6.2. Problèmes Connus et Points en Attente
-    
-    *   *(Aucun problème critique bloquant identifié à la fin de la dernière session)*
-    
-    ### 6.3. Journal d'Investigation
-    
-    *   **Session du 2025-11-23 : Stabilisation UI & Logique de Ports**
-        *   **Objectifs :** Corriger les bugs d'affichage suite au refactoring, réparer l'assignation des GPU, et fiabiliser la bascule entre mode Normal et Persistant.
-        *   **Corrections UI (Frontend) :**
-            1.  **Bug Colonnes :** Correction de l'index de colonne dans `ui.js` qui écrasait "Custom Address" avec le port.
-            2.  **Bug Duplication :** Correction dans `eventHandlers.js` pour supprimer la ligne temporaire de création après une sauvegarde réussie.
-            3.  **Gestion des Erreurs API :** Mise à jour de `api.js` pour gérer les réponses d'erreur non-JSON (ex: 500 Internal Server Error) et afficher le vrai message d'erreur.
-            4.  **Affichage du Port :** Refonte de la colonne Port pour afficher un menu déroulant intelligent, sélectionnant automatiquement le "Port Public" actif et supprimant l'option "Auto" pour les instances existantes.
-        *   **Corrections Backend (API & Core) :**
-            1.  **Assignation GPU :** Ajout de `CUDA_DEVICE_ORDER="PCI_BUS_ID"` dans `process_manager.py` pour garantir que l'ordre des cartes correspond à la sélection de l'interface.
-            2.  **Crash API (TypeError) :** Correction d'un bug critique dans `update_instance_details` où la vérification de plage de ports plantait si le port était `None`.
-            3.  **Logique de Bascule (Switch Mode) :** Réécriture complète de la logique de mise à jour pour gérer correctement le transfert du "Port Public" entre `port` (Mode Normal) et `persistent_port` (Mode Persistant), en évitant la perte de configuration.
-            4.  **Auto-Réparation (Self-Healing) :** Implémentation d'une sécurité dans `start_instance` (`api/instances.py`) qui détecte les instances avec des ports manquants (ex: suite à un échec précédent) et les répare automatiquement avant le démarrage.
-            5.  **Sécurité Processus :** Ajout de gardes-fous dans `process_manager.py` pour empêcher le lancement de processus avec des ports `None`.
-    
-    *   **Session du 2025-11-19 :**
-        *   **Optimisations :** Accélération du démarrage du conteneur (permissions chown) et refonte du clonage en tâche de fond asynchrone.
-        *   **Sécurité :** Protection contre la suppression d'instances Mères ayant des Satellites.
-    
-    ### 6.4. Plan d'Action pour la Prochaine Session
-    
-    *   **Validation Utilisateur :** Confirmer que la bascule de mode et l'auto-réparation fonctionnent comme attendu sur l'instance "Comfytest".
-    *   **Documentation :** Mettre à jour le `features.md` si de nouvelles capacités ont été ajoutées (ex: Self-Healing).
-    *   **UX Satellites :** Améliorer la visualisation du lien parent-enfant (arborescence visuelle plus claire).
-    
+# AiKore: Technical Project Context & Manifest
+
+## 0. META: File Purpose & Update Protocols
+
+### Purpose
+This file serves as the **primary source of truth** and **cognitive map** for the Large Language Model (LLM) working on AiKore. Its goal is to provide a complete architectural understanding without requiring the LLM to read the source code of every file in every session. It bridges the gap between the raw file tree and the high-level business logic.
+
+### Protocol for Updates
+When the user requests a "context update" or when a major feature is implemented, the following information MUST be integrated/updated in this file:
+1.  **Structural Changes**: If files are created, renamed, moved, or deleted, update **Section 2 (File Structure)** to reflect the new tree and the responsibility of the new files.
+2.  **Schema Evolutions**: If `models.py` or `migration.py` changes, update **Section 4 (Database Schema)** to reflect the current V-version and columns.
+3.  **Logic Shifts**: If the core way the backend handles processes, ports, saving, or networking changes, update **Section 3 (Key Concepts)**.
+4.  **New Dependencies**: If `Dockerfile` or `requirements.txt` changes significantly (new tools like KasmVNC, new libs), update **Section 1 (Stack)**.
+
+**Golden Rule**: Never paste raw code blocks in this file. Use concise, high-level functional descriptions to minimize token usage while maximizing understanding.
+
 ---
+
+## 1. System Overview
+
+AiKore is a monolithic orchestration platform designed to manage AI WebUIs inside a **single Docker container**. It acts as a process supervisor, a reverse proxy manager, and a persistent configuration layer.
+
+### Core Stack
+*   **Orchestration**: `s6-overlay` (manages backend services and NGINX).
+*   **Backend**: Python 3.12 + **FastAPI** + **SQLAlchemy** (SQLite).
+*   **Frontend**: Vanilla JavaScript (ES Modules). No framework. Uses `Split.js` for layout, `xterm.js` for terminal, `CodeMirror` for editing.
+*   **Networking**: **NGINX** (Dynamic Reverse Proxy) + **KasmVNC** (Persistent Desktop Sessions).
+
+---
+
+## 2. File Structure & Responsibilities
+
+This section details every file in the project to provide a complete understanding of the architecture without needing to read the content of every file.
+
+### Root Directory
+*   `Dockerfile` : The main build script. Sets up system deps (CUDA, tools), installs KasmVNC/Firefox, copies the app, and configures permissions (s6-overlay).
+*   `Dockerfile.buildbase` : Specialized builder image that compiles heavy Python wheels (Flash Attention, Torch, etc.) to speed up the main build.
+*   `docker-compose.yml` : Production deployment config. Defines ports, volumes, and GPU access.
+*   `docker-compose.dev.yml` : Development config (maps local source to container).
+*   `entry.sh` : The container's payload script. Activates Conda environment and launches the Uvicorn (FastAPI) server.
+*   `functions.sh` : Library of bash functions used by Blueprints. Handles `sl_folder` (symlinking models/outputs), `sync_repo` (git management), and `clean_env`.
+*   `main.py` : FastAPI entry point. Initializes the DB, runs migrations, clears old logs, handles autostart instances, and mounts static files/routers.
+*   `Makefile` : Shortcuts for docker-compose commands (up, down, logs).
+*   `requirements.txt` : Python dependencies for the **AiKore Backend** (FastAPI, SQLAlchemy, psutil, etc.), not the AI apps.
+
+### 📁 aikore/ (The Application)
+#### `api/` (API Endpoints)
+*   `__init__.py` : Package marker.
+*   `instances.py` : **Core Logic**. Handles CRUD for instances, start/stop/restart/copy actions, websocket terminal connection, and file editing. Contains the "Self-Healing" logic for ports.
+*   `system.py` : Read-only endpoints. System stats (GPU/CPU/RAM), listing blueprints, debug NGINX.
+
+#### `core/` (Business Logic)
+*   `__init__.py` : Package marker.
+*   `blueprint_parser.py` : Reads metadata headers (e.g., `# aikore.venv_type`) from `.sh` blueprint files.
+*   `process_manager.py` : **The Brain**.
+    *   Manages `subprocess.Popen` for instances.
+    *   Handles PTY (Pseudo-terminal) generation for xterm.js.
+    *   Generates dynamic NGINX configs in `/etc/nginx/locations.d/`.
+    *   Monitors instance health via background threads.
+
+#### `database/` (Persistence)
+*   `__init__.py` : Package marker.
+*   `crud.py` : Database abstraction layer. Functions to Create, Read, Update, Delete instances in SQLite. Handles Satellite creation logic.
+*   `migration.py` : **Critical**. automatically migrates DB schema on startup (e.g., V4 -> V5). Checks schema version in `aikore_meta` table.
+*   `models.py` : SQLAlchemy definitions for the `instances` and `aikore_meta` tables.
+*   `session.py` : Database connection setup (`sqlite:////config/aikore.db`).
+
+#### `schemas/` (Pydantic Models)
+*   `__init__.py` : Package marker.
+*   `instance.py` : Data validation models for API requests/responses (Create, Update, Read schemas).
+
+#### `static/` (Frontend Assets)
+*   `index.html` : The single HTML entry point. Contains the layout skeleton and modal templates.
+*   **`css/`** :
+    *   `base.css` : Global layout, split-pane logic.
+    *   `components.css` : Context menus, monitoring bars, toasts.
+    *   `instances.css` : Styling for the Instance Table and Status badges.
+    *   `modals.css` : Styling for popups.
+    *   `tools.css` : Styling for Terminal, Editor, Log viewer.
+*   **`js/`** :
+    *   `api.js` : Wrapper functions for all `fetch` calls to the backend.
+    *   `eventHandlers.js` : Connects DOM events (clicks) to logic. Handles the "Tools Menu" and "Global Save".
+    *   `main.js` : Entry point. Initializes state, sets up Split.js, runs the **Polling Loop** for instance updates.
+    *   `modals.js` : Logic for showing/hiding modals and executing their confirmed actions.
+    *   `state.js` : Centralized state management (DOM references, active instance IDs, config).
+    *   `tools.js` : Logic for initializing/destroying xterm.js, CodeMirror, and Log Viewers.
+    *   `ui.js` : Rendering logic. Builds the Instance Table rows, updates Progress Bars, handles "Dirty Row" detection.
+
+### 📁 blueprints/ (The Scripts)
+*   `*.sh` (e.g., `ComfyUI.sh`, `FluxGym.sh`) : Installation and Launch scripts for specific AI tools. They define how to clone, install deps, and run the app.
+*   `legacy/` : Old scripts kept for reference.
+
+### 📁 docker/ (Container Overlay)
+*   `root/` : Files copied to the container root `/`.
+    *   `etc/nginx/conf.d/aikore.conf` : Main NGINX config. Sets up the Reverse Proxy and WebSocket handling.
+    *   `etc/s6-overlay/...` : Service definitions.
+        *   `99-base-perms.sh` : Fixes permissions on `/config` at startup.
+        *   `svc-app` : The service that runs `entry.sh` (AiKore Backend).
+        *   `svc-nginx` : The service that runs NGINX.
+        *   `svc-nginx-reloader` : A loop that watches for a flag file to reload NGINX config dynamically.
+
+### 📁 scripts/ (Helpers)
+*   `kasm_launcher.sh` : Orchestrates **Persistent Mode**. Starts Xvnc (virtual screen), Openbox (Window Manager), and the target Application script together.
+*   `version_check.sh` : Script run by the "Version Check" tool to gather env info (Python libs, CUDA version).
+
+---
+
+## 3. Key Concepts & Logic
+
+### Instance Types
+1.  **Standard**: Headless. Accessed via NGINX proxy (`/instance/name/`).
+2.  **Persistent**: GUI (X11). Accessed via KasmVNC on a dedicated public port.
+3.  **Satellite**: Links to a Parent Instance. Shares files/env but has unique runtime config (port, logs).
+
+### Port Management Logic
+*   **Public Pool**: Defined in Docker Compose (default `19001-19020`).
+*   **Normal Mode**: `port` (internal) = Public Pool Port. `persistent_port` = None.
+*   **Persistent Mode**: `persistent_port` = Public Pool Port. `port` (internal) = Random Ephemeral Port (for VNC to connect to).
+*   **Self-Healing**: On start, if an instance has no ports, `api/instances.py` automatically allocates them.
+
+### Frontend Update Logic (Global Save)
+*   Changing an input (Name, GPU, etc.) does **not** trigger an API call.
+*   It marks the row as `row-dirty` (yellow highlight).
+*   The "Save Changes" button collects all dirty rows and sends batch updates.
+*   Logic handles "Hot Swap" (metadata changes) vs "Cold Swap" (restart required).
+
+---
+
+## 4. Database Schema (V5)
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `id` | Int | PK |
+| `name` | String | Instance name (folder name). |
+| `base_blueprint` | String | Script filename. |
+| `parent_instance_id` | Int | **(V5)** ID of parent if Satellite. |
+| `status` | String | `stopped`, `starting`, `stalled`, `started`, `installing`, `error`. |
+| `gpu_ids` | String | `CUDA_VISIBLE_DEVICES` value. |
+| `port` | Int | Internal HTTP port. |
+| `persistent_mode` | Bool | True = KasmVNC. |
+| `persistent_port` | Int | Public VNC port. |
+| `persistent_display`| Int | X11 Display ID (:10). |
+| `output_path` | String | Override output folder. |
+| `hostname` | String | Custom URL override. |
