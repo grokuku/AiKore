@@ -77,37 +77,56 @@ function createBlueprintSelect(selectedValue = '') {
     return select;
 }
 
+// --- HELPER: Normalize Data for Comparison ---
+function normalizeGpuIds(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .split(',')
+        .map(s => s.trim()) // Remove spaces "0, 1" -> "0,1"
+        .filter(s => s !== '')
+        .sort() // Ensure order doesn't matter
+        .join(',');
+}
+
+function normalizeStr(str) {
+    return (str === null || str === undefined) ? '' : String(str);
+}
+
 export function checkRowForChanges(row) {
-    // Instead of toggling a local button, we mark the row as dirty
     let changed = false;
 
-    // Defensive checks
+    // Defensive checks with Strict Normalization
     const nameField = row.querySelector('input[data-field="name"]');
     if (nameField && nameField.value !== row.dataset.originalName) changed = true;
 
     const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
-    if (blueprintField && blueprintField.value !== row.dataset.originalBlueprint) changed = true;
+    // Only check if NOT disabled (Satellites are disabled)
+    if (blueprintField && !blueprintField.disabled && blueprintField.value !== row.dataset.originalBlueprint) changed = true;
 
     const outputPathField = row.querySelector('input[data-field="output_path"]');
-    if (outputPathField && (outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) changed = true;
+    if (outputPathField && !outputPathField.disabled && normalizeStr(outputPathField.value) !== row.dataset.originalOutputPath) changed = true;
 
-    const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
-    if (selectedGpuIds !== row.dataset.originalGpuIds) changed = true;
+    // GPU Logic: Get checked boxes, normalize them, compare with normalized original
+    const currentGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked'))
+        .map(cb => cb.value)
+        .join(','); // Already sorted by DOM order (0, 1, 2)
+    
+    if (normalizeGpuIds(currentGpuIds) !== row.dataset.originalGpuIds) changed = true;
 
     const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
     if (persistentModeField && persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) changed = true;
 
     const hostnameField = row.querySelector('input[data-field="hostname"]');
-    if (hostnameField && (hostnameField.value || '') !== (row.dataset.originalHostname || '')) changed = true;
+    if (hostnameField && normalizeStr(hostnameField.value) !== row.dataset.originalHostname) changed = true;
 
     const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
     if (useHostnameField && useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) changed = true;
 
     const portField = row.querySelector('select[data-field="port"]');
-    if (portField && portField.value !== (row.dataset.originalPort || '')) changed = true;
+    // Compare string values to handle "19000" (str) vs 19000 (int)
+    if (portField && normalizeStr(portField.value) !== row.dataset.originalPort) changed = true;
 
     const autostartField = row.querySelector('input[data-field="autostart"]');
-    // Note: autostart is often instant, but if we treat it as a batched change:
     if (autostartField && autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
 
     // Toggle dirty class
@@ -180,13 +199,10 @@ export function updateInstanceRow(row, instance) {
 
     const currentPublicPort = instance.persistent_mode ? instance.persistent_port : instance.port;
     
-    // We do NOT update original datasets here automatically if the row is dirty,
-    // to preserve the "unsaved changes" state until the user explicitly saves.
-    // However, if the row is NOT dirty, we sync original to current to avoid phantom diffs.
+    // Sync originals ONLY if row is NOT dirty (prevents overwriting user typing)
     if (!row.classList.contains('row-dirty')) {
-         row.dataset.originalPort = currentPublicPort || '';
-         // ... (sync other originals if needed, but usually rendering handles this. 
-         // Port is special because of the select logic)
+         row.dataset.originalPort = normalizeStr(currentPublicPort);
+         // No need to sync others here, they are static or handled by render
     }
 
     const statusSpan = row.querySelector('.status');
@@ -204,7 +220,6 @@ export function updateInstanceRow(row, instance) {
 
          for (let i = 0; i < portSelect.options.length; i++) {
              if (portSelect.options[i].value == currentPublicPort) {
-                 // Only change selection if user hasn't touched it (row not dirty)
                  if (!row.classList.contains('row-dirty')) {
                     portSelect.options[i].selected = true;
                  }
@@ -235,7 +250,6 @@ export function updateInstanceRow(row, instance) {
             else if (action === 'stop') btn.disabled = !isActive;
             else if (action === 'delete') btn.disabled = isActive;
             else if (action === 'view') btn.disabled = (instance.status !== 'started');
-            // No more 'update' button specific logic
         }
     });
 
@@ -261,24 +275,27 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     row.dataset.isNew = String(isNew);
     row.dataset.parentId = instance.parent_instance_id || '';
 
-    if (level > 0) {
+    const isSatellite = level > 0;
+
+    if (isSatellite) {
         row.classList.add('satellite-instance');
     }
 
     const currentPublicPort = instance.persistent_mode ? instance.persistent_port : instance.port;
 
     // Initial datasets (source of truth for changes)
+    // USE NORMALIZATION HERE TO PREVENT IMMEDIATE DIRTY STATE
     row.dataset.originalName = instance.name || '';
     row.dataset.originalBlueprint = instance.base_blueprint || '';
-    row.dataset.originalGpuIds = instance.gpu_ids || '';
+    row.dataset.originalGpuIds = normalizeGpuIds(instance.gpu_ids);
     row.dataset.originalAutostart = String(instance.autostart);
     row.dataset.originalPersistentMode = String(instance.persistent_mode);
-    row.dataset.originalHostname = instance.hostname || '';
+    row.dataset.originalHostname = normalizeStr(instance.hostname);
     row.dataset.originalUseCustomHostname = String(instance.use_custom_hostname);
-    row.dataset.originalOutputPath = instance.output_path || '';
-    row.dataset.originalPort = currentPublicPort || '';
+    row.dataset.originalOutputPath = normalizeStr(instance.output_path);
+    row.dataset.originalPort = normalizeStr(currentPublicPort);
 
-    // Current data helpers
+    // Current data helpers for UI logic
     row.dataset.status = instance.status;
     row.dataset.name = instance.name || '';
     row.dataset.port = instance.port || '';
@@ -288,10 +305,12 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     row.dataset.useCustomHostname = String(instance.use_custom_hostname);
 
     const handleCell = row.insertCell();
-    if (!isNew) {
-        // Satellites can be dragged, but sorting logic in main.js will visually re-group them
+    if (!isNew && !isSatellite) {
         handleCell.classList.add('drag-handle');
         handleCell.innerHTML = '&#x2630;';
+    } else {
+        handleCell.style.textAlign = 'center';
+        handleCell.innerHTML = '';
     }
 
     // Name Cell with Tree Visuals
@@ -300,7 +319,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     nameWrapper.className = 'name-cell-wrapper';
     
     // Indentation + Connector
-    nameWrapper.style.paddingLeft = `${level * 20}px`;
+    nameWrapper.style.paddingLeft = `${level * 25}px`;
     if (level > 0) {
         const connector = document.createElement('span');
         connector.className = 'tree-connector';
@@ -316,7 +335,10 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     nameCell.appendChild(nameWrapper);
 
     const blueprintSelect = createBlueprintSelect(instance.base_blueprint);
-    blueprintSelect.disabled = (level > 0);
+    if (isSatellite) {
+        blueprintSelect.disabled = true;
+        blueprintSelect.title = "Inherited from Parent Instance";
+    }
     row.insertCell().appendChild(blueprintSelect);
 
     const outputPathInput = document.createElement('input');
@@ -324,13 +346,17 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     outputPathInput.value = instance.output_path || '';
     outputPathInput.dataset.field = 'output_path';
     outputPathInput.placeholder = 'Optional';
+    if (isSatellite) {
+        outputPathInput.disabled = true;
+        outputPathInput.title = "Inherited from Parent Instance";
+    }
     row.insertCell().appendChild(outputPathInput);
 
     // GPU Cell
     const gpuCell = row.insertCell();
     const gpuContainer = document.createElement('div');
     gpuContainer.className = 'gpu-checkbox-container';
-    const assignedGpus = (instance.gpu_ids || '').split(',').filter(id => id);
+    const assignedGpus = normalizeGpuIds(instance.gpu_ids).split(',').filter(id => id);
     const gpuCount = (state.systemInfo.gpus && Array.isArray(state.systemInfo.gpus)) ? state.systemInfo.gpus.length : (state.systemInfo.gpu_count || 0);
 
     for (let i = 0; i < gpuCount; i++) {
@@ -435,7 +461,6 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         const isStarted = instance.status === 'started';
         const isStopped = instance.status === 'stopped';
         
-        // REMOVED UPDATE BUTTON
         actionsCell.innerHTML = `
             <button class="action-btn" data-action="start" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>Start</button>
             <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
@@ -460,7 +485,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     } else {
         allFields.forEach(field => {
             field.addEventListener('input', () => checkRowForChanges(row));
-            field.addEventListener('change', () => checkRowForChanges(row)); // catch select changes
+            field.addEventListener('change', () => checkRowForChanges(row));
         });
         updateInstanceRow(row, instance);
     }

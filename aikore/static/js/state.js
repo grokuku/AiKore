@@ -1,5 +1,5 @@
 export const DOM = {
-    instancesTbody: document.getElementById('instances-tbody'),
+    instancesTable: document.getElementById('instances-table'), // CHANGED: Points to table, not tbody
     addInstanceBtn: document.querySelector('.add-new-btn'),
     toolsPaneTitle: document.getElementById('tools-pane-title'),
     welcomeScreenContainer: document.getElementById('welcome-screen-container'),

@@ -212,9 +212,10 @@ def instantiate_instance(db: Session, source_instance_id: int, new_name: str):
         raise ValueError("Cannot create an instance from another satellite instance. Please use the original parent.")
 
     # 2. Filesystem
-    instance_dir = os.path.join(INSTANCES_DIR, new_name)
-    os.makedirs(instance_dir, exist_ok=True)
-
+    # UPDATED: We do NOT create the directory here eagerly.
+    # The process_manager will create it on first launch to store logs/pid.
+    # This keeps the filesystem clean until the instance is actually used.
+    
     # 3. Database Entry
     # Explicitly clear ports so they get allocated on start
     db_instance = models.Instance(
