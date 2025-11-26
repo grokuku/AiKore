@@ -1,7 +1,8 @@
 import { state, DOM } from './state.js';
 import { fetchLogs, performVersionCheck, fetchFileContent } from './api.js';
 
-const ansiToHtml = new AnsiToHtml({ fg: '#e0e0e0', bg: '#111', newline: true, escapeXML: false });
+// CHANGED: Use AnsiUp instead of AnsiToHtml
+const ansi_up = new AnsiUp();
 
 function hideAllToolViews() {
     DOM.welcomeScreenContainer.classList.add('hidden');
@@ -161,7 +162,8 @@ export async function showLogViewer(instanceId, instanceName) {
                 const isScrolled = DOM.logViewerContainer.scrollHeight - DOM.logViewerContainer.scrollTop <= DOM.logViewerContainer.clientHeight + 2;
                 if (data.content) {
                     if (DOM.logContentArea.textContent === 'Loading logs...') DOM.logContentArea.innerHTML = '';
-                    const logHtml = ansiToHtml.toHtml(data.content);
+                    // CHANGED: Use ansi_up to convert
+                    const logHtml = ansi_up.ansi_to_html(data.content);
                     DOM.logContentArea.insertAdjacentHTML('beforeend', logHtml);
                     state.logSize = data.size;
                     if (isScrolled) DOM.logViewerContainer.scrollTop = DOM.logViewerContainer.scrollHeight;

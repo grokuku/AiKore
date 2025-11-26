@@ -21,21 +21,9 @@ export async function fetchAndRenderInstances() {
     try {
         // If user is typing (row is dirty), we might still want to update statuses, 
         // but we must be careful not to overwrite input values.
-        // However, renderInstanceRow logic usually recreates rows unless we diff them.
-        // Current logic clears innerHTML. This is destructive to input focus!
-        // FIX: If there are dirty rows or active focus, we should update ONLY statuses if possible,
-        // or rely on the fact that standard HTML inputs lose focus on innerHTML swap.
-        // To keep it simple and robust given the existing architecture:
-        // We check if user is interacting.
         
         const activeElement = document.activeElement;
-        const isInteracting = activeElement && activeElement.closest('#instances-tbody tr');
-        
-        // If user is typing, skip full re-render to avoid focus loss, 
-        // BUT we still want to fetch statuses if possible.
-        // For now, let's pause render if interacting, but still fetch to check for 'starting' status?
-        // No, if we don't render, we don't know if we need fast polling.
-        // Let's proceed with fetch.
+        const isInteracting = activeElement && activeElement.closest('#instances-table tr');
         
         const response = await fetch('/api/instances/');
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -53,6 +41,7 @@ export async function fetchAndRenderInstances() {
             return; 
         }
 
+        // --- NEW RENDERING LOGIC FOR GROUPING ---
         const instanceMap = new Map(instances.map(inst => [inst.id, { ...inst, children: [] }]));
         const rootInstances = [];
         
@@ -76,29 +65,18 @@ export async function fetchAndRenderInstances() {
             });
         }
 
-        // Check if we have dirty rows before wiping tbody
-        // If we wipe tbody, we lose changes!
-        // Ideally we should diff. 
-        // Since we don't have a Virtual DOM, we will use a simple heuristic:
-        // If there are ANY dirty rows, we DO NOT re-render the table structure.
-        // We only update status columns and buttons for existing rows.
         const dirtyRows = document.querySelectorAll('tr.row-dirty');
         if (dirtyRows.length > 0) {
-             // Partial Update Mode
+             // Partial Update Mode: Do not destroy structure
              instances.forEach(inst => {
-                 const row = DOM.instancesTbody.querySelector(`tr[data-id="${inst.id}"]`);
+                 const row = DOM.instancesTable.querySelector(`tr[data-id="${inst.id}"]`);
                  if (row) {
-                     // Only update status/buttons logic, do not touch inputs
-                     // We need a specialized update function or just update the status text directly
-                     // reusing renderInstanceRow is too aggressive.
-                     // Let's use a lightweight update
                      const statusSpan = row.querySelector('.status');
                      if (statusSpan && row.dataset.status !== inst.status) {
                          statusSpan.textContent = inst.status;
                          statusSpan.className = `status status-${inst.status.toLowerCase()}`;
                          row.dataset.status = inst.status;
                          
-                         // Re-evaluate buttons
                          const allButtons = row.querySelectorAll('button.action-btn');
                          const isActive = inst.status !== 'stopped';
                          allButtons.forEach(btn => {
@@ -112,35 +90,50 @@ export async function fetchAndRenderInstances() {
                  }
              });
         } else {
-            // Full Re-render Mode
-            DOM.instancesTbody.innerHTML = '';
+            // Full Re-render Mode: Destroy and Rebuild bodies
             
-            const renderNode = (node, level) => {
-                const row = renderInstanceRow(node, false, level);
-                DOM.instancesTbody.appendChild(row);
-                if (node.children.length > 0) {
-                    node.children.forEach(child => renderNode(child, level + 1));
+            // Remove existing tbodys (keep thead)
+            const oldTbodies = DOM.instancesTable.querySelectorAll('tbody');
+            oldTbodies.forEach(tb => tb.remove());
+            
+            // Helper to render a family
+            const renderFamily = (parent, children) => {
+                const tbody = document.createElement('tbody');
+                tbody.classList.add('instance-group');
+                tbody.dataset.groupId = parent.id;
+
+                // 1. Parent Row
+                const parentRow = renderInstanceRow(parent, false, 0);
+                tbody.appendChild(parentRow);
+
+                // 2. Children Rows
+                if (children && children.length > 0) {
+                    children.forEach(child => {
+                        const childRow = renderInstanceRow(child, false, 1);
+                        tbody.appendChild(childRow);
+                    });
                 }
+                
+                DOM.instancesTable.appendChild(tbody);
             };
 
-            rootInstances.forEach(node => renderNode(node, 0));
-
-            const newInstanceRow = document.querySelector('tr[data-is-new="true"]'); // It might have been wiped?
-            // Actually, if we wipe innerHTML, 'newInstanceRow' reference is lost if it was inside.
-            // But renderInstanceRow creates elements. 
-            // If user was creating a new instance, it wasn't saved, so it's not in API.
-            // We might lose the "New Instance" row on refresh if we don't preserve it.
-            // Ideally, "New Instance" row prevents re-render via the 'isInteracting' check if focused,
-            // but if not focused, it might vanish.
-            // For now, acceptable trade-off or user must type to keep focus.
+            rootInstances.forEach(node => renderFamily(node, node.children));
+            
+            // Re-append "New Instance" row if it was there (conceptual, usually handled by add button logic which appends to table)
+            // But since we wipe, we lose unsaved new rows if we are not careful.
+            // However, the check `isInteracting` above saves us if the user is typing in the new row.
+            // If they are not typing, it disappears. This is consistent with current behavior.
         }
 
-        if (DOM.instancesTbody.childElementCount === 0) {
-            DOM.instancesTbody.innerHTML = `<tr class="no-instances-row"><td colspan="11" style="text-align: center;">No instances created yet.</td></tr>`;
+        if (rootInstances.length === 0) {
+            // Create a temporary body for the empty message
+            const emptyTbody = document.createElement('tbody');
+            emptyTbody.innerHTML = `<tr class="no-instances-row"><td colspan="11" style="text-align: center;">No instances created yet.</td></tr>`;
+            DOM.instancesTable.appendChild(emptyTbody);
         }
+
     } catch (error) {
         console.error("Failed to fetch instances:", error);
-        // DOM.instancesTbody.innerHTML = `<tr><td colspan="11" style="text-align:center;">Error loading data. Check console.</td></tr>`;
     } finally {
         scheduleNextPoll(nextInterval);
     }
@@ -184,27 +177,19 @@ async function initializeApp() {
 
     DOM.toolsCloseBtn.addEventListener('click', showWelcomeScreen);
     
-    new Sortable(DOM.instancesTbody, {
+    // CHANGED: Sortable now sorts TBODY elements within the TABLE
+    new Sortable(DOM.instancesTable, {
         animation: 150, 
         handle: '.drag-handle', 
+        draggable: 'tbody.instance-group', // Sort groups, not rows
         ghostClass: 'sortable-ghost', 
         dragClass: 'sortable-drag',
         onEnd: function (evt) {
-            // Save order of ROOT instances only?
-            // Or save all?
-            // Since the renderer rebuilds the tree based on parent_id, 
-            // changing the order of satellites in the DOM is purely visual until refresh.
-            // We only care about the order of Parent rows.
-            const rows = DOM.instancesTbody.querySelectorAll('tr[data-id]');
-            // Filter only root instances for the order preference
-            const newOrder = Array.from(rows)
-                .filter(row => !row.dataset.parentId) // Only roots
-                .map(row => row.dataset.id)
+            const groups = DOM.instancesTable.querySelectorAll('tbody.instance-group');
+            const newOrder = Array.from(groups)
+                .map(group => group.dataset.groupId)
                 .filter(id => id && id !== 'new');
             localStorage.setItem(INSTANCE_ORDER_KEY, JSON.stringify(newOrder));
-            
-            // Trigger a re-render to snap children back to parents if user dragged them weirdly
-            // setTimeout(() => fetchAndRenderInstances(), 500); 
         },
     });
 

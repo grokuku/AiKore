@@ -17,7 +17,7 @@
 .instances-table {
     width: 100%;
     border-collapse: separate;
-    border-spacing: 0 var(--global-gutter-size);
+    border-spacing: 0; /* Remove default spacing */
 }
 
 /* STICKY HEADER IMPLEMENTATION */
@@ -27,8 +27,11 @@
     z-index: 10;
     background-color: #2a2a4a;
     /* Match pane background for solid effect */
+}
+
+/* Add space below header for visual separation */
+.instances-table thead tr {
     border-bottom: var(--global-gutter-size) solid #2a2a4a;
-    /* Creates space between header and first row */
 }
 
 .instances-table th {
@@ -38,6 +41,7 @@
     font-weight: 500;
     white-space: nowrap;
     background-color: #1e1e3f;
+    border-bottom: var(--global-gutter-size) solid #2a2a4a; /* Gutter effect */
 }
 
 .instances-table th.actions-column {
@@ -55,9 +59,35 @@
     border-bottom-right-radius: 6px;
 }
 
+/* --- GROUPING STYLES (NEW) --- */
+/* Each family (parent + satellites) is wrapped in a tbody.instance-group */
+
+tbody.instance-group {
+    background-color: #2e2e50; /* Slightly distinct background */
+    border-left: 4px solid #6f42c1; /* Strong visual indicator of grouping (purple) */
+}
+
+/* Add spacing between groups via a pseudo-element or border on the tbody */
+tbody.instance-group::before {
+    content: '';
+    display: block;
+    height: var(--global-gutter-size);
+    background-color: #2a2a4a; /* Pane background color to simulate gap */
+}
+
+tbody.instance-group tr:first-child td {
+    border-top: 1px solid #3b3b6b;
+}
+
+tbody.instance-group tr:last-child td {
+    border-bottom: 1px solid #3b3b6b;
+}
+
+/* Ensure cells inside the group align nicely */
 .instances-table td {
-    padding: 0 5px;
+    padding: 8px 5px; /* Increase vertical padding slightly */
     vertical-align: middle;
+    border: none; /* Remove internal borders to unify the block */
 }
 
 /* CENTER CHECKBOX COLUMNS & REDUCE WIDTH */
@@ -93,10 +123,14 @@
     /* Allow text selection inside inputs */
 }
 
+/* Visual feedback for disabled inputs (Satellite fields) */
 .instances-table input[type="text"]:disabled,
 .instances-table select:disabled {
-    background-color: rgba(30, 30, 63, 0.5);
+    background-color: rgba(0, 0, 0, 0.3);
+    color: #888;
     cursor: not-allowed;
+    border: 1px dashed #444;
+    font-style: italic;
 }
 
 .instances-table input[type="checkbox"] {
@@ -292,10 +326,7 @@ tr[data-status="installing"] {
 
 /* --- SATELLITE INSTANCE STYLES --- */
 .satellite-instance {
-    background-color: #242440;
-    /* Slightly different background */
-    border-left: 3px solid #4a4a70;
-    /* NEW: Visual connector */
+    background-color: rgba(0, 0, 0, 0.2); /* Darker internal background for satellites */
 }
 
 .satellite-instance .drag-handle {
@@ -309,16 +340,14 @@ tr[data-status="installing"] {
     position: relative;
 }
 
-.indented-cell::before {
-    content: '↳';
-    position: absolute;
-    left: var(--level-indent, 10px);
-    /* Use CSS variable for indent */
-    top: 50%;
-    transform: translateY(-50%);
-    color: #aaa;
-    /* MODIFIED: Brighter color */
-    font-weight: bold;
-    font-size: 1.4em;
-    /* NEW: Larger symbol */
+/* Le connecteur visuel */
+.tree-connector {
+    display: inline-block;
+    width: 15px;
+    height: 35px; /* Plus haut pour bien connecter visuellement */
+    border-bottom: 2px solid #666;
+    border-left: 2px solid #666;
+    margin-right: 10px;
+    margin-bottom: 4px;
+    opacity: 0.8;
 }

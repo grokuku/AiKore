@@ -1,69 +1,38 @@
-## Gemini Added Memories
-- Use English for all code, auxiliary files (info, context, etc.), but communicate directly with the user in French.
-- L'utilisateur effectue ses tests sur un serveur distant.
-- Débogage d'un problème de reverse proxy avec ComfyUI dans AiKore. L'utilisateur obtient une erreur 404 Not Found. L'hypothèse actuelle est que le processus backend de ComfyUI ne parvient pas à localiser les fichiers de son propre frontend, qui sont servis à partir du paquet pip `comfyui-frontend-package`. La prochaine étape proposée est d'obtenir la permission de l'utilisateur pour modifier temporairement `reference/ComfyUI/server.py` afin d'ajouter des logs de débogage pour vérifier le chemin du `web_root` et son existence du point de vue du processus en cours d'exécution.
-- Starting the Selkies integration project. The goal is to replace the VNC implementation for Persistent UI instances with Selkies, within a single Docker container. Phase 1 is to merge Selkies' system dependencies into the AiKore Dockerfile.
-- Selkies Integration, Phase 1 Complete: Merged Selkies system dependencies into AiKore's Dockerfile.buildbase. Next is Phase 2: Integrate Selkies application components.
-- Selkies Integration, Phase 2 Complete: Integrated Selkies application components (Python server, web UI) into AiKore's main Dockerfile. Next is Phase 3: Create the selkies_launcher.sh script.
-- Selkies Integration, Phase 3 Complete: Created the selkies_launcher.sh script capable of launching an isolated Selkies stack. Next is Phase 4: Integrate the launcher into process_manager.py.
-- Selkies Integration, Phase 4 Complete: The process_manager.py has been updated to call selkies_launcher.sh for Persistent UI instances. The initial coding phase for Selkies integration is now finished. Awaiting user testing after Docker image rebuild.
-- **Selkies Integration Debugging Session (2025-11-02):**
-    - **Issue:** Persistent UI instances were not launching correctly, resulting in `404 Not Found` for Selkies UI and `command not found` / `ModuleNotFoundError` in `output.log`.
-    - **Initial Hypothesis:** Missing system packages (`virtualgl`, `pipewire`) and `selkies` Python module in the base image.
-    - **Actions Taken:**
-        - Refactored all "vnc" naming to "persistent" across the backend (`models.py`, `schemas/instance.py`, `api/instances.py`, `crud.py`, `process_manager.py`).
-        - Moved `selkies_launcher.sh` to `scripts/` directory and updated `Dockerfile` accordingly.
-        - Fixed `app.js` to correctly display `persistent_port` and link "Open"/"View" buttons to it for persistent instances.
-        - **Re-architected Port Allocation:** Modified `api/instances.py` so that:
-            - For **Persistent UI** instances: `persistent_port` is chosen from the user-visible pool (e.g., 19001-19020), and the internal application `port` is a random ephemeral port.
-            - For **Normal** instances: `port` is chosen from the user-visible pool.
-        - Debugged `selkies_launcher.sh` errors from `output.log`:
-            - Attempted to install `virtualgl` via `apt` and PPA, which failed.
-            - Analyzed `reference_read_only/docker-firefox/Dockerfile` and `autostart` script, revealing `virtualgl` is not explicitly installed for Firefox.
-            - **Root Cause Identified:** `vglrun` was not needed for basic desktop, but `pipewire` and the `selkies` Python module were genuinely missing from the base image. Also, `PATH` conflicts with Conda environments were causing `command not found` errors for system binaries.
-        - **Final Fixes Applied:**
-            - **`Dockerfile.buildbase`:**
-                - Removed `virtualgl` installation attempts.
-                - Added `pipewire`, `wireplumber`, `pipewire-pulse` to `apt-get install`.
-                - Added `git clone` and `pip install` for the `selkies` Python module.
-            - **`scripts/selkies_launcher.sh`:**
-                - Removed `vglrun` from the Openbox launch command.
-                - Ensured absolute paths (`/usr/bin/` for audio and Python) are used for system commands to prevent `PATH` conflicts.
-    - **Next Step:** User to rebuild Docker images and test with a new persistent instance.
-- **Wheel Building Workflows Debugging Session (2025-11-08):**
-    - **Objective:** Fix multiple failing pre-compiled wheel build workflows.
-    - **Issue 1: `bitsandbytes` Build Failure:**
-        - **Initial Error:** `ValueError: invalid pyproject.toml config: project.license` with "2 matches found", indicating both `license` and `license-files` keys were present.
-        - **Troubleshooting:**
-            - Attempted to remove the `license` key via `sed`, which led to a new error: `project must not contain {'license-files'} properties`.
-            - Attempted to remove the `license-files` key via `sed`, which resulted in the original "2 matches found" error, indicating the `sed` command was failing silently.
-            - Added aggressive debugging (manual exit code checks, `cat`ing the file). Confirmed `sed` and `grep` commands were not working as expected inside the `sh -c` block.
-        - **Final Fix:** Replaced the shell-based file modification with a robust inline Python script (created via a `here-document` to avoid YAML syntax errors) that reads `pyproject.toml`, filters out the `license-files` line, and rewrites the file.
-    - **Issue 2: `xformers` Build Failure:**
-        - **Initial Error:** `AssertionError: Invalid sm version: 12`.
-        - **Actions Taken:**
-            - The `xformers` build was moved to a dedicated workflow file: `build-xformers-wheel.yml`.
-            - The architecture matrix was limited to stop at `10`, but this also failed (`Invalid sm version: 10`).
-            - The matrix was further limited to stop at `9.0a`.
-            - At the user's request to speed up iterations, `actions/cache` was implemented for the `xformers/build` directory to cache intermediate build files.
-    - **Issue 3: Long Build Times:**
-        - To speed up the main `build-wheels.yml` workflow, `flash-attention` was also moved to its own dedicated workflow file: `build-flash-attn-wheel.yml`.
-    - **Side Task: "Rebuild Environment" Feature:**
-        - **Goal:** Add a UI button to trigger a Conda environment reinstall for an instance.
-        - **Backend:**
-            - Modified `functions.sh`: `clean_env` now checks for a `.rebuild-env` trigger file, which it deletes after cleaning the environment.
-            - Modified `aikore/core/process_manager.py`: Added a `rebuild_instance_env` function that stops the instance, creates the trigger file, and restarts the instance.
-            - Modified `aikore/api/instances.py`: Added a `POST /api/instances/{id}/rebuild` endpoint.
-        - **Frontend:**
-            - Modified `aikore/static/index.html`: Added a "Rebuild Environment" button to the tools menu.
-            - Modified `aikore/static/app.js`: Implemented the click handler, confirmation dialog, and API call for the new button.
-- **Current State & Next Steps:**
-    - The `build-wheels.yml` workflow has been updated with the Python script fix for `bitsandbytes`.
-    - The `build-xformers-wheel.yml` workflow has been updated with caching and a limited architecture matrix.
-    - The `build-flash-attn-wheel.yml` workflow is ready for its first run.
-    - The "Rebuild Environment" feature is fully coded.
-    - **Next actions for the user:**
-        1. Run `build-wheels.yml` to test the `bitsandbytes` fix.
-        2. Run `build-xformers-wheel.yml` to test the architecture and caching fix.
-        3. Run `build-flash-attn-wheel.yml`.
-        4. Rebuild the main AiKore Docker image and test the "Rebuild Environment" button.
+## Gemini Memories & Technical Notes
+
+### Project Constraints & Preferences
+- **Language**: Use English for all code/docs, but communicate in French.
+- **Environment**: Remote server deployment via Docker.
+- **Architecture**: Monolithic container (AiKore) managing subprocesses.
+
+### Historical Debugging & Features
+
+#### **KasmVNC / Persistent Mode Integration**
+- **Objective**: Replace standard WebUI access with a full Desktop capability for tools requiring GUI (like OneTrainer or unexpected popups).
+- **Implementation**:
+    - `kasm_launcher.sh`: Starts `Xvnc` (Kasm server), `openbox` (Window Manager), and the target app.
+    - **Port Logic**: Persistent instances consume a Public Port for VNC. The internal app uses a random ephemeral port.
+    - **Dependencies**: `xvfb`, `firefox` (for internal browsing), `openbox` added to Dockerfile.
+
+#### **Wheel Building Workflows**
+- **Objective**: Speed up build times by pre-compiling heavy Python libraries (Flash Attention, Xformers, Torch).
+- **Solution**:
+    - Dedicated GitHub Actions workflows (`build-wheels.yml`, etc.).
+    - `Dockerfile.buildbase`: Ingests these pre-built wheels.
+    - **Fixes applied**:
+        - `bitsandbytes`: Fixed `pyproject.toml` double-license error via inline Python script during build.
+        - `xformers`: Added caching and limited CUDA architecture matrix to prevent timeouts/errors.
+
+#### **Environment Rebuild Feature**
+- **Feature**: Button to wipe and reinstall the Conda environment for an instance.
+- **Mechanism**:
+    - `functions.sh`: `clean_env` checks for `.rebuild-env` file.
+    - `process_manager.py`: Creates the trigger file and restarts the instance.
+
+#### **Satellite / Instantiation Architecture (V5)**
+- **Goal**: Create lightweight copies of instances sharing the same codebase/venv but different runtime settings (GPU, Ports).
+- **Implementation**:
+    - **DB**: Added `parent_instance_id`.
+    - **Frontend**: Grouped `<tbody>` rendering to treat Families (Parent + Satellites) as atomic blocks.
+    - **Constraint**: Satellites cannot change `blueprint` or `output_path` (UI disabled).
+    - **Filesystem**: "Lazy creation" logic. Folders are not created at DB insertion time, but at first launch by the process manager.

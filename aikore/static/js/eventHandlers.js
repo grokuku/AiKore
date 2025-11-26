@@ -10,8 +10,10 @@ export function setupMainEventListeners() {
     
     DOM.addInstanceBtn.addEventListener('click', async () => {
         if (document.querySelector('tr[data-is-new="true"]')) return;
-        const noInstancesRow = DOM.instancesTbody.querySelector('.no-instances-row');
-        if (noInstancesRow) noInstancesRow.remove();
+        
+        // Find and remove empty row if present
+        const noInstancesRow = DOM.instancesTable.querySelector('.no-instances-row');
+        if (noInstancesRow) noInstancesRow.closest('tbody').remove();
 
         let bestGpuId = null;
         try {
@@ -35,7 +37,22 @@ export function setupMainEventListeners() {
         };
 
         const newRow = renderInstanceRow(newInstance, true);
-        DOM.instancesTbody.appendChild(newRow);
+        
+        // Create a new tbody specifically for this new row
+        const newTbody = document.createElement('tbody');
+        newTbody.classList.add('instance-group');
+        newTbody.dataset.groupId = 'new';
+        newTbody.appendChild(newRow);
+        
+        // Prepend to allow easy visibility, or append? Let's prepend to be visible immediately.
+        // Actually, sorting usually puts new at bottom or top. Let's prepend after thead.
+        const thead = DOM.instancesTable.querySelector('thead');
+        if (thead && thead.nextSibling) {
+             DOM.instancesTable.insertBefore(newTbody, thead.nextSibling);
+        } else {
+             DOM.instancesTable.appendChild(newTbody);
+        }
+        
         newRow.querySelector('input[data-field="name"]').focus();
     });
 
@@ -75,11 +92,11 @@ export function setupMainEventListeners() {
                     changes.name = { old: row.dataset.originalName, new: nameField.value };
                 }
                 const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
-                if (blueprintField && blueprintField.value !== row.dataset.originalBlueprint) {
+                if (blueprintField && !blueprintField.disabled && blueprintField.value !== row.dataset.originalBlueprint) {
                     changes.base_blueprint = { old: row.dataset.originalBlueprint, new: blueprintField.value };
                 }
                 const outputPathField = row.querySelector('input[data-field="output_path"]');
-                if (outputPathField && (outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) {
+                if (outputPathField && !outputPathField.disabled && (outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) {
                     changes.output_path = { old: row.dataset.originalOutputPath || '', new: outputPathField.value };
                     hasOutputPathChange = true;
                 }
@@ -159,13 +176,15 @@ export function setupMainEventListeners() {
         for (const update of updates) {
             try {
                 // Prepare API Payload
-                // We need to fetch current values from the inputs again or rely on the gathered changes
-                // Safest is to read from the row inputs one more time to build the full object expected by backend
                 const row = update.row;
+                // Important: Use null/inherited values if disabled
+                const bpSelect = row.querySelector('select[data-field="base_blueprint"]');
+                const outPathInput = row.querySelector('input[data-field="output_path"]');
+
                 const data = {
                     name: row.querySelector('input[data-field="name"]').value,
-                    base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
-                    output_path: row.querySelector('input[data-field="output_path"]').value || null,
+                    base_blueprint: bpSelect.disabled ? undefined : bpSelect.value, // Don't send if disabled
+                    output_path: outPathInput.disabled ? undefined : (outPathInput.value || null),
                     gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
                     autostart: row.querySelector('input[data-field="autostart"]').checked,
                     persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
@@ -195,13 +214,8 @@ export function setupMainEventListeners() {
         DOM.updateConfirmModal.classList.add('hidden');
     });
 
-    // Remove old autostart listener since it's now part of the batch update or simple change detection
-    // But the prompt asked to remove the "update" button. 
-    // If the user toggles autostart, it should just mark row dirty. 
-    // The previous logic saved autostart immediately. 
-    // We will disable the immediate autostart save to align with the "Global Save" philosophy requested.
-
-    DOM.instancesTbody.addEventListener('click', async (event) => {
+    // CHANGED: Listen on Table, not tbody
+    DOM.instancesTable.addEventListener('click', async (event) => {
         const target = event.target.closest('[data-action]');
         if (!target) return;
         if (target.closest('.context-menu')) return;
@@ -241,7 +255,8 @@ export function setupMainEventListeners() {
                     };
                     await api.createInstance(data);
                     showToast(`Instance '${data.name}' created successfully.`);
-                    row.remove(); 
+                    // Remove the temporary tbody and row
+                    row.closest('tbody').remove();
                     await fetchAndRenderInstances();
                     break;
 
@@ -263,8 +278,9 @@ export function setupMainEventListeners() {
                     break;
 
                 case 'cancel_new':
-                    row.remove();
-                    if (DOM.instancesTbody.childElementCount === 0) fetchAndRenderInstances();
+                    row.closest('tbody').remove();
+                    // Check if table is empty (only thead remains)
+                    if (DOM.instancesTable.querySelectorAll('tbody').length === 0) fetchAndRenderInstances();
                     break;
             }
         } catch (error) {
@@ -327,7 +343,7 @@ export function setupMainEventListeners() {
         const { instanceId } = state.editorState;
         if (!instanceId) return;
 
-        const row = DOM.instancesTbody.querySelector(`tr[data-id="${instanceId}"]`);
+        const row = DOM.instancesTable.querySelector(`tr[data-id="${instanceId}"]`);
         if (!row) {
             showToast('Could not find instance data. Please refresh.', 'error');
             return;
