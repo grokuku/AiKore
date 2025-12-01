@@ -70,7 +70,7 @@ export async function openEditor(instanceId, instanceName, fileType) {
     state.codeEditor.setValue(`Loading ${fileType} content...`);
     setTimeout(() => state.codeEditor.refresh(), 1);
 
-    const row = DOM.instancesTbody.querySelector(`tr[data-id="${instanceId}"]`);
+    const row = DOM.instancesTable.querySelector(`tr[data-id="${instanceId}"]`);
     const baseBlueprint = row ? row.dataset.originalBlueprint : null;
     state.editorState = { instanceId, instanceName, fileType, baseBlueprint };
 

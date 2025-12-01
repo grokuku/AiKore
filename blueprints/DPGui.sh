@@ -16,16 +16,27 @@ source /opt/sd-install/functions.sh
 echo "--- Starting Blueprint: DPGui (Minimal Launcher) for Instance: ${INSTANCE_NAME} ---"
 
 # --- Variable Definitions ---
-DPGUI_DIR="${INSTANCE_CONF_DIR}"
-VENV_DIR="${DPGUI_DIR}/env"
+# The root instance directory provided by AiKore
+INSTANCE_ROOT_DIR="${INSTANCE_CONF_DIR}"
+# The application code will be cloned into this subdirectory
+DPGUI_DIR="${INSTANCE_ROOT_DIR}/dpgui"
+VENV_DIR="${INSTANCE_ROOT_DIR}/env"
 
-# Ensure instance directories exist
-mkdir -p "${INSTANCE_CONF_DIR}"
+# --- Git Repository Setup ---
+# The blueprint MUST clone the application code itself.
+if [ ! -d "${DPGUI_DIR}/.git" ]; then
+    echo "Cloning DPGui repository into ${DPGUI_DIR}..."
+    git clone https://github.com/grokuku/dpgui.git "${DPGUI_DIR}"
+else
+    echo "DPGui repository found. Skipping clone."
+    # Optional: Add logic here to pull latest changes if needed
+fi
+
+# Ensure other instance directories exist
+mkdir -p "${INSTANCE_ROOT_DIR}"
 mkdir -p "${INSTANCE_OUTPUT_DIR}"
 
 # --- Conda Environment Setup ---
-# The blueprint's only setup task is to create the execution environment.
-# The application's own launcher script will handle all other dependencies.
 echo "--- Setting up Conda environment ---"
 clean_env "${VENV_DIR}"
 
@@ -42,7 +53,6 @@ echo "--- Conda environment activated. ---"
 # --- Configuration & Symlinks ---
 echo "--- Applying configurations ---"
 # Symlink the instance's output directory to the app's 'output' folder
-# This is done before the launcher runs, so the app sees the correct path from the start.
 sl_folder "${DPGUI_DIR}" "output" "$(dirname "${INSTANCE_OUTPUT_DIR}")" "$(basename "${INSTANCE_OUTPUT_DIR}")"
 
 
@@ -54,7 +64,16 @@ export DPGUI_PORT="${WEBUI_PORT}"
 
 # Execute the project's own launcher script.
 # It will handle cloning vendor repos, installing pip/npm packages, and starting the services.
+echo "Changing directory to ${DPGUI_DIR}"
 cd "${DPGUI_DIR}"
-bash "${DPGUI_DIR}/scripts/launcher.sh"
+
+LAUNCH_SCRIPT_PATH="./scripts/launcher.sh"
+if [ -f "$LAUNCH_SCRIPT_PATH" ]; then
+    bash "$LAUNCH_SCRIPT_PATH"
+else
+    echo "FATAL: Launcher script not found at ${LAUNCH_SCRIPT_PATH}"
+    exit 1
+fi
+
 
 echo "--- DPGui Blueprint Finished ---"
