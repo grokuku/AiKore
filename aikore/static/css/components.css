@@ -1,243 +1,243 @@
 /* --- UNIVERSAL CONTEXT MENU --- */
-.context-menu {
-    display: none;
-    /* Hidden by default, shown by JS */
-    position: fixed;
-    /* Position relative to the viewport, above everything */
-    background-color: #3b3b6b;
-    min-width: 180px;
-    box-shadow: 0px 10px 20px rgba(0, 0, 0, 0.5);
-    /* Stronger shadow */
-    z-index: 1000;
-    /* High z-index to ensure it's on top */
-    border-radius: 6px;
-    overflow: hidden;
-    padding: 5px 0;
-}
-
-.context-item {
-    color: #e0e0e0;
-    padding: 10px 15px;
-    text-decoration: none;
-    display: block;
-    background-color: transparent;
-    border: none;
-    width: 100%;
-    text-align: left;
-    cursor: pointer;
-    font-size: 14px;
-    font-family: inherit;
-}
-
-.context-item:hover:not(:disabled) {
-    background-color: #4a4a70;
-}
-
-.context-item:disabled {
-    color: #888;
-    cursor: not-allowed;
-}
-
-/* --- MONITORING PANE COMPONENTS --- */
-#system-stats-container {
-    display: flex;
-    flex-direction: column;
-    gap: var(--global-gutter-size);
-    /* Space between CPU/RAM and GPU sections */
-}
-
-.system-stat-row,
-.gpu-metric {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.stat-label {
-    flex-basis: 40px;
-    /* Fixed width for labels like CPU, RAM */
-    font-weight: 500;
-    color: #c0c0c0;
-}
-
-.progress-bar-container {
-    flex-grow: 1;
-    background-color: #1e1e3f;
-    border-radius: 6px;
-    overflow: hidden;
-    height: 20px;
-}
-
-.progress-bar {
-    height: 100%;
-    width: 0%;
-    /* Start at 0, updated by JS */
-    background-color: #007bff;
-    border-radius: 6px;
-    transition: width 0.5s ease-in-out;
-}
-
-.stat-value {
-    flex-basis: 120px;
-    /* Fixed width for value text */
-    text-align: right;
-    font-family: monospace;
-    font-size: 14px;
-    color: #ffffff;
-}
-
-#gpu-stats-container {
-    display: flex;
-    flex-direction: column;
-    gap: var(--global-gutter-size);
-    /* Space between each GPU block */
-}
-
-.system-stat-block,
-.gpu-stat {
-    border: 1px solid #3b3b6b;
-    border-radius: 8px;
-    padding: 10px 15px;
-    background-color: #2c2c54;
-}
-
-.system-block-name,
-.gpu-name {
-    font-weight: bold;
-    margin-bottom: 10px;
-    display: block;
-    color: #ffffff;
-}
-
-.system-block-metrics,
-.gpu-metrics {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-/* --- TOAST NOTIFICATION STYLES --- */
-#toast-container {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 3000;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 10px;
-}
-
-.toast {
-    background-color: #3b3b6b;
-    color: #e0e0e0;
-    padding: 15px 20px;
-    border-radius: 8px;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transform: translateX(100%);
-    transition: opacity 0.3s ease, transform 0.3s ease;
-    user-select: text;
-}
-
-.toast.show {
-    opacity: 1;
-    transform: translateX(0);
-}
-
-.toast.success {
-    background-color: #28a745;
-    color: white;
-}
-
-.toast.error {
-    background-color: #dc3545;
-    color: white;
-}
-
-/* Custom Hostname Styles */
-.hostname-container {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-    justify-content: flex-start; 
-    height: 100%; 
-}
-
-.switch-label {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    cursor: pointer;
-    color: #ccc;
-}
-
-.switch-label input[type="checkbox"] {
-    opacity: 0;
-    width: 0;
-    height: 0;
-    position: absolute;
-}
-
-.switch {
-    position: relative;
-    display: inline-block;
-    width: 34px;
-    height: 20px;
-    background-color: #444;
-    border-radius: 20px;
-    transition: background-color 0.2s;
-    /* No margin-right needed when using gap */
-}
-
-.switch::before {
-    content: "";
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: 50%;
-    transition: transform 0.2s;
-}
-
-.switch-label input:checked + .switch {
-    background-color: #28a745; /* Green when on */
-}
-
-.switch-label input:checked + .switch::before {
-    transform: translateX(14px);
-}
-
-.hostname-container input[type="text"] {
-    flex-grow: 1; /* Let the input field take the remaining space */
-    margin-top: 0;
-}
-
-.switch-label::after {
-    content: ''; /* Text is now in the table header */
-}
-
-/* GPU Checkbox Styles */
-.gpu-checkbox-container {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-    justify-content: center;
-    padding: 5px 0; /* Add some vertical padding */
-}
-
-.gpu-checkbox-container label {
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-    margin: 0; /* Remove default label margin */
-    font-size: 14px;
-}
-
-.gpu-checkbox-container input[type="checkbox"] {
-    margin-right: 5px; /* Space between checkbox and number */
-}
+    .context-menu {
+        display: none;
+        /* Hidden by default, shown by JS */
+        position: fixed;
+        /* Position relative to the viewport, above everything */
+        background-color: #3b3b6b;
+        min-width: 180px;
+        box-shadow: 0px 10px 20px rgba(0, 0, 0, 0.5);
+        /* Stronger shadow */
+        z-index: 1000;
+        /* High z-index to ensure it's on top */
+        border-radius: 6px;
+        overflow: hidden;
+        padding: 5px 0;
+    }
+    
+    .context-item {
+        color: #e0e0e0;
+        padding: 10px 15px;
+        text-decoration: none;
+        display: block;
+        background-color: transparent;
+        border: none;
+        width: 100%;
+        text-align: left;
+        cursor: pointer;
+        font-size: 14px;
+        font-family: inherit;
+    }
+    
+    .context-item:hover:not(:disabled) {
+        background-color: #4a4a70;
+    }
+    
+    .context-item:disabled {
+        color: #888;
+        cursor: not-allowed;
+    }
+    
+    /* --- MONITORING PANE COMPONENTS --- */
+    #system-stats-container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px; /* Reduced gap */
+    }
+    
+    .system-stat-row,
+    .gpu-metric {
+        display: flex;
+        align-items: center;
+        gap: 12px; /* Reduced gap */
+    }
+    
+    .stat-label {
+        flex-basis: 40px;
+        /* Fixed width for labels like CPU, RAM */
+        font-weight: 500;
+        color: #c0c0c0;
+        font-size: 13px;
+    }
+    
+    .progress-bar-container {
+        flex-grow: 1;
+        background-color: #1e1e3f;
+        border-radius: 4px; /* Slightly sharper */
+        overflow: hidden;
+        height: 14px; /* Reduced from 20px */
+    }
+    
+    .progress-bar {
+        height: 100%;
+        width: 0%;
+        /* Start at 0, updated by JS */
+        background-color: #007bff;
+        border-radius: 4px;
+        transition: width 0.5s ease-in-out;
+    }
+    
+    .stat-value {
+        flex-basis: 110px; /* Slightly narrower */
+        /* Fixed width for value text */
+        text-align: right;
+        font-family: monospace;
+        font-size: 13px;
+        color: #ffffff;
+    }
+    
+    #gpu-stats-container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px; /* Reduced gap */
+    }
+    
+    .system-stat-block,
+    .gpu-stat {
+        border: 1px solid #3b3b6b;
+        border-radius: 8px;
+        padding: 8px 12px; /* Reduced padding */
+        background-color: #2c2c54;
+    }
+    
+    .system-block-name,
+    .gpu-name {
+        font-weight: bold;
+        margin-bottom: 8px;
+        display: block;
+        color: #ffffff;
+        font-size: 14px;
+    }
+    
+    .system-block-metrics,
+    .gpu-metrics {
+        display: flex;
+        flex-direction: column;
+        gap: 6px; /* Reduced gap */
+    }
+    
+    /* --- TOAST NOTIFICATION STYLES --- */
+    #toast-container {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 3000;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 10px;
+    }
+    
+    .toast {
+        background-color: #3b3b6b;
+        color: #e0e0e0;
+        padding: 15px 20px;
+        border-radius: 8px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+        opacity: 0;
+        transform: translateX(100%);
+        transition: opacity 0.3s ease, transform 0.3s ease;
+        user-select: text;
+    }
+    
+    .toast.show {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    
+    .toast.success {
+        background-color: #28a745;
+        color: white;
+    }
+    
+    .toast.error {
+        background-color: #dc3545;
+        color: white;
+    }
+    
+    /* Custom Hostname Styles */
+    .hostname-container {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        justify-content: flex-start; 
+        height: 100%; 
+    }
+    
+    .switch-label {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        color: #ccc;
+    }
+    
+    .switch-label input[type="checkbox"] {
+        opacity: 0;
+        width: 0;
+        height: 0;
+        position: absolute;
+    }
+    
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 34px;
+        height: 20px;
+        background-color: #444;
+        border-radius: 20px;
+        transition: background-color 0.2s;
+        /* No margin-right needed when using gap */
+    }
+    
+    .switch::before {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        background-color: white;
+        border-radius: 50%;
+        transition: transform 0.2s;
+    }
+    
+    .switch-label input:checked + .switch {
+        background-color: #28a745; /* Green when on */
+    }
+    
+    .switch-label input:checked + .switch::before {
+        transform: translateX(14px);
+    }
+    
+    .hostname-container input[type="text"] {
+        flex-grow: 1; /* Let the input field take the remaining space */
+        margin-top: 0;
+    }
+    
+    .switch-label::after {
+        content: ''; /* Text is now in the table header */
+    }
+    
+    /* GPU Checkbox Styles */
+    .gpu-checkbox-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: center;
+        padding: 5px 0; /* Add some vertical padding */
+    }
+    
+    .gpu-checkbox-container label {
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        margin: 0; /* Remove default label margin */
+        font-size: 14px;
+    }
+    
+    .gpu-checkbox-container input[type="checkbox"] {
+        margin-right: 5px; /* Space between checkbox and number */
+    }

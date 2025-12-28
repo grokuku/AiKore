@@ -1,131 +1,135 @@
 /* --- GLOBAL & LAYOUT --- */
-:root {
-    --global-gutter-size: 5px;
-    /* Matches the JS Splitter Gutter for consistency */
-}
-
-html,
-body {
-    height: 100vh;
-    margin: 0;
-    overflow: hidden;
-    /* Prevent body from scrolling */
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: #1a1a2e;
-    /* Main background color */
-    color: #e0e0e0;
-}
-
-.main-container {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    padding: 1rem;
-    box-sizing: border-box;
-    user-select: none;
-    /* Disable text selection globally within the app */
-}
-
-.main-title {
-    color: #ffffff;
-    margin: 0 0 8px 0;
-    /* Space below the main title */
-    flex-shrink: 0;
-}
-
-/* --- SPLIT PANE SYSTEM --- */
-.split-container {
-    display: flex;
-    flex-grow: 1;
-    min-height: 0;
-    width: 100%;
-    height: 100%;
-}
-
-.split-vertical {
-    flex-direction: column;
-}
-
-.split-horizontal {
-    flex-direction: row;
-}
-
-.gutter {
-    background-color: #1a1a2e;
-    background-repeat: no-repeat;
-    background-position: center;
-}
-
-.gutter.gutter-vertical {
-    cursor: row-resize;
-}
-
-.gutter.gutter-horizontal {
-    cursor: col-resize;
-}
-
-.pane {
-    display: flex;
-    flex-direction: column;
-    border-radius: 8px;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
-    overflow: hidden;
-    /* <-- Re-enabled for proper pane encapsulation */
-}
-
-/* --- PANE-SPECIFIC COLORS --- */
-#instance-pane {
-    background-color: #2a2a4a;
-}
-
-#tools-pane {
-    background-color: #2c2c54;
-}
-
-#monitoring-pane {
-    background-color: #252545;
-}
-
-.pane-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1.5rem;
-    border-bottom: 1px solid #3b3b6b;
-    flex-shrink: 0;
-}
-
-.pane-header h2 {
-    margin: 0;
-    font-size: 1.2rem;
-    color: #ffffff;
-}
-
-.pane-content {
-    /* MODIFICATION : overflow: auto a été retiré d'ici */
-    flex-grow: 1;
-    min-height: 0;
-}
-
-#instance-pane .pane-content {
-    padding: 0 1.5rem 1.5rem 1.5rem;
-    overflow: auto;
-    /* AJOUT : Le défilement est maintenant spécifique à ce panneau */
-}
-
-#monitoring-pane .pane-content {
-    padding: var(--global-gutter-size) 1.5rem 1.5rem 1.5rem;
-    overflow: auto;
-    /* AJOUT : Le défilement est maintenant spécifique à ce panneau */
-}
-
-#tools-pane .pane-content {
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    /* Pas de 'overflow' ici, les enfants gèrent leur propre contenu */
-}
-
-.hidden {
-    display: none !important;
-}
+    :root {
+        --global-gutter-size: 5px;
+        /* Matches the JS Splitter Gutter for consistency */
+    }
+    
+    html {
+        font-size: 80%; /* Global scale down to 80% */
+    }
+    
+    html,
+    body {
+        height: 100vh;
+        margin: 0;
+        overflow: hidden;
+        /* Prevent body from scrolling */
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background-color: #1a1a2e;
+        /* Main background color */
+        color: #e0e0e0;
+    }
+    
+    .main-container {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 1rem;
+        box-sizing: border-box;
+        user-select: none;
+        /* Disable text selection globally within the app */
+    }
+    
+    .main-title {
+        color: #ffffff;
+        margin: 0 0 8px 0;
+        /* Space below the main title */
+        flex-shrink: 0;
+    }
+    
+    /* --- SPLIT PANE SYSTEM --- */
+    .split-container {
+        display: flex;
+        flex-grow: 1;
+        min-height: 0;
+        width: 100%;
+        height: 100%;
+    }
+    
+    .split-vertical {
+        flex-direction: column;
+    }
+    
+    .split-horizontal {
+        flex-direction: row;
+    }
+    
+    .gutter {
+        background-color: #1a1a2e;
+        background-repeat: no-repeat;
+        background-position: center;
+    }
+    
+    .gutter.gutter-vertical {
+        cursor: row-resize;
+    }
+    
+    .gutter.gutter-horizontal {
+        cursor: col-resize;
+    }
+    
+    .pane {
+        display: flex;
+        flex-direction: column;
+        border-radius: 8px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+        overflow: hidden;
+        /* <-- Re-enabled for proper pane encapsulation */
+    }
+    
+    /* --- PANE-SPECIFIC COLORS --- */
+    #instance-pane {
+        background-color: #2a2a4a;
+    }
+    
+    #tools-pane {
+        background-color: #2c2c54;
+    }
+    
+    #monitoring-pane {
+        background-color: #252545;
+    }
+    
+    .pane-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 1.5rem; /* Reduced from 0.75rem */
+        border-bottom: 1px solid #3b3b6b;
+        flex-shrink: 0;
+    }
+    
+    .pane-header h2 {
+        margin: 0;
+        font-size: 1.2rem;
+        color: #ffffff;
+    }
+    
+    .pane-content {
+        /* MODIFICATION : overflow: auto a été retiré d'ici */
+        flex-grow: 1;
+        min-height: 0;
+    }
+    
+    #instance-pane .pane-content {
+        padding: 0 1rem 1rem 1rem; /* Reduced from 1.5rem */
+        overflow: auto;
+        /* AJOUT : Le défilement est maintenant spécifique à ce panneau */
+    }
+    
+    #monitoring-pane .pane-content {
+        padding: var(--global-gutter-size) 1rem 1rem 1rem; /* Reduced from 1.5rem */
+        overflow: auto;
+        /* AJOUT : Le défilement est maintenant spécifique à ce panneau */
+    }
+    
+    #tools-pane .pane-content {
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        /* Pas de 'overflow' ici, les enfants gèrent leur propre contenu */
+    }
+    
+    .hidden {
+        display: none !important;
+    }

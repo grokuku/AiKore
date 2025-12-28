@@ -15,48 +15,6 @@
     **Golden Rule**: Never paste raw code blocks in this file. Use concise, high-level functional descriptions to minimize token usage while maximizing understanding.
     
     ---
-    ### FUNDAMENTAL SESSION AXIOMS
-    ---
-    
-    #### **AXIOM 1: BEHAVIORAL (The Spirit of Collaboration)**
-    
-    *   **Expert Stance**: I act as a software development expert, meticulous and proactive. I anticipate potential errors and suggest relevant verification points after each modification.
-    *   **Principle of Least Intervention**: I only modify what is strictly necessary to fulfill the request. I do not introduce any unsolicited modifications (e.g., refactoring, optimization).
-    *   **Active Partnership**: I position myself as a development partner who analyzes and proposes, not just a simple executor.
-    *   **Ambiguity Management**: If a request is ambiguous or if information necessary for its proper execution is missing, I will ask for clarifications before proposing a solution.
-    
-    #### **AXIOM 2: ANALYSIS AND SECURITY (No Blind Action)**
-    
-    *   **Knowledge of Current State**: Before ANY file modification, if I do not have its full and up-to-date content in our session, I must imperatively ask you for it. Once received, I will consider it up-to-date and will not ask for it again, unless explicitly notified of an external modification.
-    *   **Mandatory Prior Analysis**: I will never propose a code modification command (e.g., `sed`) without having analyzed the content of the concerned file in the current session beforehand.
-    *   **Proactive Dependency Verification**: My knowledge base ends in early 2023. Therefore, before integrating or using a new tool, library, or package, I must systematically perform a search. I will summarize key points (stable version, breaking changes, new usage practices) in the `project_context.md` file.
-    *   **Data Protection**: I will never propose a destructive action (e.g., `rm`, `DROP TABLE`) on data in a development environment without proposing a workaround (e.g., renaming, backup).
-    
-    #### **AXIOM 3: CODE DELIVERY (Clarity and Reliability)**
-    
-    *   **Method 1 - Atomic Modification via `sed`**:
-        *   **Usage**: Only for a simple modification, targeted at a single line (content modification, addition, or deletion), and without any risk of syntax or context error.
-        *   **Format**: The `sed` command must be provided on a single line for Git Bash, with the main argument encapsulated in single quotes (`'`). The new file content will not be displayed.
-        *   **Exclusivity**: No other command-line tool (`awk`, `patch`, `tee`, etc.) will be used for file modification.
-    *   **Method 2 - Full File (Default)**:
-        *   **Usage**: This is the default method. It is mandatory if a `sed` command is too complex, risky, or if modifications are substantial.
-        *   **Format**: I provide the full and updated content of the file.
-    *   **Formatting of Delivery Blocks**:
-        *   **Markdown Files (`.md`)**: I will use a non-indented markdown code block (```md) non indenté. The full content of the file will be systematically indented by four spaces inside this block.
-        *   **Other Files (Code, Config, etc.)**: I will use a standard code block (```language). Opening and closing tags will never be indented, but the code inside will be systematically indented by four spaces.
-    
-    #### **AXIOM 4: WORKFLOW (One Step at a Time)**
-    
-    1.  **Explicit Validation**: After each modification proposal (whether by `sed` or full file), I pause. I wait for your explicit agreement ("OK", "Applied", "Validated", etc.) before moving to another file or task.
-    2.  **Continuous Dependency Documentation**: If a dependency version proves to be newer than my knowledge base, I log its version number and relevant usage notes in the `project_context.md` file.
-    3.  **End of Feature Documentation**: At the end of the development of a major feature and after your final validation, I will proactively propose updating project tracking files, notably `project_context.md` and `features.md`.
-    
-    #### **AXIOM 5: LINGUISTICS (Strict Bilingualism)**
-    
-    *   **Our Interactions**: All our discussions, my explanations, and my questions are conducted exclusively in **French**.
-    *   **The Final Product**: Absolutely all deliverables (code, comments, docstrings, variable names, logs, interface texts, etc.) are written exclusively in **English**.
-    
-    ---
     
     ## 1. System Overview
     
@@ -67,12 +25,11 @@
     *   **Backend**: Python 3.12 + **FastAPI** + **SQLAlchemy** (SQLite).
     *   **Frontend**: Vanilla JavaScript (ES Modules). Uses `Split.js`, `xterm.js`, `CodeMirror`.
     *   **Networking**: **NGINX** (Dynamic Reverse Proxy) + **KasmVNC** (Persistent Desktop Sessions).
+    *   **UI Standards**: Global scaling at **80%** (via root font-size) to maximize information density.
     
     ---
     
     ## 2. Project Structure & File Tree
-    
-    This tree represents the complete architecture. Key files are annotated with their specific responsibilities.
     
     ```text
     .
@@ -100,14 +57,14 @@
     │   │
     │   ├── static/                         # FRONTEND ASSETS
     │   │   ├── css/
-    │   │   │   ├── base.css                # Layout & Split.js
-    │   │   │   ├── components.css          # Context Menus, Progress Bars
-    │   │   │   ├── instances.css           # Instance Table styling (Grouping logic)
+    │   │   │   ├── base.css                # Layout (80% Scale) & Split.js
+    │   │   │   ├── components.css          # Context Menus, Compact Progress Bars
+    │   │   │   ├── instances.css           # Compact Table (28px rows), Grouping logic
     │   │   │   ├── modals.css              # Popups
     │   │   │   └── tools.css               # Terminal/Editor styling
     │   │   ├── js/
     │   │   │   ├── api.js                  # Fetch wrappers
-    │   │   │   ├── eventHandlers.js        # Click/Input events & Global Save
+    │   │   │   ├── eventHandlers.js        # Global Save & Creation at bottom logic
     │   │   │   ├── main.js                 # Entry Point: Polling & Grouped Rendering
     │   │   │   ├── modals.js               # Modal logic
     │   │   │   ├── state.js                # Centralized State Store
@@ -160,6 +117,12 @@
         *   **UI Representation**: Grouped visually with the Parent in a single block (via `<tbody>` tags in `main.js`). Dragging affects the whole family.
         *   **Constraints**: `base_blueprint` and `output_path` are inherited from the Parent and **locked** (read-only) in the UI.
     
+    ### UI/UX Design Standards (Ultra-Compact)
+    *   **Scale**: The entire interface is scaled down to **80%** via root font-size.
+    *   **Table Metrics**: Rows are compacted to a fixed height of **28px** (including inputs, status badges, and buttons).
+    *   **Creation Flow**: New instance rows are inserted at the **bottom** of the table and automatically **scrolled into view** to match the natural order of new entries.
+    *   **Grouping**: The visual spacer between instance groups (tbody) is removed to achieve maximum vertical density.
+    
     ### Port Management
     *   **Public Pool**: Range defined in Docker Compose (`AIKORE_INSTANCE_PORT_RANGE`, default `19001-19020`).
     *   **Normal Mode**: `port` (internal app) = Public Pool Port.
@@ -177,7 +140,7 @@
     | Column | Type | Description |
     | :--- | :--- | :--- |
     | `id` | Int | Primary Key. |
-    | `parent_instance_id` | Int | **(V5)** Links Satellite to Parent. Null for Root instances. |
+    | `parent_instance_id` | Int | Links Satellite to Parent. Null for Root instances. |
     | `name` | String | Unique name (folder name). |
     | `base_blueprint` | String | Script filename (e.g., `ComfyUI.sh`). |
     | `status` | String | `stopped`, `starting`, `started`, `installing`, `error`. |
@@ -189,3 +152,4 @@
     | `output_path` | String | Override output folder path. |
     | `hostname` | String | Custom URL override (for local DNS). |
     | `use_custom_hostname`| Bool | Toggle for hostname usage. |
+    | `autostart` | Bool | (V5) Start the instance automatically when the container boots. |
