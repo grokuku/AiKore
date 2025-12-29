@@ -15,9 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     apt-get update
 
 # --- Install All System Dependencies ---
-RUN apt-get install -y --no-install-recommends \
+# MODIFICATION: Ajout de 'apt-get update' ici pour éviter les erreurs 404 (cache périmé)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     # CUDA Toolkit
     cuda-toolkit-13-0 \
+    # Audio Backend for Torchaudio
+    ffmpeg \
     # Core application tools
     rsync \
     dos2unix \

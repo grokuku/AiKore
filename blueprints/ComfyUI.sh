@@ -71,7 +71,7 @@ source activate "${VENV_DIR}"
 echo "--- Installing dependencies ---"
 
 echo "--- Installing PyTorch ---"
-pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu130
+pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu130
 pip install torchsde
 
 # 1. Install pre-built performance and utility libraries from wheels first.

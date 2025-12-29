@@ -56,6 +56,7 @@ then
     PYTHON_PACKAGES=(
         "torch"
         "torchvision"
+        "torchaudio"
         "xformers"
         "flash-attn"
         "sageattention"
