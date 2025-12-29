@@ -46,7 +46,7 @@ RUN python3.12 -m pip install --no-cache-dir /wheels/*.whl \
 # bitsandbytes
 #RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
 #    && cd /build/bitsandbytes \
-#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12" \
+#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
 #    && rm -rf bitsandbytes
@@ -54,7 +54,7 @@ RUN python3.12 -m pip install --no-cache-dir /wheels/*.whl \
 # diso
 RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodules \
     && cd /build/diso \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf diso
@@ -62,7 +62,7 @@ RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodule
 # nvdiffrast
 RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
     && cd /build/nvdiffrast \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf nvdiffrast
@@ -71,7 +71,7 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 #RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
 #    && cd /build/xformers \
 #    && git submodule update --init --recursive \
-#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9" \
+#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
 #    && export MAX_JOBS=1 \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
@@ -80,7 +80,7 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 # kaolin
 #RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
 #    && cd /build/kaolin_5090 \
-#    && export TORCH_CUDA_ARCH_LIST="8.9" \
+#    && export TORCH_CUDA_ARCH_LIST="8.9 12.0" \
 #    && export IGNORE_TORCH_VER=1 \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
@@ -89,14 +89,14 @@ RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
 # mip-splatting / diff-gaussian-rasterization
 #RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
 #    && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
-#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 9.0 10 12" \
+#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 9.0 10 12.0" \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
 #    && rm -rf mip-splatting
 # vox2seq / TRELLIS
 #RUN git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
 #    && cd /build/TRELLIS/extensions/vox2seq \
-#    && export TORCH_CUDA_ARCH_LIST="8.9" \
+#    && export TORCH_CUDA_ARCH_LIST="8.9 12.0" \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
 #    && rm -rf TRELLIS

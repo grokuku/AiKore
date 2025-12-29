@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 import os
 import shutil
+import stat  # NEW: Needed for permission handling
 import asyncio
 import psutil
 import json
@@ -505,6 +506,22 @@ def version_check(instance_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to run version check: {str(e)}")
 
 # --- HELPER FUNCTION FOR BACKGROUND DELETION ---
+def _on_rm_error(func, path, exc_info):
+    """
+    Error handler for shutil.rmtree.
+    If the error is due to read-only access, change the file mode and retry.
+    """
+    try:
+        # Check if the file is read-only
+        if not os.access(path, os.W_OK):
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        else:
+            # Re-raise the original exception if it wasn't a permission issue
+            raise exc_info[1]
+    except Exception as e:
+        print(f"[Deletion-Error] Failed to force delete '{path}': {e}")
+
 def _background_file_deletion(instance_name: str, mode: str, overwrite: bool):
     """
     Deletes or moves instance files in the background to avoid blocking the API response.
@@ -517,13 +534,14 @@ def _background_file_deletion(instance_name: str, mode: str, overwrite: bool):
         if mode == "permanent":
             if os.path.isdir(instance_dir):
                 print(f"[Background-Delete] Permanently deleting '{instance_name}'...")
-                shutil.rmtree(instance_dir)
+                # Use the new robust error handler
+                shutil.rmtree(instance_dir, onerror=_on_rm_error)
         elif mode == "trash":
             if os.path.isdir(instance_dir):
                 os.makedirs(TRASH_DIR, exist_ok=True)
                 if os.path.exists(trash_path) and overwrite:
                     print(f"[Background-Delete] Overwriting trashcan entry for '{instance_name}'...")
-                    shutil.rmtree(trash_path)
+                    shutil.rmtree(trash_path, onerror=_on_rm_error)
                 
                 # Check again if destination exists
                 if not os.path.exists(trash_path):

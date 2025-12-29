@@ -32,26 +32,22 @@ RUN python3.12 -m pip install --no-cache-dir wheel packaging setuptools scikit-b
 WORKDIR /build
 
 # sageattention
-# CORRECTIONS ICI :
-# 1. Utilisation de ENV globaux pour la ligne (plus sûr)
-# 2. Ajout de FORCE_CUDA=1 (CRITIQUE car pas de GPU pendant le build docker)
-# 3. Suppression des config-settings cmake inutiles
-# 4. Utilisation de setup.py bdist_wheel au lieu de pip wheel pour contrôle total
+# FIX: Ajout de 12.0 pour support Blackwell (5090)
 RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
     && cd /build/SageAttention \
     && export FORCE_CUDA=1 \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9" \
+    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
     && python3.12 setup.py bdist_wheel --dist-dir /wheels \
     && cd /build \
     && rm -rf SageAttention
 
 # flash-attn
-# Même logique : FORCE_CUDA est vital ici aussi
+# FIX: Correction 12 -> 12.0
 RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-attention \
     && cd /build/flash-attention \
     && export FLASH_ATTENTION_FORCE_BUILD=TRUE \
     && export FORCE_CUDA=1 \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12" \
+    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
     && python3.12 setup.py bdist_wheel --dist-dir /wheels \
     && cd /build \
     && rm -rf flash-attention
