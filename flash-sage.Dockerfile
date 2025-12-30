@@ -33,13 +33,13 @@ WORKDIR /build
 
 # sageattention
 # FIX: Ajout de 12.0 pour support Blackwell (5090)
-RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
-    && cd /build/SageAttention \
-    && export FORCE_CUDA=1 \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
-    && python3.12 setup.py bdist_wheel --dist-dir /wheels \
-    && cd /build \
-    && rm -rf SageAttention
+#RUN git clone https://github.com/thu-ml/SageAttention.git /build/SageAttention \
+#    && cd /build/SageAttention \
+#    && export FORCE_CUDA=1 \
+#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
+#    && python3.12 setup.py bdist_wheel --dist-dir /wheels \
+#    && cd /build \
+#    && rm -rf SageAttention
 
 # flash-attn
 # FIX: Correction 12 -> 12.0
@@ -47,7 +47,7 @@ RUN git clone https://github.com/Dao-AILab/flash-attention.git /build/flash-atte
     && cd /build/flash-attention \
     && export FLASH_ATTENTION_FORCE_BUILD=TRUE \
     && export FORCE_CUDA=1 \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
+    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 9.0 10.0 10.3 11.0 12.0 12.1" \
     && python3.12 setup.py bdist_wheel --dist-dir /wheels \
     && cd /build \
     && rm -rf flash-attention

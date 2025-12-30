@@ -3,7 +3,7 @@ import { fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSyste
 import { renderInstanceRow, updateSystemStats, checkRowForChanges } from './ui.js';
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
-import { showWelcomeScreen } from './tools.js';
+import { showWelcomeScreen, showBuilderView } from './tools.js'; // <-- IMPORT showBuilderView
 
 const INSTANCE_ORDER_KEY = 'aikoreInstanceOrder';
 
@@ -159,6 +159,36 @@ async function initializeApp() {
             <p>Please check the console and try refreshing the page.</p>
         </div>`;
         return;
+    }
+    
+    // --- INJECT BUILDER BUTTON ---
+    // Try to find the Add Instance button. Based on typical bootstrap or text content.
+    // Assuming it's a button element with text "Add New Instance"
+    const buttons = document.querySelectorAll('button');
+    let addBtn = null;
+    for (const btn of buttons) {
+        if (btn.textContent.trim() === 'Add New Instance') {
+            addBtn = btn;
+            break;
+        }
+    }
+
+    if (addBtn) {
+        const buildBtn = document.createElement('button');
+        buildBtn.className = addBtn.className; // Copy styles (btn btn-primary etc)
+        buildBtn.textContent = "Build Module";
+        buildBtn.style.marginRight = "10px"; // Add spacing
+        // Change color to distinguish (if bootstrap, use btn-secondary or custom style)
+        buildBtn.style.backgroundColor = "#6f42c1"; // Purple
+        buildBtn.style.borderColor = "#6f42c1";
+        
+        buildBtn.onclick = () => {
+            showBuilderView();
+        };
+
+        addBtn.parentNode.insertBefore(buildBtn, addBtn);
+    } else {
+        console.warn("Could not find 'Add New Instance' button to inject Builder button.");
     }
     
     // Start the polling loop

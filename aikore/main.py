@@ -7,7 +7,7 @@ from pynvml import nvmlInit, nvmlShutdown, NVMLError
 
 from .database import models, crud, migration
 from .database.session import SessionLocal
-from .api import instances, system
+from .api import instances, system, builder
 from .core import process_manager
 
 # --- Run Database Migration Check ---
@@ -91,6 +91,7 @@ def shutdown_event():
 # Include the API routers
 app.include_router(instances.router)
 app.include_router(system.router)
+app.include_router(builder.router)
 
 # Mount the static directory to serve frontend files
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

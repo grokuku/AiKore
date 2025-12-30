@@ -26,13 +26,11 @@
     height: 100%;
     box-sizing: border-box;
     overflow: auto;
-    /* Add scroll to the log viewer itself */
 }
 
 .terminal-style pre,
 .terminal-style code {
     user-select: text;
-    /* Allow text selection specifically in the log view */
 }
 
 .terminal-style pre {
@@ -43,13 +41,11 @@
 
 .log-error {
     color: #ff6b6b;
-    /* A bright red/pink for errors */
 }
 
 /* --- LOG VIEWER --- */
 #log-viewer-container {
     flex-grow: 1;
-    /* Take up available space */
 }
 
 /* --- FILE EDITOR --- */
@@ -59,7 +55,6 @@
     height: 100%;
     flex-grow: 1;
     background-color: #111;
-    /* Match terminal background */
 }
 
 #file-editor-textarea {
@@ -68,10 +63,8 @@
     padding: 1rem;
     box-sizing: border-box;
     background-color: #111;
-    /* Match terminal background */
     border: none;
     color: #00ff41;
-    /* Match terminal text color */
     font-family: 'Courier New', Courier, monospace;
     font-size: 14px;
     resize: none;
@@ -87,7 +80,6 @@
     border-top: 1px solid #3b3b6b;
     flex-shrink: 0;
     background-color: #2c2c54;
-    /* Match pane background */
 }
 
 #editor-update-btn {
@@ -100,16 +92,15 @@
 
 /* --- CODEMIRROR STYLES --- */
 .CodeMirror {
-    flex-grow: 1; /* Make the editor fill the available space */
-    height: auto; /* Override fixed height from library */
+    flex-grow: 1;
+    height: auto;
     font-family: 'Courier New', Courier, monospace;
     font-size: 14px;
     user-select: text;
 }
 
-/* Ensure the darcula theme integrates with our pane */
 .cm-s-darcula {
-    background-color: #111; /* Match our terminal background */
+    background-color: #111;
 }
 
 
@@ -121,7 +112,6 @@
     flex-grow: 1;
     min-height: 0;
     overflow: hidden;
-    /* <-- MODIFICATION ICI */
 }
 
 #instance-iframe,
@@ -136,7 +126,6 @@
     width: 100%;
     min-height: 0;
     background-color: #111;
-    /* Match xterm.js default bg */
     padding: 0 1rem 1rem 1rem;
     box-sizing: border-box;
 }
@@ -146,7 +135,6 @@
     height: 100%;
 }
 
-/* Override xterm.js default focus outline */
 .xterm:focus {
     outline: none;
 }
@@ -158,15 +146,15 @@
     height: 100%;
     padding: 1rem;
     box-sizing: border-box;
-    gap: 1rem; /* Space between the two boxes */
+    gap: 1rem;
 }
 
 #version-check-container .terminal-style {
-    height: auto; /* Override the 100% height */
-    flex: 1; /* Make them share space equally */
-    display: flex; /* Use flex to make the pre/code fill the space */
+    height: auto;
+    flex: 1;
+    display: flex;
     flex-direction: column;
-    padding: 0; /* Remove padding from terminal-style itself */
+    padding: 0;
 }
 
 #version-check-container .terminal-style h3 {
@@ -178,7 +166,177 @@
 
 #version-check-container .terminal-style pre {
     flex: 1;
-    overflow: auto; /* Add scrolling to each pre block */
+    overflow: auto;
     padding: 0.5rem 1rem;
     background-color: #111;
+}
+
+/* --- BUILDER TOOL --- */
+#builder-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background-color: #111;
+    overflow: hidden;
+}
+
+#builder-top-pane {
+    display: flex; /* Flex required for Split.js */
+    flex-direction: row;
+    height: 50%;
+    border-bottom: 2px solid #3b3b6b;
+    min-height: 200px;
+    box-sizing: border-box;
+}
+
+/* Split.js Gutter Style */
+.gutter {
+    background-color: #2c2c54;
+    background-repeat: no-repeat;
+    background-position: 50%;
+}
+.gutter.gutter-horizontal {
+    background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAeCAYAAADkftS9AAAAIklEQVQoU2M4c+bMfxAGAgYYmwGrIIiDjrELjpo5aiZeMwF+yNnOs5KSvgAAAABJRU5ErkJggg==');
+    cursor: col-resize;
+}
+
+/* Builder Options (Left) */
+#builder-options {
+    /* Flex handled by Split.js, but we need overflow */
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    overflow-y: auto;
+    background-color: #111;
+}
+
+#builder-options h3 {
+    margin-top: 0;
+    color: #fff;
+    border-bottom: 1px solid #555;
+    padding-bottom: 0.5rem;
+}
+
+.builder-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.builder-field label {
+    color: #aaa;
+    font-size: 0.9rem;
+    font-weight: bold;
+}
+
+.builder-field select,
+.builder-field input[type="text"] {
+    background-color: #222;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 0.5rem;
+    border-radius: 4px;
+}
+
+.builder-info-link {
+    color: #4da6ff;
+    text-decoration: none;
+    font-size: 0.8rem;
+    margin-left: 0.5rem;
+}
+.builder-info-link:hover { text-decoration: underline; }
+
+#btn-start-build {
+    margin-top: auto;
+    background-color: #28a745;
+    color: white;
+    padding: 1rem;
+    border: none;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 1.1rem;
+    transition: background 0.2s;
+}
+#btn-start-build:hover { background-color: #218838; }
+#btn-start-build:disabled { background-color: #444; cursor: not-allowed; }
+
+/* Builder Wheels List (Right) */
+#builder-wheels {
+    /* Flex handled by Split.js */
+    display: flex;
+    flex-direction: column;
+    background-color: #1a1a1a;
+    overflow: hidden; /* Contain the table scroll */
+}
+
+#wheels-table-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+.wheels-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    table-layout: auto; /* Allow resizing to work better */
+    min-width: 400px;
+}
+
+.wheels-table th, 
+.wheels-table td {
+    border: 1px solid #444; /* Grid lines */
+    padding: 0.5rem;
+}
+
+.wheels-table th {
+    background-color: #252545;
+    color: #ddd;
+    text-align: left;
+    position: sticky;
+    top: 0;
+    
+    /* Column Resizing Trick */
+    resize: horizontal;
+    overflow: hidden;
+    min-width: 50px; /* Prevent collapse */
+}
+
+.wheels-table tr:hover { background-color: #2a2a2a; }
+
+.wheel-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+}
+.btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+.btn-icon:hover { opacity: 1; }
+.btn-delete { color: #ff6b6b; }
+.btn-download { color: #4da6ff; }
+
+/* Builder Logs (Bottom) */
+#builder-logs {
+    height: 50%; /* Bottom half */
+    padding: 0.5rem;
+    background-color: #000;
+    display: flex;
+    flex-direction: column;
+}
+#builder-logs-header {
+    font-size: 0.8rem;
+    color: #666;
+    margin-bottom: 0.2rem;
+}
+#builder-terminal {
+    flex: 1;
+    width: 100%;
 }

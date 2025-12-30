@@ -16,4 +16,5 @@ echo "--- Starting AiKore Backend ---"
 cd /opt/sd-install
 
 # Launch the FastAPI application using uvicorn on the internal port 8000
-exec uvicorn aikore.main:app --host 0.0.0.0 --port 8000
+# Added --no-access-log to reduce console spam
+exec uvicorn aikore.main:app --host 0.0.0.0 --port 8000 --no-access-log

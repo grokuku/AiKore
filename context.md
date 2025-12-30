@@ -23,7 +23,7 @@
     ### Core Stack
     *   **Orchestration**: `s6-overlay` (manages backend services and NGINX).
     *   **Backend**: Python 3.12 + **FastAPI** + **SQLAlchemy** (SQLite).
-    *   **Frontend**: Vanilla JavaScript (ES Modules). Uses `Split.js`, `xterm.js`, `CodeMirror`.
+    *   **Frontend**: Vanilla JavaScript (ES Modules). Uses `Split.js`, `xterm.js`, `CodeMirror`, `AnsiUp`.
     *   **Networking**: **NGINX** (Dynamic Reverse Proxy) + **KasmVNC** (Persistent Desktop Sessions).
     *   **UI Standards**: Global scaling at **80%** (via root font-size) to maximize information density.
     
@@ -36,6 +36,7 @@
     ├── aikore/                             # MAIN APPLICATION PACKAGE
     │   ├── api/                            # API Endpoints (Routers)
     │   │   ├── __init__.py
+    │   │   ├── builder.py                  # BUILDER: Compiles wheels in isolated Conda envs, manages WebSockets.
     │   │   ├── instances.py                # CORE: CRUD, Actions (Start/Stop), Port Self-Healing, Websockets
     │   │   └── system.py                   # System Stats (NVML), Blueprint listing
     │   │
@@ -61,48 +62,37 @@
     │   │   │   ├── components.css          # Context Menus, Compact Progress Bars
     │   │   │   ├── instances.css           # Compact Table (28px rows), Grouping logic
     │   │   │   ├── modals.css              # Popups
-    │   │   │   └── tools.css               # Terminal/Editor styling
+    │   │   │   └── tools.css               # Terminal/Editor/Builder styling (Split.js supported)
     │   │   ├── js/
     │   │   │   ├── api.js                  # Fetch wrappers
     │   │   │   ├── eventHandlers.js        # Global Save & Creation at bottom logic
-    │   │   │   ├── main.js                 # Entry Point: Polling & Grouped Rendering
+    │   │   │   ├── main.js                 # Entry Point: Polling & Grouped Rendering, Builder button injection
     │   │   │   ├── modals.js               # Modal logic
     │   │   │   ├── state.js                # Centralized State Store
-    │   │   │   ├── tools.js                # Tools (Terminal, Editor, Welcome) logic
+    │   │   │   ├── tools.js                # Tools logic (Builder, Term, Editor). Handles WebSocket streams.
     │   │   │   └── ui.js                   # DOM Manipulation (Dirty rows, Normalization)
     │   │   ├── welcome/                    # "CRT Style" Welcome Screen
     │   │   └── index.html                  # Main HTML Entry Point
     │   │
-    │   ├── main.py                         # FastAPI Entry Point (Startup logic)
+    │   ├── main.py                         # FastAPI Entry Point (Startup logic, Router registration)
     │   └── requirements.txt                # Backend Python Dependencies
     │
     ├── blueprints/                         # INSTALLATION SCRIPTS
-    │   ├── legacy/                         # Old scripts archive
-    │   ├── ComfyUI.sh                      # Example Blueprint
-    │   ├── FluxGym.sh                      # Example Blueprint
     │   └── ...
     │
+    ├── config/
+    │   └── instances/
+    │       └── .wheels/                    # NEW: Persistent storage for compiled .whl files & manifest.json
+    │
     ├── docker/                             # CONTAINER OVERLAY
-    │   └── root/
-    │       └── etc/
-    │           ├── nginx/conf.d/aikore.conf # Main NGINX Config (Proxy & Websockets)
-    │           ├── s6-overlay/             # S6 Services Definition
-    │           │   ├── s6-init.d/          # Init scripts (Permissions)
-    │           │   └── s6-rc.d/            # Service Run Scripts (svc-app, svc-nginx)
-    │           └── sudoers.d/              # Sudo rules for 'abc' user
+    │   └── root/etc/nginx/conf.d/aikore.conf # Main NGINX config (contains specific WS Upgrade blocks)
     │
     ├── scripts/                            # HELPER SCRIPTS
-    │   ├── kasm_launcher.sh                # Orchestrates Persistent Mode (Xvnc + Openbox + App)
-    │   └── version_check.sh                # Env diagnostics tool
+    │   └── ...
     │
+    ├── entry.sh                            # Container startup (sets --no-access-log for uvicorn)
     ├── Dockerfile                          # Main Image Definition
-    ├── Dockerfile.buildbase                # Builder Image (Wheels compilation)
-    ├── docker-compose.yml                  # Production Deployment
-    ├── docker-compose.dev.yml              # Development Deployment
-    ├── entry.sh                            # Container Runtime Entrypoint (Activates Conda -> Python)
-    ├── functions.sh                        # Bash Library for Blueprints (Symlinks, Git Sync)
-    ├── Makefile                            # Command shortcuts
-    └── requirements.txt                    # (Root reqs, usually symlinked or copied to aikore/)
+    └── ...
     ```
     
     ---
@@ -112,26 +102,31 @@
     ### Instance Types & Families
     1.  **Standard**: Headless (NGINX proxy).
     2.  **Persistent**: GUI (KasmVNC via dedicated port).
-    3.  **Satellite**:
-        *   **Concept**: A lightweight instance that reuses the Parent's installation (venv, code) but has its own Output folder and runtime config (GPU, Port).
-        *   **UI Representation**: Grouped visually with the Parent in a single block (via `<tbody>` tags in `main.js`). Dragging affects the whole family.
-        *   **Constraints**: `base_blueprint` and `output_path` are inherited from the Parent and **locked** (read-only) in the UI.
+    3.  **Satellite**: lightweight instance reusing Parent's venv.
+    
+    ### Module Builder (Experimental)
+    *   **Purpose**: Compile heavy Python/CUDA modules (e.g., `SageAttention`) at runtime to match the host's GPU architecture.
+    *   **Dynamic Environments**: Instead of polluting the main environment, it creates/reuses specific Conda environments on the fly (e.g., `builder_py312_cu130`) containing `torch`, `packaging`, `ninja`.
+    *   **Storage**: Compiled wheels are stored in `/config/instances/.wheels`.
+    *   **Manifest Sidecar**: A `manifest.json` tracks metadata (CUDA architecture, Python version, Source URL) alongside the `.whl` files.
+    *   **Communication**: Uses unbuffered WebSockets (`PYTHONUNBUFFERED=1`) to stream `stdout` from subprocesses to `xterm.js`.
+    *   **Networking Requirement**: A specific `location /api/builder/build` block in NGINX is mandatory to handle the WebSocket `Upgrade` header.
+    *   **UI Layout**:
+        *   **Resizable Split View**: Top (Options/List) vs Bottom (Logs), and Left (Options) vs Right (List).
+        *   **Table**: Resizable columns, Excel-like grid.
+        *   **Architecture Support**: Full list including Blackwell (12.0), Hopper (9.0), Ada (8.9).
     
     ### UI/UX Design Standards (Ultra-Compact)
-    *   **Scale**: The entire interface is scaled down to **80%** via root font-size.
-    *   **Table Metrics**: Rows are compacted to a fixed height of **28px** (including inputs, status badges, and buttons).
-    *   **Creation Flow**: New instance rows are inserted at the **bottom** of the table and automatically **scrolled into view** to match the natural order of new entries.
-    *   **Grouping**: The visual spacer between instance groups (tbody) is removed to achieve maximum vertical density.
+    *   **Scale**: Global **80%** scale.
+    *   **Table Metrics**: Rows at **28px**.
+    *   **Dynamic Buttons**: Secondary action buttons (like "Build Module") are injected dynamically near primary actions (like "Add New Instance").
     
     ### Port Management
-    *   **Public Pool**: Range defined in Docker Compose (`AIKORE_INSTANCE_PORT_RANGE`, default `19001-19020`).
-    *   **Normal Mode**: `port` (internal app) = Public Pool Port.
-    *   **Persistent Mode**: `persistent_port` (VNC) = Public Pool Port. `port` (internal app) = Ephemeral (Random).
-    *   **Self-Healing**: Auto-allocation occurs in `api/instances.py` on startup if ports are missing/null.
+    *   Public Pool (Docker Compose) vs Internal Ephemeral Ports.
+    *   Self-healing logic in `instances.py`.
     
     ### Lazy Filesystem Provisioning
-    *   **Principle**: Creating an instance in the DB (especially Satellites) does **not** create a folder immediately in `/config/instances`.
-    *   **Trigger**: The folder structure is created by `core/process_manager.py` only when the instance is **started** for the first time, to store `output.log` and the PID file.
+    *   Instance folders created only on the first `start` action.
     
     ---
     
@@ -140,16 +135,16 @@
     | Column | Type | Description |
     | :--- | :--- | :--- |
     | `id` | Int | Primary Key. |
-    | `parent_instance_id` | Int | Links Satellite to Parent. Null for Root instances. |
-    | `name` | String | Unique name (folder name). |
-    | `base_blueprint` | String | Script filename (e.g., `ComfyUI.sh`). |
+    | `parent_instance_id` | Int | Links Satellite to Parent. |
+    | `name` | String | Unique name. |
+    | `base_blueprint` | String | Script filename. |
     | `status` | String | `stopped`, `starting`, `started`, `installing`, `error`. |
-    | `gpu_ids` | String | `CUDA_VISIBLE_DEVICES` string (e.g., "0,1"). |
-    | `port` | Int | Internal HTTP port for the application. |
-    | `persistent_mode` | Bool | True = Launches KasmVNC stack. |
-    | `persistent_port` | Int | Public VNC port (if enabled). |
-    | `persistent_display`| Int | X11 Display ID (e.g., 10 for :10). |
-    | `output_path` | String | Override output folder path. |
-    | `hostname` | String | Custom URL override (for local DNS). |
-    | `use_custom_hostname`| Bool | Toggle for hostname usage. |
-    | `autostart` | Bool | (V5) Start the instance automatically when the container boots. |
+    | `gpu_ids` | String | `CUDA_VISIBLE_DEVICES`. |
+    | `port` | Int | Internal HTTP port. |
+    | `persistent_mode` | Bool | GUI Toggle. |
+    | `persistent_port` | Int | Public VNC port. |
+    | `persistent_display`| Int | X11 Display ID. |
+    | `output_path` | String | Override output folder. |
+    | `hostname` | String | Custom URL override. |
+    | `use_custom_hostname`| Bool | Toggle for hostname. |
+    | `autostart` | Bool | Container boot start toggle. |
