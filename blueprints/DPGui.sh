@@ -49,6 +49,14 @@ fi
 source activate "${VENV_DIR}"
 echo "--- Conda environment activated. ---"
 
+# --- Install Pre-built Wheels (Custom Modules) ---
+WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
+if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
+    echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"
+    pip install "${WHEELS_DIR}"/*.whl
+else
+    echo "No custom wheels found in ${WHEELS_DIR}."
+fi
 
 # --- Configuration & Symlinks ---
 echo "--- Applying configurations ---"

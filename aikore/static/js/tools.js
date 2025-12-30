@@ -1,10 +1,11 @@
+/* ... (Imports et fonctions inchangés jusqu'à initTableResizers) ... */
 import { state, DOM } from './state.js';
 import { fetchLogs, performVersionCheck, fetchFileContent } from './api.js';
+import { showToast } from './ui.js'; // Added import for showToast
 
 const ansi_up = new AnsiUp();
 
 function hideAllToolViews() {
-    // Hide all containers
     [
         DOM.welcomeScreenContainer,
         DOM.logViewerContainer,
@@ -14,21 +15,23 @@ function hideAllToolViews() {
         DOM.versionCheckContainer
     ].forEach(el => el.classList.add('hidden'));
 
-    // Handle new builder container if it exists dynamically or statically
     const builderContainer = document.getElementById('builder-container');
     if (builderContainer) builderContainer.classList.add('hidden');
 
+    // NEW: Hide Wheels Manager
+    const wheelsMgr = document.getElementById('wheels-manager-container');
+    if (wheelsMgr) wheelsMgr.classList.add('hidden');
+
     DOM.toolsCloseBtn.classList.add('hidden');
 
-    // Reset sources and intervals
     DOM.instanceIframe.src = 'about:blank';
     DOM.welcomeIframe.src = 'about:blank';
     
     clearInterval(state.activeLogInterval);
     state.activeLogInstanceId = null;
     
-    closeTerminal(); // Closes instance terminal
-    closeBuilderTerminal(); // Closes builder terminal
+    closeTerminal();
+    closeBuilderTerminal();
     
     if (state.viewResizeObserver) {
         state.viewResizeObserver.disconnect();
@@ -42,7 +45,7 @@ let builderTerminal = null;
 let builderFitAddon = null;
 let builderBtnInterval = null; 
 let builderResizeObserver = null;
-let builderSplit = null; // New: Store split instance
+let builderSplit = null; 
 
 async function fetchBuilderInfo() {
     const res = await fetch('/api/builder/info');
@@ -57,7 +60,11 @@ async function fetchWheelsList() {
 async function deleteWheel(filename) {
     if(!confirm(`Delete ${filename}?`)) return;
     await fetch(`/api/builder/wheels/${filename}`, { method: 'DELETE' });
-    renderWheelsTable(); // Refresh
+    renderWheelsTable(); 
+}
+
+function downloadWheel(filename) {
+    window.open(`/api/builder/wheels/${filename}/download`, '_blank');
 }
 
 async function renderWheelsTable() {
@@ -76,16 +83,18 @@ async function renderWheelsTable() {
         wheels.forEach(w => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td title="${w.filename}">${w.filename.length > 20 ? w.filename.substring(0,18)+'...' : w.filename}</td>
+                <td title="${w.filename}">${w.filename}</td>
                 <td>${w.cuda_arch}</td>
                 <td>${w.size_mb} MB</td>
                 <td>${w.created_at}</td>
                 <td class="wheel-actions">
+                    <button class="btn-icon btn-download" title="Download">⬇</button>
                     <button class="btn-icon btn-delete" title="Delete">🗑</button>
                 </td>
             `;
-            // Delete action
             tr.querySelector('.btn-delete').onclick = () => deleteWheel(w.filename);
+            tr.querySelector('.btn-download').onclick = () => downloadWheel(w.filename);
+            
             tbody.appendChild(tr);
         });
     } catch(e) {
@@ -107,7 +116,6 @@ function closeBuilderTerminal() {
         builderResizeObserver.disconnect();
         builderResizeObserver = null;
     }
-    // Don't destroy Split here, we keep the layout
     
     if (builderBtnInterval) {
         clearInterval(builderBtnInterval);
@@ -122,15 +130,15 @@ function closeBuilderTerminal() {
 
 function initBuilderTerminal() {
     const container = document.getElementById('builder-terminal');
-    container.innerHTML = ''; // Clear previous
+    container.innerHTML = ''; 
     
     builderTerminal = new Terminal({
         cursorBlink: false,
-        disableStdin: true, // Read-only
+        disableStdin: true, 
         fontSize: 12,
         fontFamily: 'Courier New, Courier, monospace',
         theme: { background: '#000000', foreground: '#e0e0e0' },
-        convertEol: true // FIX: Handles \n vs \r\n to prevent staircase effect
+        convertEol: true 
     });
     
     builderFitAddon = new FitAddon.FitAddon();
@@ -144,6 +152,61 @@ function initBuilderTerminal() {
         }
     });
     builderResizeObserver.observe(container);
+}
+
+// Table Resizing Logic
+function initTableResizers() {
+    const table = document.querySelector('.wheels-table');
+    if (!table) return;
+
+    // Attach resizers to Arch (index 1), Size (2), Date (3), Act (4)
+    const headers = table.querySelectorAll('th');
+    
+    [1, 2, 3, 4].forEach(index => {
+        const th = headers[index];
+        if (!th || th.querySelector('.resizer')) return;
+
+        const resizer = document.createElement('div');
+        resizer.classList.add('resizer');
+        th.appendChild(resizer);
+        createResizableColumn(th, resizer);
+    });
+}
+
+function createResizableColumn(th, resizer) {
+    let startX, startWidth;
+
+    const onMouseDown = (e) => {
+        e.preventDefault(); 
+        startX = e.pageX;
+        startWidth = th.offsetWidth;
+        
+        resizer.classList.add('resizing');
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    };
+
+    const onMouseMove = (e) => {
+        const diffX = e.pageX - startX;
+        
+        // LOGIC INVERTED: 
+        // Dragging Left (negative diff) means we want to EXTEND the column to the left -> Width increases.
+        // Dragging Right (positive diff) means we want to SHRINK the column to the right -> Width decreases.
+        const newWidth = startWidth - diffX;
+        
+        if (newWidth > 30) { 
+             th.style.width = `${newWidth}px`;
+        }
+    };
+
+    const onMouseUp = () => {
+        resizer.classList.remove('resizing');
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    resizer.addEventListener('mousedown', onMouseDown);
 }
 
 async function startBuild() {
@@ -290,13 +353,14 @@ export async function showBuilderView() {
             document.getElementById('builder-field-custom').style.display = isCustom ? 'flex' : 'none';
         });
 
-        // Initialize Split.js for the top pane (2/3 options, 1/3 wheels)
         Split(['#builder-options', '#builder-wheels'], {
             sizes: [66, 34],
             minSize: [200, 200],
             gutterSize: 5,
             cursor: 'col-resize'
         });
+
+        initTableResizers();
     }
 
     container.classList.remove('hidden');
@@ -327,7 +391,133 @@ export async function showBuilderView() {
     initBuilderTerminal();
 }
 
-// --- STANDARD TOOLS EXPORTS (Preserved) ---
+// --- NEW: INSTANCE WHEELS MANAGER ---
+
+export async function showInstanceWheelsManager(instanceId, instanceName) {
+    hideAllToolViews();
+    
+    let container = document.getElementById('wheels-manager-container');
+    if (!container) {
+        const html = `
+        <div id="wheels-manager-container" class="tools-view-container">
+            <div class="toolbar-header">
+                <div class="toolbar-info">
+                    Select compiled modules to include in this instance. 
+                    Files will be copied to <code>/wheels</code> folder.
+                </div>
+                <div class="toolbar-actions">
+                    <button id="btn-wheels-refresh" class="btn-secondary">Refresh</button>
+                    <button id="btn-wheels-apply" class="btn-primary">APPLY CHANGES</button>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px"><input type="checkbox" id="wheels-select-all"></th>
+                            <th>Filename</th>
+                            <th style="width: 100px">Size (MB)</th>
+                            <th style="width: 100px">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="instance-wheels-body"></tbody>
+                </table>
+            </div>
+        </div>
+        `;
+        // Inject after logs container usually
+        DOM.logViewerContainer.insertAdjacentHTML('afterend', html);
+        container = document.getElementById('wheels-manager-container');
+        
+        // Bind Events
+        document.getElementById('btn-wheels-refresh').onclick = () => loadInstanceWheels(instanceId);
+        document.getElementById('btn-wheels-apply').onclick = () => saveInstanceWheels(instanceId);
+        document.getElementById('wheels-select-all').onchange = (e) => {
+            const checkboxes = document.querySelectorAll('.wheel-checkbox');
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+        };
+    }
+    
+    container.classList.remove('hidden');
+    DOM.toolsCloseBtn.classList.remove('hidden');
+    DOM.toolsPaneTitle.textContent = `Manage Wheels: ${instanceName}`;
+    
+    await loadInstanceWheels(instanceId);
+}
+
+async function loadInstanceWheels(instanceId) {
+    const tbody = document.getElementById('instance-wheels-body');
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center">Loading...</td></tr>';
+    
+    try {
+        const res = await fetch(`/api/instances/${instanceId}/wheels`);
+        if(!res.ok) throw new Error("Failed to fetch");
+        const wheels = await res.json();
+        
+        tbody.innerHTML = '';
+        if(wheels.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#888">No compiled wheels found in Builder.</td></tr>';
+            return;
+        }
+        
+        wheels.forEach(w => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="text-align:center">
+                    <input type="checkbox" class="wheel-checkbox" value="${w.filename}" ${w.installed ? 'checked' : ''}>
+                </td>
+                <td title="${w.filename}">${w.filename}</td>
+                <td>${w.size_mb}</td>
+                <td>
+                    <span class="status-badge ${w.installed ? 'status-installed' : 'status-available'}">
+                        ${w.installed ? 'INSTALLED' : 'AVAILABLE'}
+                    </span>
+                </td>
+            `;
+            // Highlight row on click
+            tr.addEventListener('click', (e) => {
+                if(e.target.type !== 'checkbox') {
+                    const cb = tr.querySelector('input[type="checkbox"]');
+                    cb.checked = !cb.checked;
+                }
+            });
+            tbody.appendChild(tr);
+        });
+        
+    } catch(e) {
+        tbody.innerHTML = `<tr><td colspan="4" style="color:red">Error loading wheels: ${e.message}</td></tr>`;
+    }
+}
+
+async function saveInstanceWheels(instanceId) {
+    const btn = document.getElementById('btn-wheels-apply');
+    const checkboxes = document.querySelectorAll('.wheel-checkbox:checked');
+    const filenames = Array.from(checkboxes).map(cb => cb.value);
+    
+    btn.disabled = true;
+    btn.textContent = "SYNCING...";
+    
+    try {
+        const res = await fetch(`/api/instances/${instanceId}/wheels`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filenames })
+        });
+        
+        if(res.ok) {
+            showToast("Wheels synchronized successfully", "success");
+            loadInstanceWheels(instanceId); // Refresh to update status badges
+        } else {
+            const err = await res.json();
+            showToast(`Error: ${err.detail}`, "error");
+        }
+    } catch(e) {
+        showToast(`Sync failed: ${e.message}`, "error");
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "APPLY CHANGES";
+    }
+}
 
 export async function showVersionCheckView(instanceId, instanceName) {
     hideAllToolViews();

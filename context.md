@@ -36,7 +36,7 @@
     ├── aikore/                             # MAIN APPLICATION PACKAGE
     │   ├── api/                            # API Endpoints (Routers)
     │   │   ├── __init__.py
-    │   │   ├── builder.py                  # BUILDER: Compiles wheels in isolated Conda envs, manages WebSockets.
+    │   │   ├── builder.py                  # BUILDER: Compiles wheels in isolated Conda envs, manages WebSockets & Downloads.
     │   │   ├── instances.py                # CORE: CRUD, Actions (Start/Stop), Port Self-Healing, Websockets
     │   │   └── system.py                   # System Stats (NVML), Blueprint listing
     │   │
@@ -62,14 +62,14 @@
     │   │   │   ├── components.css          # Context Menus, Compact Progress Bars
     │   │   │   ├── instances.css           # Compact Table (28px rows), Grouping logic
     │   │   │   ├── modals.css              # Popups
-    │   │   │   └── tools.css               # Terminal/Editor/Builder styling (Split.js supported)
+    │   │   │   └── tools.css               # Tools layout. Handles Resizers & Grid.
     │   │   ├── js/
     │   │   │   ├── api.js                  # Fetch wrappers
     │   │   │   ├── eventHandlers.js        # Global Save & Creation at bottom logic
     │   │   │   ├── main.js                 # Entry Point: Polling & Grouped Rendering, Builder button injection
     │   │   │   ├── modals.js               # Modal logic
     │   │   │   ├── state.js                # Centralized State Store
-    │   │   │   ├── tools.js                # Tools logic (Builder, Term, Editor). Handles WebSocket streams.
+    │   │   │   ├── tools.js                # Tools logic. Handles WS streams & Column Resizing logic.
     │   │   │   └── ui.js                   # DOM Manipulation (Dirty rows, Normalization)
     │   │   ├── welcome/                    # "CRT Style" Welcome Screen
     │   │   └── index.html                  # Main HTML Entry Point
@@ -106,14 +106,16 @@
     
     ### Module Builder (Experimental)
     *   **Purpose**: Compile heavy Python/CUDA modules (e.g., `SageAttention`) at runtime to match the host's GPU architecture.
-    *   **Dynamic Environments**: Instead of polluting the main environment, it creates/reuses specific Conda environments on the fly (e.g., `builder_py312_cu130`) containing `torch`, `packaging`, `ninja`.
-    *   **Storage**: Compiled wheels are stored in `/config/instances/.wheels`.
-    *   **Manifest Sidecar**: A `manifest.json` tracks metadata (CUDA architecture, Python version, Source URL) alongside the `.whl` files.
-    *   **Communication**: Uses unbuffered WebSockets (`PYTHONUNBUFFERED=1`) to stream `stdout` from subprocesses to `xterm.js`.
-    *   **Networking Requirement**: A specific `location /api/builder/build` block in NGINX is mandatory to handle the WebSocket `Upgrade` header.
+    *   **Dynamic Environments**: Creates/reuses specific Conda environments on the fly (e.g., `builder_py312_cu130`) containing `torch`, `packaging`, `ninja`.
+    *   **Storage & Naming**:
+        *   Compiled wheels are stored in `/config/instances/.wheels`.
+        *   **Naming Strategy**: Files are built in a temp dir, then renamed with an `+arch{ver}` suffix (e.g., `sage...linux_x86_64+arch8.9.whl`) to prevent overwrites between architectures.
+    *   **Capabilities**:
+        *   **Manifest Sidecar**: A `manifest.json` tracks metadata alongside the `.whl` files.
+        *   **Download**: Direct endpoint to download generated wheels.
     *   **UI Layout**:
-        *   **Resizable Split View**: Top (Options/List) vs Bottom (Logs), and Left (Options) vs Right (List).
-        *   **Table**: Resizable columns, Excel-like grid.
+        *   **Split View**: Resizable panes (Options/List & Options/Logs).
+        *   **Table**: Fixed layout with **manual column resizing** (Left-edge grip). The "Filename" column is fluid, others are fixed-width.
         *   **Architecture Support**: Full list including Blackwell (12.0), Hopper (9.0), Ada (8.9).
     
     ### UI/UX Design Standards (Ultra-Compact)

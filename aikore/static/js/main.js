@@ -3,7 +3,7 @@ import { fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSyste
 import { renderInstanceRow, updateSystemStats, checkRowForChanges } from './ui.js';
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
-import { showWelcomeScreen, showBuilderView } from './tools.js'; // <-- IMPORT showBuilderView
+import { showWelcomeScreen, showBuilderView } from './tools.js';
 
 const INSTANCE_ORDER_KEY = 'aikoreInstanceOrder';
 

@@ -15,6 +15,7 @@ export function showToolsMenu(buttonEl) {
     
     DOM.toolsContextMenu.querySelector('[data-action="script"]').disabled = isSatellite;
     DOM.toolsContextMenu.querySelector('[data-action="terminal"]').disabled = isSatellite;
+    DOM.toolsContextMenu.querySelector('[data-action="manage-wheels"]').disabled = isSatellite; // DISABLED FOR SATELLITES
     DOM.toolsContextMenu.querySelector('[data-action="rebuild-env"]').disabled = isSatellite;
     DOM.toolsContextMenu.querySelector('[data-action="clone"]').disabled = isSatellite;
     DOM.toolsContextMenu.querySelector('[data-action="instantiate"]').disabled = isSatellite;

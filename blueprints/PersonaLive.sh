@@ -62,11 +62,22 @@ pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https
 echo "--- Installing TensorRT ---"
 pip install tensorrt
 
+# Install Pre-built Wheels (Custom Modules)
+WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
+if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
+    echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"
+    pip install "${WHEELS_DIR}"/*.whl
+else
+    echo "No custom wheels found in ${WHEELS_DIR}, skipping."
+fi
+
 # Install Requirements
 if [ -f "${APP_DIR}/requirements_base.txt" ]; then
     echo "--- Installing dependencies from requirements_base.txt ---"
-    # Exclude torch/vision (installed manually), av, pycuda and tensorrt (installed via conda/pip manually)
-    grep -vE "torch|torchvision|torchaudio|av|pycuda|tensorrt" "${APP_DIR}/requirements_base.txt" > "${APP_DIR}/requirements-filtered.txt"
+    # Exclude torch/vision (installed manually), av, pycuda, tensorrt AND potentially custom wheels
+    PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|av|pycuda|tensorrt|flash-attn|sageattention|xformers|bitsandbytes"
+    
+    grep -vE "(${PACKAGES_TO_EXCLUDE})" "${APP_DIR}/requirements_base.txt" > "${APP_DIR}/requirements-filtered.txt"
     pip install -r "${APP_DIR}/requirements-filtered.txt"
 fi
 

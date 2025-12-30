@@ -1,4 +1,5 @@
 from fastapi import APIRouter, WebSocket, HTTPException, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import os
@@ -184,6 +185,15 @@ def list_wheels():
     wheels.sort(key=lambda x: x['created_at'], reverse=True)
     return wheels
 
+@router.get("/wheels/{filename}/download")
+def download_wheel(filename: str):
+    safe_name = os.path.basename(filename) # Prevent directory traversal
+    path = os.path.join(WHEELS_DIR, safe_name)
+    
+    if os.path.exists(path):
+        return FileResponse(path, media_type='application/octet-stream', filename=safe_name)
+    raise HTTPException(status_code=404, detail="File not found")
+
 @router.delete("/wheels/{filename}")
 def delete_wheel(filename: str):
     safe_name = os.path.basename(filename) # Prevent directory traversal
@@ -272,10 +282,11 @@ async def build_websocket(websocket: WebSocket):
         os.makedirs(build_tmp_dir)
 
         # Template substitution
+        # CHANGED: output_dir is now build_tmp_dir (isolated) instead of WHEELS_DIR
         raw_cmd = preset["cmd_template"].format(
             git_url=git_url,
             arch=target_arch,
-            output_dir=WHEELS_DIR,
+            output_dir=build_tmp_dir, 
             python="python -u" 
         )
 
@@ -287,27 +298,42 @@ async def build_websocket(websocket: WebSocket):
         # 4. Execution
         return_code = await stream_subprocess(final_cmd, build_tmp_dir, websocket)
 
-        # 5. Cleanup & Manifest
-        shutil.rmtree(build_tmp_dir, ignore_errors=True)
-
+        # 5. Cleanup, Rename & Manifest
         if return_code == 0:
             await websocket.send_text(f"\r\n\x1b[32m[SUCCESS] Build completed successfully.\x1b[0m\r\n")
             
-            list_of_files = glob.glob(os.path.join(WHEELS_DIR, "*.whl"))
+            # Look for wheels ONLY in the temp directory (ensures we get the one we just built)
+            list_of_files = glob.glob(os.path.join(build_tmp_dir, "*.whl"))
+            
             if list_of_files:
-                latest_file = max(list_of_files, key=os.path.getctime)
-                filename = os.path.basename(latest_file)
+                # There should usually be only one, but take the latest just in case
+                generated_file_path = max(list_of_files, key=os.path.getctime)
+                original_filename = os.path.basename(generated_file_path)
                 
-                update_manifest(filename, {
+                # --- RENAMING LOGIC ---
+                # Example: package-1.0-cp312...whl -> package-1.0-cp312...+arch8.9.whl
+                name_part, ext = os.path.splitext(original_filename)
+                
+                # Add architecture suffix to filename
+                final_filename = f"{name_part}+arch{target_arch}{ext}"
+                final_path = os.path.join(WHEELS_DIR, final_filename)
+                
+                # Move from tmp to final
+                shutil.move(generated_file_path, final_path)
+                
+                update_manifest(final_filename, {
                     "cuda_arch": target_arch,
                     "source_preset": preset_key,
                     "git_url": git_url,
                     "python_ver": python_ver,
                     "cuda_ver": cuda_ver
                 })
-                await websocket.send_text(f"\x1b[32m[INFO] Created: {filename}\x1b[0m\r\n")
+                await websocket.send_text(f"\x1b[32m[INFO] Saved as: {final_filename}\x1b[0m\r\n")
         else:
             await websocket.send_text(f"\r\n\x1b[31m[FAILURE] Build failed with exit code {return_code}.\x1b[0m\r\n")
+            
+        # Clean up temp dir
+        shutil.rmtree(build_tmp_dir, ignore_errors=True)
 
     except Exception as e:
         print(f"[DEBUG] Exception in build_websocket: {e}")

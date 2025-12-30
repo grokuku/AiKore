@@ -1,7 +1,7 @@
 import { state, DOM } from './state.js';
 import * as api from './api.js';
 import { showToolsMenu, hideToolsMenu } from './modals.js';
-import { openEditor, openTerminal, showVersionCheckView, openInstanceView, showLogViewer } from './tools.js';
+import { openEditor, openTerminal, showVersionCheckView, openInstanceView, showLogViewer, showInstanceWheelsManager } from './tools.js';
 import { renderInstanceRow, buildInstanceUrl, showToast } from './ui.js';
 import { fetchAndRenderInstances } from './main.js';
 
@@ -302,6 +302,9 @@ export function setupMainEventListeners() {
                         break;
                     case 'version-check':
                         showVersionCheckView(id, name);
+                        break;
+                    case 'manage-wheels': // ADDED
+                        showInstanceWheelsManager(id, name);
                         break;
                     case 'rebuild-env':
                         state.instanceToRebuild = state.currentMenuInstance;

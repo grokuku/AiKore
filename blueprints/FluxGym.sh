@@ -1,3 +1,11 @@
+### AIKORE-METADATA-START ###
+# aikore.name = FluxGym
+# aikore.category = Training
+# aikore.description = A simplified WebUI for training Flux LoRAs using Kohya-ss scripts, supporting low VRAM environments.
+# aikore.venv_type = conda
+# aikore.venv_path = ./env
+### AIKORE-METADATA-END ###
+
 #!/bin/bash
 source /opt/sd-install/functions.sh
 
@@ -61,11 +69,16 @@ echo "--- Installing Python dependencies ---"
 pip install --upgrade pip
 
 # Install our pre-built wheels first
-echo "--- Installing pre-built libraries from /wheels/ ---"
-pip install /wheels/*.whl
+WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
+if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
+    echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"
+    pip install "${WHEELS_DIR}"/*.whl
+else
+    echo "No custom wheels found in ${WHEELS_DIR}, skipping."
+fi
 
-# Now install app-specific requirements, excluding torch & torchvision
-PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio"
+# Now install app-specific requirements, excluding torch & torchvision AND custom wheels
+PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|xformers|bitsandbytes|flash-attn|sageattention|auto-gptq"
 
 # Filter and install requirements for sd-scripts
 echo "--- Installing dependencies for sd-scripts ---"

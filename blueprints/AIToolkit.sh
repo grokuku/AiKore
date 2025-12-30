@@ -69,10 +69,20 @@ pip install torch==2.8.0 torchvision torchaudio --index-url https://download.pyt
 echo "--- Installing torchao 0.10.0 ---"
 pip install torchao==0.10.0
 
-# 3. Filter and install requirements
+# 3. Install Pre-built Wheels (Custom Modules)
+# This step installs your custom compiled wheels (e.g. SageAttention, FlashAttn)
+WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
+if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
+    echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"
+    pip install "${WHEELS_DIR}"/*.whl
+else
+    echo "No custom wheels found in ${WHEELS_DIR}."
+fi
+
+# 4. Filter and install requirements
 echo "--- Filtering and installing requirements ---"
-# We exclude torch packages to prevent pip from overwriting our specific versions.
-PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio"
+# We exclude torch packages AND packages we might have installed via wheels
+PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|flash-attn|sageattention|xformers|bitsandbytes"
 
 grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "${TOOLKIT_DIR}/requirements.txt" > "${TOOLKIT_DIR}/requirements-filtered.txt"
 pip install -r "${TOOLKIT_DIR}/requirements-filtered.txt"

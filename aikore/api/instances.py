@@ -8,6 +8,7 @@ import asyncio
 import psutil
 import json
 import subprocess
+import glob 
 from pydantic import BaseModel
 
 from ..database import crud, models
@@ -15,6 +16,9 @@ from ..database.session import SessionLocal
 from ..schemas import instance as schemas
 from ..core import process_manager
 from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR, _find_free_port, _find_free_display
+
+# --- CONSTANTS ---
+GLOBAL_WHEELS_DIR = os.path.join(INSTANCES_DIR, ".wheels")
 
 class DeleteOptions(BaseModel):
     mode: str = "trash"
@@ -32,6 +36,15 @@ class FileContent(BaseModel):
 class SystemInfo(BaseModel):
     gpu_count: int
     gpus: List[dict] = [] # To provide more details if needed
+
+# NEW: Wheel Management Schemas
+class InstanceWheel(BaseModel):
+    filename: str
+    size_mb: float
+    installed: bool # Present in instance/wheels/
+    
+class WheelsSyncRequest(BaseModel):
+    filenames: List[str] # List of filenames to KEEP/INSTALL
 
 def get_db():
     db = SessionLocal()
@@ -779,3 +792,92 @@ async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db:
             except RuntimeError:
                 # This can happen if the socket is already in the process of closing, which is fine.
                 pass
+
+# --- NEW ENDPOINTS FOR WHEELS MANAGEMENT ---
+
+@router.get("/instances/{instance_id}/wheels", response_model=List[InstanceWheel], tags=["Instance Assets"])
+def get_instance_wheels(instance_id: int, db: Session = Depends(get_db)):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    # Determine paths
+    instance_dir = os.path.join(INSTANCES_DIR, db_instance.name)
+    local_wheels_dir = os.path.join(instance_dir, "wheels")
+    
+    # 1. List Global Wheels (Source of Truth)
+    global_files = glob.glob(os.path.join(GLOBAL_WHEELS_DIR, "*.whl"))
+    
+    # 2. List Local Wheels (Current State)
+    local_filenames = set()
+    if os.path.exists(local_wheels_dir):
+        local_filenames = set(os.path.basename(f) for f in glob.glob(os.path.join(local_wheels_dir, "*.whl")))
+
+    result = []
+    
+    for p in global_files:
+        fname = os.path.basename(p)
+        try:
+            size_mb = round(os.path.getsize(p) / (1024 * 1024), 2)
+        except OSError:
+            size_mb = 0.0
+            
+        result.append({
+            "filename": fname,
+            "size_mb": size_mb,
+            "installed": fname in local_filenames
+        })
+        
+    # Sort: Installed first, then by name
+    result.sort(key=lambda x: (not x['installed'], x['filename']))
+    return result
+
+@router.post("/instances/{instance_id}/wheels", tags=["Instance Assets"])
+def sync_instance_wheels(
+    instance_id: int, 
+    sync_request: WheelsSyncRequest,
+    db: Session = Depends(get_db)
+):
+    db_instance = crud.get_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Instance not found")
+
+    # Only allow modification if stopped (safer, though technically could be done while running if careful)
+    # Allowing it while running to let user prepare next restart.
+    
+    instance_dir = os.path.join(INSTANCES_DIR, db_instance.name)
+    local_wheels_dir = os.path.join(instance_dir, "wheels")
+    os.makedirs(local_wheels_dir, exist_ok=True)
+    
+    target_filenames = set(sync_request.filenames)
+    
+    # 1. Clean up: Remove files locally that are NOT in target list
+    current_local_files = glob.glob(os.path.join(local_wheels_dir, "*.whl"))
+    for fpath in current_local_files:
+        fname = os.path.basename(fpath)
+        if fname not in target_filenames:
+            try:
+                os.remove(fpath)
+            except OSError as e:
+                print(f"[Wheels-Sync] Failed to remove {fname}: {e}")
+
+    # 2. Install: Copy files from global that ARE in target list but missing locally
+    for fname in target_filenames:
+        # Security check: prevent directory traversal
+        if ".." in fname or "/" in fname or "\\" in fname:
+            continue
+            
+        src_path = os.path.join(GLOBAL_WHEELS_DIR, fname)
+        dst_path = os.path.join(local_wheels_dir, fname)
+        
+        if os.path.exists(src_path):
+            if not os.path.exists(dst_path):
+                try:
+                    shutil.copy2(src_path, dst_path)
+                except OSError as e:
+                     raise HTTPException(status_code=500, detail=f"Failed to copy {fname}: {e}")
+        else:
+            # If global file doesn't exist, we skip it (maybe deleted globally?)
+            pass
+            
+    return {"ok": True, "detail": "Wheels synchronized successfully."}

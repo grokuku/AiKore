@@ -76,12 +76,13 @@ pip install torchsde
 
 # 1. Install pre-built performance and utility libraries from wheels first.
 # This ensures our GPU-optimized versions are used.
-echo "--- Installing pre-built libraries from /wheels/ ---"
-if ls /wheels/*.whl 1> /dev/null 2>&1; then
+WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
+echo "--- Checking for pre-built libraries in ${WHEELS_DIR} ---"
+if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
     echo "Wheel files found, installing..."
-    pip install /wheels/*.whl
+    pip install "${WHEELS_DIR}"/*.whl
 else
-    echo "No wheel files found in /wheels/, skipping."
+    echo "No wheel files found in ${WHEELS_DIR}, skipping."
 fi
 
 # 2. Prepare a filtered requirements file for ComfyUI
@@ -90,7 +91,7 @@ echo "--- Filtering ComfyUI requirements ---"
 # Create a pattern for grep. Note that some packages might be specified with '=='
 # so we match the package name at the beginning of the line.
 # The list should include all packages that are built into wheels.
-PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|xformers|bitsandbytes|flash-attn|sageattention|diso|nvdiffrast|kaolin|diff-gaussian-rasterization|vox2seq"
+PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|xformers|bitsandbytes|flash-attn|sageattention|diso|nvdiffrast|kaolin|diff-gaussian-rasterization|vox2seq|auto-gptq|exllamav2"
 
 grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "${COMFYUI_DIR}/requirements.txt" > "${COMFYUI_DIR}/requirements-filtered.txt"
 
@@ -103,7 +104,6 @@ pip install -r "${MANAGER_DIR}/requirements.txt"
 # 4. Find and install dependencies for all other custom nodes
 echo "--- Installing dependencies for other custom nodes ---"
 CUSTOM_NODES_DIR="${COMFYUI_DIR}/custom_nodes"
-PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|xformers|bitsandbytes|flash-attn|sageattention|diso|nvdiffrast|kaolin|diff-gaussian-rasterization|vox2seq"
 
 find "${CUSTOM_NODES_DIR}" -name "requirements.txt" -print0 | while IFS= read -r -d $'\0' req_file; do
     # Exclude the ComfyUI-Manager's requirements file as we've already installed it
