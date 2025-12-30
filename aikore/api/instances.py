@@ -9,6 +9,7 @@ import psutil
 import json
 import subprocess
 import glob 
+import re # NEW: For regex
 from pydantic import BaseModel
 
 from ..database import crud, models
@@ -795,6 +796,14 @@ async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db:
 
 # --- NEW ENDPOINTS FOR WHEELS MANAGEMENT ---
 
+def _clean_wheel_name(filename: str) -> str:
+    """
+    Removes the internal architecture suffix (+archX.Y) from the filename
+    to restore PEP 425 compatibility for pip.
+    Example: sage..._x86_64+arch8.9.whl -> sage..._x86_64.whl
+    """
+    return re.sub(r'\+arch[\d\.]+', '', filename)
+
 @router.get("/instances/{instance_id}/wheels", response_model=List[InstanceWheel], tags=["Instance Assets"])
 def get_instance_wheels(instance_id: int, db: Session = Depends(get_db)):
     db_instance = crud.get_instance(db, instance_id=instance_id)
@@ -805,10 +814,10 @@ def get_instance_wheels(instance_id: int, db: Session = Depends(get_db)):
     instance_dir = os.path.join(INSTANCES_DIR, db_instance.name)
     local_wheels_dir = os.path.join(instance_dir, "wheels")
     
-    # 1. List Global Wheels (Source of Truth)
+    # 1. List Global Wheels (Source of Truth - with suffix)
     global_files = glob.glob(os.path.join(GLOBAL_WHEELS_DIR, "*.whl"))
     
-    # 2. List Local Wheels (Current State)
+    # 2. List Local Wheels (Current State - cleaned names)
     local_filenames = set()
     if os.path.exists(local_wheels_dir):
         local_filenames = set(os.path.basename(f) for f in glob.glob(os.path.join(local_wheels_dir, "*.whl")))
@@ -816,16 +825,20 @@ def get_instance_wheels(instance_id: int, db: Session = Depends(get_db)):
     result = []
     
     for p in global_files:
-        fname = os.path.basename(p)
+        fname = os.path.basename(p) # This has +arch suffix
         try:
             size_mb = round(os.path.getsize(p) / (1024 * 1024), 2)
         except OSError:
             size_mb = 0.0
             
+        # Check if the CLEAN version exists locally
+        clean_name = _clean_wheel_name(fname)
+        is_installed = clean_name in local_filenames
+            
         result.append({
             "filename": fname,
             "size_mb": size_mb,
-            "installed": fname in local_filenames
+            "installed": is_installed
         })
         
     # Sort: Installed first, then by name
@@ -841,34 +854,36 @@ def sync_instance_wheels(
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
         raise HTTPException(status_code=404, detail="Instance not found")
-
-    # Only allow modification if stopped (safer, though technically could be done while running if careful)
-    # Allowing it while running to let user prepare next restart.
     
     instance_dir = os.path.join(INSTANCES_DIR, db_instance.name)
     local_wheels_dir = os.path.join(instance_dir, "wheels")
     os.makedirs(local_wheels_dir, exist_ok=True)
     
-    target_filenames = set(sync_request.filenames)
+    # These are the requested global filenames (with suffix)
+    # We compute what their local names SHOULD be (cleaned)
+    target_clean_names = set(_clean_wheel_name(f) for f in sync_request.filenames)
     
     # 1. Clean up: Remove files locally that are NOT in target list
     current_local_files = glob.glob(os.path.join(local_wheels_dir, "*.whl"))
     for fpath in current_local_files:
-        fname = os.path.basename(fpath)
-        if fname not in target_filenames:
+        local_fname = os.path.basename(fpath)
+        if local_fname not in target_clean_names:
             try:
                 os.remove(fpath)
             except OSError as e:
-                print(f"[Wheels-Sync] Failed to remove {fname}: {e}")
+                print(f"[Wheels-Sync] Failed to remove {local_fname}: {e}")
 
-    # 2. Install: Copy files from global that ARE in target list but missing locally
-    for fname in target_filenames:
-        # Security check: prevent directory traversal
+    # 2. Install: Copy files from global, renaming them on the fly
+    for fname in sync_request.filenames:
+        # Security check
         if ".." in fname or "/" in fname or "\\" in fname:
             continue
             
         src_path = os.path.join(GLOBAL_WHEELS_DIR, fname)
-        dst_path = os.path.join(local_wheels_dir, fname)
+        
+        # Determine clean destination name
+        clean_name = _clean_wheel_name(fname)
+        dst_path = os.path.join(local_wheels_dir, clean_name)
         
         if os.path.exists(src_path):
             if not os.path.exists(dst_path):
@@ -876,8 +891,11 @@ def sync_instance_wheels(
                     shutil.copy2(src_path, dst_path)
                 except OSError as e:
                      raise HTTPException(status_code=500, detail=f"Failed to copy {fname}: {e}")
-        else:
-            # If global file doesn't exist, we skip it (maybe deleted globally?)
-            pass
+            else:
+                # File exists locally. Should we update it?
+                # Simple logic: if global is newer/different size?
+                # For now, assume immutable unless deleted. 
+                # To force update, user can uncheck -> apply -> check -> apply.
+                pass
             
     return {"ok": True, "detail": "Wheels synchronized successfully."}
