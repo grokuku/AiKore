@@ -1,0 +1,117 @@
+### AIKORE-METADATA-START ###
+# aikore.name = Ultimate TTS
+# aikore.category = Audio / TTS
+# aikore.description = All-in-one Voice Cloning & TTS (Tortoise, RVC, AudioLDM).
+# aikore.venv_type = conda
+# aikore.venv_path = ./env
+### AIKORE-METADATA-END ###
+
+#!/bin/bash
+set -e
+
+source /opt/sd-install/functions.sh
+
+export PATH="/home/abc/miniconda3/bin:$PATH"
+
+echo "--- Starting Blueprint: Ultimate TTS Studio (Fix Dependencies) for Instance: ${INSTANCE_NAME} ---"
+
+mkdir -p "${INSTANCE_CONF_DIR}"
+mkdir -p "${INSTANCE_OUTPUT_DIR}"
+
+APP_DIR="${INSTANCE_CONF_DIR}/UltimateTTS"
+VENV_DIR="${INSTANCE_CONF_DIR}/env"
+
+# --- 1. Git Clone ---
+if [ ! -d "${APP_DIR}/.git" ]; then
+    echo "Cloning Ultimate-TTS-Studio-SUP3R-Edition..."
+    git clone https://github.com/SUP3RMASS1VE/Ultimate-TTS-Studio-SUP3R-Edition.git "${APP_DIR}"
+else
+    echo "Existing repository found. Synchronizing..."
+    cd "${APP_DIR}"
+    check_remote "GIT_REF"
+fi
+
+# --- 2. Environment Setup ---
+echo "--- Setting up Conda environment ---"
+
+# We stick to Python 3.10 because Tortoise/RVC rely on Numba/LLVMLite versions
+# that often break on Python 3.12.
+if [ ! -d "${VENV_DIR}" ]; then
+    echo "Creating Conda environment (Python 3.10)..."
+    # CRITICAL FIX: We install 'portaudio' and 'pyaudio' via Conda directly.
+    # This provides the missing C libraries that caused the pip build error.
+    conda create -p "${VENV_DIR}" python=3.10 portaudio pyaudio -c conda-forge -y
+fi
+source activate "${VENV_DIR}"
+
+# --- 3. Dependency Installation ---
+echo "--- Installing dependencies ---"
+
+conda install -c conda-forge ffmpeg -y
+
+# 1. PyTorch (Audio Optimized)
+# Torch 2.1.2 is the stability sweet spot for Audio AI tools today.
+echo "--- Installing PyTorch 2.1.2 ---"
+pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
+
+# 2. Custom Wheels
+WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
+if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
+    echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"
+    pip install "${WHEELS_DIR}"/*.whl
+fi
+
+# 3. Requirements with Filters
+if [ -f "${APP_DIR}/requirements.txt" ]; then
+    echo "--- Filtering and installing requirements ---"
+    
+    # We filter out:
+    # - torch/audio/vision: installed manually above
+    # - ffmpeg: installed via conda
+    # - pyaudio: installed via conda (to avoid the build error)
+    PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|ffmpeg|pyaudio"
+    
+    grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "${APP_DIR}/requirements.txt" > "${APP_DIR}/requirements-filtered.txt"
+    pip install -r "${APP_DIR}/requirements-filtered.txt"
+fi
+
+# 4. Final Polish
+# Ensure Gradio is present (sometimes missing from packs)
+pip install gradio
+
+# --- 4. Configuration & Symlinks ---
+mkdir -p "${APP_DIR}/results"
+sl_folder "${APP_DIR}" "results" "${INSTANCE_OUTPUT_DIR}" ""
+
+# --- 5. Launch ---
+echo "--- Launching Ultimate TTS Studio ---"
+cd "${APP_DIR}"
+
+# Find the entry script (handling spaces in filename)
+ENTRY_SCRIPT=$(find . -maxdepth 1 -name "*.py" | grep -i "Ultimate" | head -n 1)
+
+if [ -z "$ENTRY_SCRIPT" ]; then
+    ENTRY_SCRIPT=$(find . -maxdepth 1 -name "app.py" -o -name "main.py" | head -n 1)
+fi
+
+if [ -z "$ENTRY_SCRIPT" ]; then
+    echo "FATAL: Could not find entry script."
+    exit 1
+fi
+
+echo "Entry Script: $ENTRY_SCRIPT"
+
+export GRADIO_SERVER_NAME="0.0.0.0"
+export GRADIO_SERVER_PORT="${WEBUI_PORT}"
+
+# Launch using quotes for safety
+CMD="python \"$ENTRY_SCRIPT\""
+
+if [ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
+    USER_ARGS=$(cat "${INSTANCE_CONF_DIR}/launch_args.txt")
+    CMD+=" ${USER_ARGS}"
+fi
+
+echo "Executing: ${CMD}"
+eval $CMD
+sleep infinity
