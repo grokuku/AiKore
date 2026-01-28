@@ -3,7 +3,7 @@ import { fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSyste
 import { renderInstanceRow, updateSystemStats, checkRowForChanges } from './ui.js';
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
-import { showWelcomeScreen, showBuilderView } from './tools.js';
+import { showWelcomeScreen, showBuilderView, renderBuilderStatus } from './tools.js';
 
 const INSTANCE_ORDER_KEY = 'aikoreInstanceOrder';
 
@@ -176,6 +176,7 @@ async function initializeApp() {
     if (addBtn) {
         const buildBtn = document.createElement('button');
         buildBtn.className = addBtn.className; // Copy styles (btn btn-primary etc)
+        buildBtn.id = 'btn-open-builder'; // --- NEW ID ---
         buildBtn.textContent = "Build Module";
         buildBtn.style.marginRight = "10px"; // Add spacing
         // Change color to distinguish (if bootstrap, use btn-secondary or custom style)
@@ -203,6 +204,9 @@ async function initializeApp() {
     setInterval(async () => {
         const stats = await getSystemStats();
         updateSystemStats(stats);
+        
+        // --- NEW: Polling builder status ---
+        renderBuilderStatus();
     }, 2000);
 
     DOM.toolsCloseBtn.addEventListener('click', showWelcomeScreen);

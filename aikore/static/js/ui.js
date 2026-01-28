@@ -487,6 +487,36 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
             field.addEventListener('input', () => checkRowForChanges(row));
             field.addEventListener('change', () => checkRowForChanges(row));
         });
+
+        // --- ADDED: Specific logic for Blueprint Changes ---
+        const bpSelect = row.querySelector('select[data-field="base_blueprint"]');
+        if (bpSelect && !bpSelect.disabled) {
+            // Track previous value on focus
+            bpSelect.addEventListener('focus', function() {
+                this.dataset.previousValue = this.value;
+            });
+
+            // Intercept change event
+            bpSelect.addEventListener('change', function() {
+                const confirmed = confirm(
+                    "Warning: The startup script will be updated to match the selected blueprint.\n\n" +
+                    "Click OK to include this update in the next Save.\n" +
+                    "Click Cancel to revert to the previous blueprint."
+                );
+
+                if (!confirmed) {
+                    // Revert to value before this change
+                    this.value = this.dataset.previousValue || row.dataset.originalBlueprint;
+                    checkRowForChanges(row);
+                } else {
+                    // Update tracked value and allow dirty state (handled by generic listener)
+                    this.dataset.previousValue = this.value;
+                    checkRowForChanges(row);
+                }
+            });
+        }
+        // ---------------------------------------------------
+
         updateInstanceRow(row, instance);
     }
     return row;

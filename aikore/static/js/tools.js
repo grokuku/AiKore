@@ -52,6 +52,35 @@ async function fetchBuilderInfo() {
     return await res.json();
 }
 
+// NEW: Exported function to update the main UI button status
+export async function renderBuilderStatus() {
+    const btn = document.getElementById('btn-open-builder');
+    if (!btn) return;
+
+    try {
+        const info = await fetchBuilderInfo();
+        // Check for 'building' status or flag. 
+        // Adapting to probable API response: checks status string or boolean
+        const isBuilding = info.status === 'building' || info.is_building === true;
+
+        if (isBuilding) {
+            if (btn.textContent === "Build Module") {
+                btn.textContent = "BUILDING...";
+            }
+            // Pulse effect color (Orange)
+            btn.style.backgroundColor = "#e67e22"; 
+            btn.style.borderColor = "#e67e22";
+        } else {
+            btn.textContent = "Build Module";
+            // Default color (Purple)
+            btn.style.backgroundColor = "#6f42c1"; 
+            btn.style.borderColor = "#6f42c1";
+        }
+    } catch (e) {
+        // Silent fail on network error to avoid console spam
+    }
+}
+
 async function fetchWheelsList() {
     const res = await fetch('/api/builder/wheels');
     return await res.json();
