@@ -1,7 +1,7 @@
 ### AIKORE-METADATA-START ###
 # aikore.name = LM Studio
 # aikore.category = Chat / LLM
-# aikore.description = Discover, download, and run local LLMs. (Sandbox Fixed).
+# aikore.description = Discover, download, and run local LLMs. (v0.4.x Compatible).
 # aikore.venv_type = conda
 # aikore.venv_path = ./env
 # aikore.persistent_mode = true
@@ -14,7 +14,7 @@ source /opt/sd-install/functions.sh
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
-echo "--- Starting Blueprint: LM Studio (Sandbox Fix) for Instance: ${INSTANCE_NAME} ---"
+echo "--- Starting Blueprint: LM Studio (Update Fix) for Instance: ${INSTANCE_NAME} ---"
 
 mkdir -p "${INSTANCE_CONF_DIR}"
 mkdir -p "${INSTANCE_OUTPUT_DIR}"
@@ -52,48 +52,28 @@ if [ ! -d "${VENV_DIR}" ]; then
 fi
 source activate "${VENV_DIR}"
 
-# --- 3. Robust Update Logic ---
+# --- 3. Robust Update Logic (0.4.x Focus) ---
 mkdir -p "${APP_DIR}"
 cd "${APP_DIR}"
 
 VERSION_FILE="installed_version.txt"
-MANIFEST_URL="https://installers.lmstudio.ai/linux/x64/latest-linux.yml"
-BASE_URL="https://installers.lmstudio.ai/linux/x64"
+# Using the direct redirect URL to bypass the stuck manifest
+REDIRECT_URL="https://lmstudio.ai/download/latest/linux/x64?format=AppImage"
 
-FALLBACK_VERSION="0.3.35"
-FALLBACK_FILENAME="LM-Studio-0.3.35-1-x64.AppImage"
-FALLBACK_URL="https://installers.lmstudio.ai/linux/x64/0.3.35-1/LM-Studio-0.3.35-1-x64.AppImage"
+echo "Checking for the truly latest version..."
 
-echo "Checking for updates..."
+# Extracting filename from redirect headers (e.g., LM-Studio-0.4.3-x64.AppImage)
+LATEST_FILENAME=$(curl -sI "$REDIRECT_URL" | grep -i "location:" | awk '{print $2}' | tr -d '\r' | xargs basename)
 
-LATEST_VERSION=""
-LATEST_FILENAME=""
-DOWNLOAD_URL=""
-
-if curl -sL -f "$MANIFEST_URL" -o manifest.yml; then
-    LATEST_VERSION=$(grep "version:" manifest.yml | head -n 1 | awk '{print $2}' | tr -d '"' | tr -d ' ')
-    LATEST_FILENAME=$(grep "path:" manifest.yml | head -n 1 | awk '{print $2}' | tr -d '"' | tr -d ' ')
-    if [ -z "$LATEST_FILENAME" ]; then
-        LATEST_FILENAME=$(grep "url:" manifest.yml | head -n 1 | awk '{print $2}' | tr -d '"' | tr -d ' ')
-    fi
-    
-    if [ -n "$LATEST_FILENAME" ]; then
-        if [[ "$LATEST_FILENAME" == http* ]]; then
-            DOWNLOAD_URL="$LATEST_FILENAME"
-        else
-            DOWNLOAD_URL="${BASE_URL}/${LATEST_FILENAME}"
-        fi
-    fi
+if [ -z "$LATEST_FILENAME" ]; then
+    echo "WARNING: Could not determine latest version from redirect. Falling back."
+    LATEST_VERSION="0.3.35" # Legacy fallback
+    DOWNLOAD_URL="https://installers.lmstudio.ai/linux/x64/0.3.35-1/LM-Studio-0.3.35-1-x64.AppImage"
 else
-    echo "WARNING: Failed to download update manifest."
-fi
-
-if [ -z "$LATEST_VERSION" ] || [ -z "$DOWNLOAD_URL" ]; then
-    echo "Using Fallback Version: $FALLBACK_VERSION"
-    LATEST_VERSION="$FALLBACK_VERSION"
-    DOWNLOAD_URL="$FALLBACK_URL"
-else
-    echo "Latest Available: $LATEST_VERSION"
+    # Extract version number (e.g., 0.4.3) from filename like LM-Studio-0.4.3-x64.AppImage
+    LATEST_VERSION=$(echo "$LATEST_FILENAME" | grep -oP '\d+\.\d+\.\d+' || echo "unknown")
+    DOWNLOAD_URL="$REDIRECT_URL"
+    echo "Latest Available: $LATEST_VERSION ($LATEST_FILENAME)"
 fi
 
 CURRENT_VERSION=""
@@ -102,20 +82,21 @@ if [ -f "$VERSION_FILE" ]; then
 fi
 
 NEED_UPDATE=false
-if [ -z "$CURRENT_VERSION" ] || [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
     NEED_UPDATE=true
 fi
 if [ ! -f "squashfs-root/lm-studio" ]; then
-    echo "Installation check failed. Forcing update/reinstall."
+    echo "Binary missing. Forcing installation."
     NEED_UPDATE=true
 fi
 
 if [ "$NEED_UPDATE" = true ]; then
     echo "--- Performing Installation ($LATEST_VERSION) ---"
     rm -rf squashfs-root
-    rm -f *.AppImage manifest.yml
+    rm -f *.AppImage
     
-    wget -O "LM_Studio.AppImage" "$DOWNLOAD_URL"
+    echo "Downloading from: $DOWNLOAD_URL"
+    wget -L -O "LM_Studio.AppImage" "$DOWNLOAD_URL"
     
     echo "Extracting AppImage..."
     chmod +x "LM_Studio.AppImage"
@@ -134,6 +115,7 @@ sl_folder "${INSTANCE_OUTPUT_DIR}" "models_link" "${REAL_MODELS_DIR}" ""
 # --- 5. Launch Preparation ---
 export ELECTRON_NO_SANDBOX=1
 export PATH="${VENV_DIR}/bin:$PATH"
+export LD_LIBRARY_PATH="${VENV_DIR}/lib:$LD_LIBRARY_PATH"
 export DISPLAY=${DISPLAY:-:1}
 
 # Wait for X Server
@@ -149,30 +131,20 @@ while [ ! -e "$SOCKET_FILE" ]; do
     fi
 done
 
-# Disable Auto-Updater
+# Disable Auto-Updater (redundant since we manage it here)
 UPDATER_PATH="${APP_DIR}/squashfs-root/resources/app-update.yml"
 if [ -f "$UPDATER_PATH" ]; then
     mv "$UPDATER_PATH" "${UPDATER_PATH}.bak"
 fi
 
-# --- 6. SANDBOX NEUTRALIZATION (THE FIX) ---
+# --- 6. SANDBOX NEUTRALIZATION ---
 echo "--- Neutralizing Chrome Sandbox ---"
 cd "${APP_DIR}/squashfs-root"
-
-# If the chrome-sandbox binary exists, Electron will check its permissions (and fail).
-# We rename it so Electron assumes it's missing and relies on --no-sandbox instead.
 if [ -f "chrome-sandbox" ]; then
-    echo "Renaming chrome-sandbox to prevent permission errors..."
     mv "chrome-sandbox" "chrome-sandbox.bak"
 fi
 
 # --- 7. Launch ---
 echo "--- Launching LM Studio ---"
-
 BINARY_NAME="lm-studio"
-# Important: We explicitely pass --no-sandbox here as well
-CMD="./${BINARY_NAME} --no-sandbox"
-
-echo "Executing: ${CMD}"
-eval $CMD
-sleep infinity
+exec ./${BINARY_NAME} --no-sandbox
