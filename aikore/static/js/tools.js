@@ -1,7 +1,6 @@
-/* ... (Imports et fonctions inchangés jusqu'à initTableResizers) ... */
 import { state, DOM } from './state.js';
 import { fetchLogs, performVersionCheck, fetchFileContent } from './api.js';
-import { showToast } from './ui.js'; // Added import for showToast
+import { showToast } from './ui.js';
 
 const ansi_up = new AnsiUp();
 
@@ -18,7 +17,6 @@ function hideAllToolViews() {
     const builderContainer = document.getElementById('builder-container');
     if (builderContainer) builderContainer.classList.add('hidden');
 
-    // NEW: Hide Wheels Manager
     const wheelsMgr = document.getElementById('wheels-manager-container');
     if (wheelsMgr) wheelsMgr.classList.add('hidden');
 
@@ -52,32 +50,27 @@ async function fetchBuilderInfo() {
     return await res.json();
 }
 
-// NEW: Exported function to update the main UI button status
 export async function renderBuilderStatus() {
     const btn = document.getElementById('btn-open-builder');
     if (!btn) return;
 
     try {
         const info = await fetchBuilderInfo();
-        // Check for 'building' status or flag. 
-        // Adapting to probable API response: checks status string or boolean
         const isBuilding = info.status === 'building' || info.is_building === true;
 
         if (isBuilding) {
             if (btn.textContent === "Build Module") {
                 btn.textContent = "BUILDING...";
             }
-            // Pulse effect color (Orange)
             btn.style.backgroundColor = "#e67e22"; 
             btn.style.borderColor = "#e67e22";
         } else {
             btn.textContent = "Build Module";
-            // Default color (Purple)
             btn.style.backgroundColor = "#6f42c1"; 
             btn.style.borderColor = "#6f42c1";
         }
     } catch (e) {
-        // Silent fail on network error to avoid console spam
+        // Silent fail
     }
 }
 
@@ -99,13 +92,13 @@ function downloadWheel(filename) {
 async function renderWheelsTable() {
     const tbody = document.getElementById('wheels-table-body');
     if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
     
     try {
         const wheels = await fetchWheelsList();
         tbody.innerHTML = '';
         if(wheels.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#666;">No wheels built yet.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#666;">No wheels built yet.</td></tr>';
             return;
         }
 
@@ -114,6 +107,7 @@ async function renderWheelsTable() {
             tr.innerHTML = `
                 <td title="${w.filename}">${w.filename}</td>
                 <td>${w.cuda_arch}</td>
+                <td>${w.cuda_ver || 'N/A'}</td>
                 <td>${w.size_mb} MB</td>
                 <td>${w.created_at}</td>
                 <td class="wheel-actions">
@@ -127,7 +121,7 @@ async function renderWheelsTable() {
             tbody.appendChild(tr);
         });
     } catch(e) {
-        tbody.innerHTML = `<tr><td colspan="5" style="color:red">Error loading wheels</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="color:red">Error loading wheels</td></tr>`;
     }
 }
 
@@ -188,7 +182,8 @@ function initTableResizers() {
     const table = document.querySelector('.wheels-table');
     if (!table) return;
 
-    // Attach resizers to Arch (index 1), Size (2), Date (3), Act (4)
+    // Attach resizers to Arch (1), CUDA (2), Size (3), Date (4)
+    // Indexes match the TH elements
     const headers = table.querySelectorAll('th');
     
     [1, 2, 3, 4].forEach(index => {
@@ -218,10 +213,6 @@ function createResizableColumn(th, resizer) {
 
     const onMouseMove = (e) => {
         const diffX = e.pageX - startX;
-        
-        // LOGIC INVERTED: 
-        // Dragging Left (negative diff) means we want to EXTEND the column to the left -> Width increases.
-        // Dragging Right (positive diff) means we want to SHRINK the column to the right -> Width decreases.
         const newWidth = startWidth - diffX;
         
         if (newWidth > 30) { 
@@ -357,6 +348,7 @@ export async function showBuilderView() {
                                 <tr>
                                     <th>Filename</th>
                                     <th>Arch</th>
+                                    <th>CUDA</th>
                                     <th>Size</th>
                                     <th>Date</th>
                                     <th>Act</th>
@@ -420,7 +412,7 @@ export async function showBuilderView() {
     initBuilderTerminal();
 }
 
-// --- NEW: INSTANCE WHEELS MANAGER ---
+// --- INSTANCE WHEELS MANAGER ---
 
 export async function showInstanceWheelsManager(instanceId, instanceName) {
     hideAllToolViews();
@@ -454,11 +446,9 @@ export async function showInstanceWheelsManager(instanceId, instanceName) {
             </div>
         </div>
         `;
-        // Inject after logs container usually
         DOM.logViewerContainer.insertAdjacentHTML('afterend', html);
         container = document.getElementById('wheels-manager-container');
         
-        // Bind Events
         document.getElementById('btn-wheels-refresh').onclick = () => loadInstanceWheels(instanceId);
         document.getElementById('btn-wheels-apply').onclick = () => saveInstanceWheels(instanceId);
         document.getElementById('wheels-select-all').onchange = (e) => {
@@ -503,7 +493,6 @@ async function loadInstanceWheels(instanceId) {
                     </span>
                 </td>
             `;
-            // Highlight row on click
             tr.addEventListener('click', (e) => {
                 if(e.target.type !== 'checkbox') {
                     const cb = tr.querySelector('input[type="checkbox"]');
@@ -535,7 +524,7 @@ async function saveInstanceWheels(instanceId) {
         
         if(res.ok) {
             showToast("Wheels synchronized successfully", "success");
-            loadInstanceWheels(instanceId); // Refresh to update status badges
+            loadInstanceWheels(instanceId); 
         } else {
             const err = await res.json();
             showToast(`Error: ${err.detail}`, "error");

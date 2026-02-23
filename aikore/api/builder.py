@@ -52,6 +52,100 @@ PRESETS = {
             "rm -rf source_code"
         )
     },
+    "bitsandbytes": {
+        "label": "BitsAndBytes (Quantization)",
+        "git_url": "https://github.com/TimDettmers/bitsandbytes.git",
+        "description": "8-bit optimizers and matrix multiplication.",
+        "cmd_template": (
+            "git clone {git_url} source_code && "
+            "cd source_code && "
+            "export TORCH_CUDA_ARCH_LIST='{arch}' && "
+            "{python} -m pip wheel --no-build-isolation . -w {output_dir} && "
+            "cd .. && "
+            "rm -rf source_code"
+        )
+    },
+    "diso": {
+        "label": "Diso (Gaussian Splatting Utility)",
+        "git_url": "https://github.com/SarahWeiii/diso",
+        "description": "Utility for Trellis / 3D Gaussian Splatting.",
+        "cmd_template": (
+            "git clone {git_url} source_code --recurse-submodules && "
+            "cd source_code && "
+            "export TORCH_CUDA_ARCH_LIST='{arch}' && "
+            "{python} -m pip wheel --no-build-isolation . -w {output_dir} && "
+            "cd .. && "
+            "rm -rf source_code"
+        )
+    },
+    "nvdiffrast": {
+        "label": "Nvdiffrast (NVIDIA Differentiable Rasterization)",
+        "git_url": "https://github.com/NVlabs/nvdiffrast.git",
+        "description": "High-performance differentiable rendering.",
+        "cmd_template": (
+            "git clone {git_url} source_code && "
+            "cd source_code && "
+            "export TORCH_CUDA_ARCH_LIST='{arch}' && "
+            "{python} -m pip wheel --no-build-isolation . -w {output_dir} && "
+            "cd .. && "
+            "rm -rf source_code"
+        )
+    },
+    "xformers": {
+        "label": "XFormers (Memory-efficient Attention)",
+        "git_url": "https://github.com/facebookresearch/xformers.git",
+        "description": "Hackable and optimized Transformers building blocks.",
+        "cmd_template": (
+            "git clone {git_url} source_code && "
+            "cd source_code && "
+            "git submodule update --init --recursive && "
+            "export MAX_JOBS=1 && "
+            "export TORCH_CUDA_ARCH_LIST='{arch}' && "
+            "{python} -m pip wheel --no-build-isolation . -w {output_dir} && "
+            "cd .. && "
+            "rm -rf source_code"
+        )
+    },
+    "kaolin": {
+        "label": "Kaolin (NVIDIA 3D Deep Learning) - 5090 Fork",
+        "git_url": "https://github.com/HarrisonPrism/kaolin_5090.git",
+        "description": "A PyTorch Library for Accelerating 3D Deep Learning Research.",
+        "cmd_template": (
+            "git clone {git_url} source_code && "
+            "cd source_code && "
+            "export IGNORE_TORCH_VER=1 && "
+            "export TORCH_CUDA_ARCH_LIST='{arch}' && "
+            "{python} -m pip wheel --no-build-isolation . -w {output_dir} && "
+            "cd .. && "
+            "rm -rf source_code"
+        )
+    },
+    "diff_gaussian_rasterization": {
+        "label": "Diff-Gaussian-Rasterization (Mip-Splatting)",
+        "git_url": "https://github.com/autonomousvision/mip-splatting",
+        "description": "Rasterization engine for 3D Gaussian Splatting.",
+        "cmd_template": (
+            "git clone {git_url} source_code --recurse-submodules && "
+            "cd source_code/submodules/diff-gaussian-rasterization && "
+            "export TORCH_CUDA_ARCH_LIST='{arch}' && "
+            "{python} -m pip wheel --no-build-isolation . -w {output_dir} && "
+            "cd ../../../ && "
+            "rm -rf source_code"
+        )
+    },
+    "vox2seq": {
+        "label": "Vox2Seq (TRELLIS Extension)",
+        "git_url": "https://github.com/microsoft/TRELLIS",
+        "description": "Voxel to Sequence extension for TRELLIS 3D generation.",
+        "cmd_template": (
+            "git clone {git_url} source_code --recurse-submodules && "
+            "cd source_code/extensions/vox2seq && "
+            "export TORCH_CUDA_ARCH_LIST='{arch}' && "
+            "{python} -m pip wheel --no-build-isolation . -w {output_dir} && "
+            "cd ../../../ && "
+            "rm -rf source_code"
+        )
+    },
     "custom": {
         "label": "Custom Git Repository",
         "git_url": "", 
@@ -73,6 +167,7 @@ class WheelMetadata(BaseModel):
     size_mb: float
     created_at: str
     cuda_arch: str
+    cuda_ver: str
     source_preset: str
 
 # --- HELPERS ---
@@ -178,6 +273,7 @@ def list_wheels():
             "size_mb": size_mb,
             "created_at": created_at,
             "cuda_arch": meta.get("cuda_arch", "N/A"),
+            "cuda_ver": meta.get("cuda_ver", "N/A"),
             "source_preset": meta.get("source_preset", "Unknown")
         })
     
