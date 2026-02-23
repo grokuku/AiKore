@@ -69,11 +69,10 @@ ENV BASE_DIR=/config \
     SD_INSTALL_DIR=/opt/sd-install \
     XDG_CACHE_HOME=/config/temp
 
-# Set compiler and Torch/CUDA architecture for any potential runtime compilations by Python
+# Set compiler for any potential runtime compilations by Python
 ENV CC=/usr/bin/gcc-13
 ENV CXX=/usr/bin/g++-13
-# CORRECTION ICI : "12" -> "12.0" pour éviter les erreurs de compilation runtime
-ENV TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0"
+# Note: TORCH_CUDA_ARCH_LIST and other versioning variables are now loaded dynamically from versions.env
 ENV CUDA_HOME=/usr/local/cuda
 
 # --- Application Setup ---
@@ -85,13 +84,19 @@ COPY --chown=abc:abc aikore/ ${SD_INSTALL_DIR}/aikore/
 COPY --chown=abc:abc blueprints/ ${SD_INSTALL_DIR}/blueprints/
 COPY --chown=abc:abc scripts/ ${SD_INSTALL_DIR}/scripts/
 
-# Copy application scripts
+# Copy application scripts and the version manifest
 COPY --chown=abc:abc entry.sh ${SD_INSTALL_DIR}/entry.sh
 COPY --chown=abc:abc functions.sh ${SD_INSTALL_DIR}/functions.sh
+COPY --chown=abc:abc versions.env ${SD_INSTALL_DIR}/versions.env
+
+# Add the manifest to the global profile so interactive shells automatically load the variables
+RUN echo '#!/bin/bash\nset -a\nsource /opt/sd-install/versions.env\nset +a' > /etc/profile.d/aikore_versions.sh && \
+    chmod +x /etc/profile.d/aikore_versions.sh
 
 # --- Script & Permission Cleanup ---
 RUN find ${SD_INSTALL_DIR} -type f -name "*.sh" -print0 | xargs -0 dos2unix -- && \
-    find ${SD_INSTALL_DIR} -type f -name "*.sh" -print0 | xargs -0 chmod +x
+    find ${SD_INSTALL_DIR} -type f -name "*.sh" -print0 | xargs -0 chmod +x && \
+    dos2unix ${SD_INSTALL_DIR}/versions.env
 
 # --- User and Environment Setup ---
 ENV XDG_CONFIG_HOME=/home/abc

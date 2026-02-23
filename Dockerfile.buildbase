@@ -6,20 +6,22 @@ ARG FLASH_SAGE_RELEASE_TAG
 FROM ${FLASH_SAGE_WHEEL_IMAGE}:${FLASH_SAGE_RELEASE_TAG} AS flash_sage_wheel_src
 
 # --- Builder Stage ---
-# Using the correct Ubuntu 24.04 base image with CUDA 12.9.1
+# Using the correct Ubuntu 24.04 base image with CUDA 13.0.2
 FROM nvidia/cuda:13.0.2-cudnn-devel-ubuntu24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 ENV MAX_JOBS=8
-ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu130
 WORKDIR /build
+
+# 1. Inject the version manifest
+COPY versions.env /build/versions.env
 
 # --- System Dependencies ---
 # The CUDA toolkit is already included in the 'devel' base image
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential wget curl git cmake gnupg bc rsync ffmpeg ninja-build libopenblas-dev \
-    libxft2 xvfb \
+    libxft2 xvfb dos2unix \
     python3.12 python3.12-dev python3.12-venv python3-setuptools python3-pip \
     && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
     && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
@@ -30,10 +32,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 
+# Normalize versions.env line endings just in case it was edited on Windows
+RUN dos2unix /build/versions.env
+
 # --- Python Packages ---
-# 1. Install PyTorch from official index
-RUN python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
-    && python3.12 -m pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu130
+# 1. Install PyTorch dynamically using versions.env
+RUN set -a; . /build/versions.env; set +a; \
+    python3.12 -m pip install --no-cache-dir wheel packaging scikit-build-core \
+    && python3.12 -m pip install torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} --index-url ${PYTORCH_INDEX_URL}
 
 # 2. Copy and install the pre-compiled flash-sage wheels
 COPY --from=flash_sage_wheel_src /wheel_output/*.whl /wheels/
@@ -42,61 +48,63 @@ RUN python3.12 -m pip install --no-cache-dir /wheels/*.whl \
 
 # --- Wheel Compilation ---
 # Pre-compile performance libraries to speed up runtime installation.
+# We load variables (like TORCH_CUDA_ARCH_LIST) dynamically from versions.env for every build block.
 
 # bitsandbytes
-#RUN git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
+#RUN set -a; . /build/versions.env; set +a; \
+#    git clone https://github.com/TimDettmers/bitsandbytes.git /build/bitsandbytes \
 #    && cd /build/bitsandbytes \
-#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
 #    && rm -rf bitsandbytes
 
 # diso
-RUN git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodules \
+RUN set -a; . /build/versions.env; set +a; \
+    git clone https://github.com/SarahWeiii/diso /build/diso --recurse-submodules \
     && cd /build/diso \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf diso
 
 # nvdiffrast
-RUN git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
+RUN set -a; . /build/versions.env; set +a; \
+    git clone https://github.com/NVlabs/nvdiffrast.git /build/nvdiffrast \
     && cd /build/nvdiffrast \
-    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
     && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
     && cd /build \
     && rm -rf nvdiffrast
 
 # xformers
-#RUN git clone https://github.com/facebookresearch/xformers.git /build/xformers \
+#RUN set -a; . /build/versions.env; set +a; \
+#    git clone https://github.com/facebookresearch/xformers.git /build/xformers \
 #    && cd /build/xformers \
 #    && git submodule update --init --recursive \
-#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 12.0" \
 #    && export MAX_JOBS=1 \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
 #    && rm -rf xformers
 
 # kaolin
-#RUN git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
+#RUN set -a; . /build/versions.env; set +a; \
+#    git clone https://github.com/HarrisonPrism/kaolin_5090.git /build/kaolin_5090 \
 #    && cd /build/kaolin_5090 \
-#    && export TORCH_CUDA_ARCH_LIST="8.9 12.0" \
 #    && export IGNORE_TORCH_VER=1 \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
 #    && rm -rf kaolin_5090
 
 # mip-splatting / diff-gaussian-rasterization
-#RUN git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
+#RUN set -a; . /build/versions.env; set +a; \
+#    git clone https://github.com/autonomousvision/mip-splatting /build/mip-splatting --recurse-submodules \
 #    && cd /build/mip-splatting/submodules/diff-gaussian-rasterization \
-#    && export TORCH_CUDA_ARCH_LIST="7.5 8.0 8.6 8.7 8.9 9.0 10 12.0" \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
 #    && rm -rf mip-splatting
+
 # vox2seq / TRELLIS
-#RUN git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
+#RUN set -a; . /build/versions.env; set +a; \
+#    git clone https://github.com/microsoft/TRELLIS --recurse-submodules /build/TRELLIS \
 #    && cd /build/TRELLIS/extensions/vox2seq \
-#    && export TORCH_CUDA_ARCH_LIST="8.9 12.0" \
 #    && python3.12 -m pip wheel --no-build-isolation . -w /build/ \
 #    && cd /build \
 #    && rm -rf TRELLIS

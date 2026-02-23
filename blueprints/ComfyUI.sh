@@ -11,6 +11,7 @@
 set -e
 
 source /opt/sd-install/functions.sh
+source /opt/sd-install/versions.env
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
@@ -71,7 +72,7 @@ source activate "${VENV_DIR}"
 echo "--- Installing dependencies ---"
 
 echo "--- Installing PyTorch ---"
-pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu130
+pip install torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} --index-url ${PYTORCH_INDEX_URL}
 pip install torchsde
 
 # 1. Install pre-built performance and utility libraries from wheels first.
