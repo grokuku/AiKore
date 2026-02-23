@@ -11,6 +11,8 @@ import sys
 from datetime import datetime
 import glob
 import traceback
+import urllib.request
+import re
 
 print("[DEBUG] Loading builder.py module...")
 
@@ -38,7 +40,6 @@ os.makedirs(WHEELS_DIR, exist_ok=True)
 
 # --- VERSIONS MAPPING ---
 # Strict mapping to ensure successful builds. 
-# Pip resolution can sometimes fail or upgrade torch unexpectedly if not pinned.
 TORCH_VISION_MAP = {
     "2.5.1": "0.20.1",
     "2.4.1": "0.19.1",
@@ -277,6 +278,62 @@ def get_builder_info():
         "python_path": sys.executable
     }
 
+@router.get("/versions/torch/{cuda_ver}")
+def get_torch_versions_for_cuda(cuda_ver: str):
+    """
+    Dynamically fetches available torch versions from download.pytorch.org
+    for the specific CUDA version. 
+    Fallback to a default list if offline.
+    """
+    
+    # Normalize input (e.g. "cu130" -> "cu130")
+    if not cuda_ver.startswith("cu"):
+        # Assuming cpu or rocm, but let's stick to cu for now
+        pass
+        
+    index_url = f"https://download.pytorch.org/whl/{cuda_ver}/torch/"
+    versions = set()
+    
+    # Default fallback list (in case of network failure)
+    # Includes 2.10 as requested by user context
+    fallback_versions = ["2.10.0", "2.9.1", "2.5.1", "2.4.1", "2.3.1", "2.1.2"]
+    
+    try:
+        print(f"[DEBUG] Fetching versions from {index_url}...")
+        # Use urllib to avoid adding 'requests' dependency if not present
+        with urllib.request.urlopen(index_url, timeout=5) as response:
+            html = response.read().decode('utf-8')
+            
+            # Regex to find links like: torch-2.5.1%2Bcu124-...
+            # Pattern matches: torch-X.Y.Z%2B or torch-X.Y.Z+
+            # We look for versions that match the requested cuda tag
+            # Note: PyTorch index uses %2B for + sign
+            
+            # Simple pattern to extract "2.5.1" from "torch-2.5.1%2Bcu124-..."
+            # We enforce that it must be followed by %2B or + and our cuda_ver (or compatible)
+            # Actually, the directory /whl/cu130/ contains ONLY compatible wheels,
+            # so we just need to extract the version number from "torch-X.Y.Z..."
+            
+            matches = re.findall(r'torch-([0-9]+\.[0-9]+\.[0-9]+)%2B', html)
+            if not matches:
+                # Try finding without %2B (older format or diff encoding)
+                matches = re.findall(r'torch-([0-9]+\.[0-9]+\.[0-9]+)\+', html)
+                
+            for m in matches:
+                versions.add(m)
+                
+        if not versions:
+            print("[DEBUG] No versions found via regex, using fallback.")
+            return sorted(fallback_versions, reverse=True)
+            
+        # Convert to list and sort descending
+        # We use a simple lambda to handle semantic versioning broadly
+        return sorted(list(versions), key=lambda s: list(map(int, s.split('.'))), reverse=True)
+
+    except Exception as e:
+        print(f"[DEBUG] Failed to fetch torch versions: {e}")
+        return sorted(fallback_versions, reverse=True)
+
 @router.get("/wheels", response_model=List[WheelMetadata])
 def list_wheels():
     manifest = get_manifest()
@@ -398,6 +455,7 @@ async def build_websocket(websocket: WebSocket):
             
             if not vision_ver:
                  await websocket.send_text(f"\x1b[33m[WARN] Unknown Torch version {requested_torch_ver}. Installing latest compatible torchvision (might break).\x1b[0m\r\n")
+                 # If unknown, we do NOT pin torchvision and let pip resolve it
                  torch_pkg = f"torch=={requested_torch_ver} torchvision"
             else:
                  torch_pkg = f"torch=={requested_torch_ver} torchvision=={vision_ver}"

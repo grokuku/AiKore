@@ -50,6 +50,46 @@ async function fetchBuilderInfo() {
     return await res.json();
 }
 
+// NEW: Function to dynamically fetch available torch versions
+async function populateTorchVersions() {
+    const cudaSelect = document.getElementById('builder-cuda');
+    const torchSelect = document.getElementById('builder-torch');
+    
+    if(!cudaSelect || !torchSelect) return;
+    
+    const cudaVer = cudaSelect.value;
+    torchSelect.innerHTML = '<option>Loading...</option>';
+    torchSelect.disabled = true;
+    
+    try {
+        const res = await fetch(`/api/builder/versions/torch/${cudaVer}`);
+        if(!res.ok) throw new Error("Failed to fetch versions");
+        
+        const versions = await res.json();
+        torchSelect.innerHTML = '';
+        
+        if(versions.length === 0) {
+             const opt = document.createElement('option');
+             opt.textContent = "Error: No versions found";
+             torchSelect.appendChild(opt);
+        } else {
+             versions.forEach(v => {
+                 const opt = document.createElement('option');
+                 opt.value = v;
+                 opt.textContent = v;
+                 torchSelect.appendChild(opt);
+             });
+             // Select the first one (highest version) by default
+             torchSelect.selectedIndex = 0;
+        }
+    } catch(e) {
+        console.error(e);
+        torchSelect.innerHTML = '<option value="2.5.1">2.5.1 (Fallback)</option>';
+    } finally {
+        torchSelect.disabled = false;
+    }
+}
+
 export async function renderBuilderStatus() {
     const btn = document.getElementById('btn-open-builder');
     if (!btn) return;
@@ -234,7 +274,7 @@ async function startBuild() {
     const archSelect = document.getElementById('builder-arch');
     const pythonSelect = document.getElementById('builder-python');
     const cudaSelect = document.getElementById('builder-cuda');
-    const torchSelect = document.getElementById('builder-torch'); // NEW
+    const torchSelect = document.getElementById('builder-torch'); 
     const customUrlInput = document.getElementById('builder-custom-url');
     const btn = document.getElementById('btn-start-build');
 
@@ -244,7 +284,7 @@ async function startBuild() {
         git_url: customUrlInput.value,
         python_ver: pythonSelect.value,
         cuda_ver: cudaSelect.value,
-        torch_ver: torchSelect.value // NEW
+        torch_ver: torchSelect.value 
     };
 
     btn.disabled = true;
@@ -314,22 +354,20 @@ export async function showBuilderView() {
                     </div>
 
                     <div class="builder-field">
-                        <label>PyTorch Version</label>
-                        <select id="builder-torch">
-                            <option value="2.5.1" selected>2.5.1 (Stable)</option>
-                            <option value="2.4.1">2.4.1</option>
-                            <option value="2.3.1">2.3.1</option>
-                            <option value="2.1.2">2.1.2</option>
-                        </select>
-                    </div>
-
-                    <div class="builder-field">
                         <label>PyTorch CUDA Version</label>
                         <select id="builder-cuda">
                             <option value="cu130" selected>CUDA 13.0 (Default)</option>
                             <option value="cu124">CUDA 12.4</option>
                             <option value="cu121">CUDA 12.1</option>
                             <option value="cu118">CUDA 11.8</option>
+                        </select>
+                    </div>
+                    
+                    <!-- DYNAMIC TORCH SELECT -->
+                    <div class="builder-field">
+                        <label>PyTorch Version (Dynamically Fetched)</label>
+                        <select id="builder-torch">
+                            <option>Loading...</option>
                         </select>
                     </div>
 
@@ -386,6 +424,10 @@ export async function showBuilderView() {
             const isCustom = e.target.value === 'custom';
             document.getElementById('builder-field-custom').style.display = isCustom ? 'flex' : 'none';
         });
+        
+        // NEW: Event listener for dynamic versions
+        const cudaSelect = document.getElementById('builder-cuda');
+        cudaSelect.addEventListener('change', populateTorchVersions);
 
         Split(['#builder-options', '#builder-wheels'], {
             sizes: [66, 34],
@@ -420,6 +462,9 @@ export async function showBuilderView() {
         autoOpt.selected = true;
         archSelect.prepend(autoOpt);
     }
+    
+    // NEW: Initial population of torch versions
+    await populateTorchVersions();
 
     renderWheelsTable();
     initBuilderTerminal();
