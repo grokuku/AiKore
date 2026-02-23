@@ -1,9 +1,10 @@
-# The final image, starting from the buildbase which now contains KasmVNC and our compiled Python wheels.
-FROM ghcr.io/grokuku/aikore-buildbase:latest
+# The final neutral image, starting directly from KasmVNC Ubuntu Noble.
+# No pre-built wheels are included. All module building is deferred to the AiKore Module Builder.
+FROM ghcr.io/linuxserver/baseimage-kasmvnc:ubuntunoble
 
 # --- Runtime System Dependencies ---
 # We add common utilities and a full build toolchain for runtime flexibility,
-# allowing blueprints or users to compile dependencies if needed.
+# allowing the internal AiKore Module Builder to compile dependencies on demand.
 
 # --- Add Mozilla PPA & NVIDIA CUDA Repo ---
 RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common wget gnupg && \
@@ -15,9 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends software-proper
     apt-get update
 
 # --- Install All System Dependencies ---
-# MODIFICATION: Ajout de 'apt-get update' ici pour éviter les erreurs 404 (cache périmé)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # CUDA Toolkit
+    # CUDA Toolkit (System-level compiler for the Module Builder)
     cuda-toolkit-13-0 \
     # Audio Backend for Torchaudio
     ffmpeg \
@@ -25,12 +25,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rsync \
     dos2unix \
     socat \
-    # Compilation tools for runtime user needs
+    # Compilation tools for the Module Builder
     cmake \
     build-essential \
     gcc-13 \
     g++-13 \
     git \
+    ninja-build \
     # Common utility tools for debugging and scripting
     curl \
     mc \
@@ -46,9 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy our custom s6-overlay services and sudoers configuration
 COPY docker/root/ /
 
-# --- NOUVELLE INSTRUCTION CRITIQUE ---
 # Ensure all s6-overlay scripts are executable and have correct line endings.
-# This must be done right after copying them.
 RUN find /etc/s6-overlay/ -type f -print0 | xargs -0 dos2unix -- && \
     find /etc/s6-overlay/ -type f -print0 | xargs -0 chmod +x
 
@@ -69,11 +68,13 @@ ENV BASE_DIR=/config \
     SD_INSTALL_DIR=/opt/sd-install \
     XDG_CACHE_HOME=/config/temp
 
-# Set compiler for any potential runtime compilations by Python
+# Set compiler for runtime compilations by the Module Builder
 ENV CC=/usr/bin/gcc-13
 ENV CXX=/usr/bin/g++-13
-# Note: TORCH_CUDA_ARCH_LIST and other versioning variables are now loaded dynamically from versions.env
+# Note: Versioning variables (TORCH_VERSION, etc.) are loaded dynamically from versions.env
 ENV CUDA_HOME=/usr/local/cuda
+ENV PATH="/usr/local/cuda/bin:${PATH}"
+ENV CPLUS_INCLUDE_PATH="/usr/local/cuda/include:${CPLUS_INCLUDE_PATH}"
 
 # --- Application Setup ---
 # Create application directories
@@ -102,7 +103,6 @@ RUN find ${SD_INSTALL_DIR} -type f -name "*.sh" -print0 | xargs -0 dos2unix -- &
 ENV XDG_CONFIG_HOME=/home/abc
 ENV HOME=/home/abc
 
-# --- CRITICAL REORDERING ---
 # Set final ownership of all key directories BEFORE switching to the user.
 RUN mkdir -p /home/abc && \
     chown -R abc:abc /home/abc && \
@@ -121,9 +121,8 @@ RUN cd /tmp && \
     bash Miniforge3-Linux-x86_64.sh -b -p /home/abc/miniconda3 && \
     rm Miniforge3-Linux-x86_64.sh
 
-# Activate conda, install Python dependencies
+# Activate conda, install Python dependencies (No global wheels anymore)
 RUN . /home/abc/miniconda3/bin/activate && \
-    pip install --no-cache-dir /wheels/*.whl && \
     pip install --no-cache-dir -r ${SD_INSTALL_DIR}/aikore/requirements.txt
 
 # --- Final Step: Switch back to root ---

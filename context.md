@@ -18,7 +18,7 @@ When the user requests a "context update" or when a major feature is implemented
 
 ## 1. System Overview
 
-AiKore is a monolithic orchestration platform designed to manage AI WebUIs inside a **single Docker container**.
+AiKore is a monolithic orchestration platform designed to manage AI WebUIs inside a **single Docker container**. It relies on a "Neutral Image Architecture", meaning the base Docker image only provides the OS, the system-level CUDA Toolkit, and Conda, leaving module compilation to the backend.
 
 ### Core Stack
 *   **Orchestration**: `s6-overlay` (manages backend services and NGINX).
@@ -31,7 +31,6 @@ AiKore is a monolithic orchestration platform designed to manage AI WebUIs insid
 
 ## 2. Project Structure & File Tree
 
-```text
 .
 ├── aikore/                             # MAIN APPLICATION PACKAGE
 │   ├── api/                            # API Endpoints (Routers)
@@ -93,9 +92,8 @@ AiKore is a monolithic orchestration platform designed to manage AI WebUIs insid
 │   └── ...
 │
 ├── entry.sh                            # Container startup (sets --no-access-log for uvicorn)
-├── Dockerfile                          # Main Image Definition
-└── ...
-```
+├── Dockerfile                          # Main Neutral Image Definition (OS + System CUDA)
+└── versions.env                        # Centralized Version Manifest (Torch, CUDA Archs, etc.)
 
 ---
 
@@ -106,14 +104,17 @@ AiKore is a monolithic orchestration platform designed to manage AI WebUIs insid
 2.  **Persistent**: GUI (KasmVNC via dedicated port).
 3.  **Satellite**: lightweight instance reusing Parent's venv.
 
+### Centralized Versioning (`versions.env`)
+*   To maintain consistency, all PyTorch ecosystem versions (Torch, Vision, Audio) and target CUDA architectures are stored in `versions.env`.
+*   This file is injected into the Docker container and automatically sourced by bash profiles and installation blueprints.
+
 ### Module Builder & Wheel Management
-*   **Purpose**: Compile heavy Python/CUDA modules (e.g., `SageAttention`, `FlashAttn`) at runtime to match the host's GPU architecture.
+*   **Purpose**: Compile heavy Python/CUDA modules (e.g., `SageAttention`, `FlashAttn`) dynamically to match the host's GPU architecture, using the system-level CUDA toolkit provided by the base image.
 *   **Workflow**:
-    1.  **Build**: Uses isolated Conda envs to compile wheels into `config/instances/.wheels` (Global).
+    1.  **Build**: Uses isolated Conda envs to compile wheels from builder presets into `config/instances/.wheels` (Global).
     2.  **Sync**: Users use the **"Manage Wheels"** tool to select wheels. The backend copies them to `config/instances/{name}/wheels` (Local).
     3.  **Install**: Blueprints detect files in the local `/wheels` folder and install them via `pip install /wheels/*.whl` *before* processing requirements.
-*   **Conflict Prevention**: Blueprints strictly filter `requirements.txt` (via `grep -v`) to exclude packages provided by local wheels (e.g., `torch`, `xformers`) to prevent PIP from overwriting optimized versions.
-*   **Naming Strategy**: Files are built in a temp dir, then renamed with an `+arch{ver}` suffix (e.g., `sage...linux_x86_64+arch8.9.whl`).
+*   **Conflict Prevention**: Blueprints strictly filter `requirements.txt` (via `grep -v`) to exclude packages provided by local wheels to prevent PIP from overwriting optimized versions.
 
 ### UI/UX Design Standards (Ultra-Compact)
 *   **Scale**: Global **80%** scale.
