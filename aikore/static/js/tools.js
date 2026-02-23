@@ -234,6 +234,7 @@ async function startBuild() {
     const archSelect = document.getElementById('builder-arch');
     const pythonSelect = document.getElementById('builder-python');
     const cudaSelect = document.getElementById('builder-cuda');
+    const torchSelect = document.getElementById('builder-torch'); // NEW
     const customUrlInput = document.getElementById('builder-custom-url');
     const btn = document.getElementById('btn-start-build');
 
@@ -242,7 +243,8 @@ async function startBuild() {
         arch: archSelect.value,
         git_url: customUrlInput.value,
         python_ver: pythonSelect.value,
-        cuda_ver: cudaSelect.value
+        cuda_ver: cudaSelect.value,
+        torch_ver: torchSelect.value // NEW
     };
 
     btn.disabled = true;
@@ -308,6 +310,16 @@ export async function showBuilderView() {
                             <option value="3.12" selected>3.12 (Default)</option>
                             <option value="3.11">3.11</option>
                             <option value="3.10">3.10</option>
+                        </select>
+                    </div>
+
+                    <div class="builder-field">
+                        <label>PyTorch Version</label>
+                        <select id="builder-torch">
+                            <option value="2.5.1" selected>2.5.1 (Stable)</option>
+                            <option value="2.4.1">2.4.1</option>
+                            <option value="2.3.1">2.3.1</option>
+                            <option value="2.1.2">2.1.2</option>
                         </select>
                     </div>
 

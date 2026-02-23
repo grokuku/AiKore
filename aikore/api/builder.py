@@ -36,6 +36,19 @@ CONDA_BASE_DIR = "/home/abc/miniconda3"
 # Ensure directory exists
 os.makedirs(WHEELS_DIR, exist_ok=True)
 
+# --- VERSIONS MAPPING ---
+# Strict mapping to ensure successful builds. 
+# Pip resolution can sometimes fail or upgrade torch unexpectedly if not pinned.
+TORCH_VISION_MAP = {
+    "2.5.1": "0.20.1",
+    "2.4.1": "0.19.1",
+    "2.4.0": "0.19.0",
+    "2.3.1": "0.18.1",
+    "2.2.2": "0.17.2",
+    "2.1.2": "0.16.2", 
+    "2.0.1": "0.15.2"
+}
+
 # --- PRESETS DEFINITION ---
 PRESETS = {
     "sageattention": {
@@ -319,6 +332,8 @@ async def build_websocket(websocket: WebSocket):
         custom_url = data.get("git_url")
         python_ver = data.get("python_ver", "3.12")
         cuda_ver = data.get("cuda_ver", "cu130")
+        # Extract requested torch version
+        requested_torch_ver = data.get("torch_ver", "2.5.1")
         
         if preset_key not in PRESETS:
             print("[DEBUG] Invalid preset.")
@@ -329,11 +344,14 @@ async def build_websocket(websocket: WebSocket):
         preset = PRESETS[preset_key]
         git_url = custom_url if preset_key == "custom" else preset["git_url"]
         
-        env_name = f"builder_py{python_ver.replace('.','')}_{cuda_ver}"
+        # Environment name includes torch version now to distinguish them
+        safe_torch_ver = requested_torch_ver.replace(".", "")
+        env_name = f"builder_py{python_ver.replace('.','')}_{cuda_ver}_pt{safe_torch_ver}"
         
         # Log immediately to confirm connection
         await websocket.send_text(f"\x1b[34m[INFO] Initializing build process...\x1b[0m\r\n")
         await websocket.send_text(f"\x1b[34m[INFO] Target Environment: {env_name}\x1b[0m\r\n")
+        await websocket.send_text(f"\x1b[34m[INFO] Requested Config: Torch {requested_torch_ver} | {cuda_ver}\x1b[0m\r\n")
 
         # 2. Environment Setup
         await websocket.send_text(f"\x1b[30;1m[CHECK] Verifying Conda environment...\x1b[0m\r\n")
@@ -350,20 +368,27 @@ async def build_websocket(websocket: WebSocket):
         await proc.wait()
         
         env_needs_creation = proc.returncode != 0
-        print(f"[DEBUG] Env needs creation: {env_needs_creation}")
         
         if env_needs_creation:
             await websocket.send_text(f"\x1b[33m[INFO] Environment not found. Creating {env_name}...\x1b[0m\r\n")
             await websocket.send_text(f"\x1b[33m[WARN] This involves downloading Python and PyTorch (~2GB). Please wait.\x1b[0m\r\n")
             
-            # Create Env Command - ADDED packaging and ninja
+            # Create Env Command
             create_cmd = f"{CONDA_EXE} create -n {env_name} python={python_ver} pip wheel setuptools packaging ninja -y"
             if await stream_subprocess(create_cmd, WHEELS_DIR, websocket) != 0:
                 raise Exception("Failed to create Conda environment.")
             
             # Install PyTorch Command
-            await websocket.send_text(f"\x1b[34m[INFO] Installing PyTorch ({cuda_ver}) headers...\x1b[0m\r\n")
-            torch_pkg = "torch torchvision"
+            # Determine Torchvision version based on Torch version
+            vision_ver = TORCH_VISION_MAP.get(requested_torch_ver)
+            
+            if not vision_ver:
+                 await websocket.send_text(f"\x1b[33m[WARN] Unknown Torch version {requested_torch_ver}. Installing latest compatible torchvision (might break).\x1b[0m\r\n")
+                 torch_pkg = f"torch=={requested_torch_ver} torchvision"
+            else:
+                 torch_pkg = f"torch=={requested_torch_ver} torchvision=={vision_ver}"
+
+            await websocket.send_text(f"\x1b[34m[INFO] Installing {torch_pkg}...\x1b[0m\r\n")
             index_url = f"https://download.pytorch.org/whl/{cuda_ver}"
             install_cmd = f"source {CONDA_BASE_DIR}/bin/activate {env_name} && pip install {torch_pkg} --index-url {index_url} --no-cache-dir"
             
@@ -385,7 +410,7 @@ async def build_websocket(websocket: WebSocket):
         if not detected_torch_ver:
             detected_torch_ver = "Unknown"
         else:
-            await websocket.send_text(f"\x1b[32m[INFO] Detected PyTorch Version: {detected_torch_ver}\x1b[0m\r\n")
+            await websocket.send_text(f"\x1b[32m[INFO] Confirmed PyTorch Version: {detected_torch_ver}\x1b[0m\r\n")
 
         # 3. Prepare Build
         build_tmp_dir = os.path.join(WHEELS_DIR, "build_tmp")
