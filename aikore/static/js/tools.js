@@ -92,13 +92,13 @@ function downloadWheel(filename) {
 async function renderWheelsTable() {
     const tbody = document.getElementById('wheels-table-body');
     if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
     
     try {
         const wheels = await fetchWheelsList();
         tbody.innerHTML = '';
         if(wheels.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#666;">No wheels built yet.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#666;">No wheels built yet.</td></tr>';
             return;
         }
 
@@ -108,6 +108,7 @@ async function renderWheelsTable() {
                 <td title="${w.filename}">${w.filename}</td>
                 <td>${w.cuda_arch}</td>
                 <td>${w.cuda_ver || 'N/A'}</td>
+                <td>${w.torch_ver || 'N/A'}</td>
                 <td>${w.size_mb} MB</td>
                 <td>${w.created_at}</td>
                 <td class="wheel-actions">
@@ -121,7 +122,7 @@ async function renderWheelsTable() {
             tbody.appendChild(tr);
         });
     } catch(e) {
-        tbody.innerHTML = `<tr><td colspan="6" style="color:red">Error loading wheels</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="color:red">Error loading wheels</td></tr>`;
     }
 }
 
@@ -182,11 +183,10 @@ function initTableResizers() {
     const table = document.querySelector('.wheels-table');
     if (!table) return;
 
-    // Attach resizers to Arch (1), CUDA (2), Size (3), Date (4)
-    // Indexes match the TH elements
+    // Attach resizers to Arch (1), CUDA (2), Torch (3), Size (4), Date (5)
     const headers = table.querySelectorAll('th');
     
-    [1, 2, 3, 4].forEach(index => {
+    [1, 2, 3, 4, 5].forEach(index => {
         const th = headers[index];
         if (!th || th.querySelector('.resizer')) return;
 
@@ -349,6 +349,7 @@ export async function showBuilderView() {
                                     <th>Filename</th>
                                     <th>Arch</th>
                                     <th>CUDA</th>
+                                    <th>Torch</th>
                                     <th>Size</th>
                                     <th>Date</th>
                                     <th>Act</th>

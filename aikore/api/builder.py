@@ -168,6 +168,7 @@ class WheelMetadata(BaseModel):
     created_at: str
     cuda_arch: str
     cuda_ver: str
+    torch_ver: str
     source_preset: str
 
 # --- HELPERS ---
@@ -274,6 +275,7 @@ def list_wheels():
             "created_at": created_at,
             "cuda_arch": meta.get("cuda_arch", "N/A"),
             "cuda_ver": meta.get("cuda_ver", "N/A"),
+            "torch_ver": meta.get("torch_ver", "N/A"),
             "source_preset": meta.get("source_preset", "Unknown")
         })
     
@@ -367,9 +369,23 @@ async def build_websocket(websocket: WebSocket):
             
             if await stream_subprocess(install_cmd, WHEELS_DIR, websocket) != 0:
                 raise Exception("Failed to install PyTorch in builder environment.")
-                
+        
+        # 2.5 DETECT TORCH VERSION (NEW)
+        # We query the environment to find out exactly what version was installed
+        detect_cmd = f"source {CONDA_BASE_DIR}/bin/activate {env_name} && python -c 'import torch; print(torch.__version__)'"
+        proc = await asyncio.create_subprocess_shell(
+            detect_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            executable='/bin/bash'
+        )
+        stdout, stderr = await proc.communicate()
+        detected_torch_ver = stdout.decode().strip()
+        
+        if not detected_torch_ver:
+            detected_torch_ver = "Unknown"
         else:
-            await websocket.send_text(f"\x1b[32m[INFO] Using existing environment.\x1b[0m\r\n")
+            await websocket.send_text(f"\x1b[32m[INFO] Detected PyTorch Version: {detected_torch_ver}\x1b[0m\r\n")
 
         # 3. Prepare Build
         build_tmp_dir = os.path.join(WHEELS_DIR, "build_tmp")
@@ -378,7 +394,6 @@ async def build_websocket(websocket: WebSocket):
         os.makedirs(build_tmp_dir)
 
         # Template substitution
-        # CHANGED: output_dir is now build_tmp_dir (isolated) instead of WHEELS_DIR
         raw_cmd = preset["cmd_template"].format(
             git_url=git_url,
             arch=target_arch,
@@ -422,7 +437,8 @@ async def build_websocket(websocket: WebSocket):
                     "source_preset": preset_key,
                     "git_url": git_url,
                     "python_ver": python_ver,
-                    "cuda_ver": cuda_ver
+                    "cuda_ver": cuda_ver,
+                    "torch_ver": detected_torch_ver
                 })
                 await websocket.send_text(f"\x1b[32m[INFO] Saved as: {final_filename}\x1b[0m\r\n")
         else:
