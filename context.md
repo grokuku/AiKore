@@ -18,7 +18,8 @@ When the user requests a "context update" or when a major feature is implemented
 
 ## 1. System Overview
 
-AiKore is a monolithic orchestration platform designed to manage AI WebUIs inside a **single Docker container**. It relies on a "Neutral Image Architecture", meaning the base Docker image only provides the OS, the system-level CUDA Toolkit, and Conda, leaving module compilation to the backend.
+AiKore is a monolithic orchestration platform designed to manage AI WebUIs inside a **single Docker container**. 
+It relies on a **"Neutral Image Architecture"**: the base Docker image is lightweight (OS + System CUDA + Conda), and all heavy modules are compiled on-demand via the internal Module Builder.
 
 ### Core Stack
 *   **Orchestration**: `s6-overlay` (manages backend services and NGINX).
@@ -31,11 +32,12 @@ AiKore is a monolithic orchestration platform designed to manage AI WebUIs insid
 
 ## 2. Project Structure & File Tree
 
+```text
 .
 ├── aikore/                             # MAIN APPLICATION PACKAGE
 │   ├── api/                            # API Endpoints (Routers)
 │   │   ├── __init__.py
-│   │   ├── builder.py                  # BUILDER: Compiles wheels in isolated Conda envs, manages WebSockets & Downloads.
+│   │   ├── builder.py                  # BUILDER: Dynamic Torch version scraping, Presets, Wheel compilation logic.
 │   │   ├── instances.py                # CORE: CRUD, Actions (Start/Stop), Port Self-Healing, Websockets, Wheel Sync.
 │   │   └── system.py                   # System Stats (NVML), Blueprint listing
 │   │
@@ -61,14 +63,14 @@ AiKore is a monolithic orchestration platform designed to manage AI WebUIs insid
 │   │   │   ├── components.css          # Context Menus, Compact Progress Bars
 │   │   │   ├── instances.css           # Compact Table (28px rows), Grouping logic
 │   │   │   ├── modals.css              # Popups
-│   │   │   └── tools.css               # Tools layout. Handles Resizers & Grid.
+│   │   │   └── tools.css               # Tools layout. Handles Resizers, Grid, & Builder Table.
 │   │   ├── js/
 │   │   │   ├── api.js                  # Fetch wrappers
 │   │   │   ├── eventHandlers.js        # Global Save & Creation at bottom logic
 │   │   │   ├── main.js                 # Entry Point: Polling & Grouped Rendering, Builder button injection
 │   │   │   ├── modals.js               # Modal logic
 │   │   │   ├── state.js                # Centralized State Store
-│   │   │   ├── tools.js                # Tools logic. Handles WS streams, Column Resizing, Wheel Manager.
+│   │   │   ├── tools.js                # Tools logic. Builder dynamic versions, Column Resizing, Wheel Manager.
 │   │   │   └── ui.js                   # DOM Manipulation (Dirty rows, Normalization)
 │   │   ├── welcome/                    # "CRT Style" Welcome Screen
 │   │   └── index.html                  # Main HTML Entry Point
@@ -77,7 +79,7 @@ AiKore is a monolithic orchestration platform designed to manage AI WebUIs insid
 │   └── requirements.txt                # Backend Python Dependencies
 │
 ├── blueprints/                         # INSTALLATION SCRIPTS
-│   └── ...
+│   └── ...                             # Scripts source 'versions.env' for dependencies
 │
 ├── config/
 │   └── instances/
@@ -92,8 +94,9 @@ AiKore is a monolithic orchestration platform designed to manage AI WebUIs insid
 │   └── ...
 │
 ├── entry.sh                            # Container startup (sets --no-access-log for uvicorn)
-├── Dockerfile                          # Main Neutral Image Definition (OS + System CUDA)
-└── versions.env                        # Centralized Version Manifest (Torch, CUDA Archs, etc.)
+├── Dockerfile                          # Main Neutral Image (OS + System CUDA + Conda + KasmVNC)
+└── versions.env                        # Centralized Version Manifest (Default Torch/CUDA versions for Blueprints)
+```
 
 ---
 
@@ -104,29 +107,33 @@ AiKore is a monolithic orchestration platform designed to manage AI WebUIs insid
 2.  **Persistent**: GUI (KasmVNC via dedicated port).
 3.  **Satellite**: lightweight instance reusing Parent's venv.
 
-### Centralized Versioning (`versions.env`)
-*   To maintain consistency, all PyTorch ecosystem versions (Torch, Vision, Audio) and target CUDA architectures are stored in `versions.env`.
-*   This file is injected into the Docker container and automatically sourced by bash profiles and installation blueprints.
+### Neutral Image & Centralized Versioning
+*   **Architecture**: The Docker image is agnostic. It contains a "Master Compiler" (System CUDA Toolkit 13.0) but does NOT pre-compile Python modules.
+*   **`versions.env`**: A file injected into the container that defines default versions (`TORCH_VERSION`, `PYTORCH_INDEX_URL`) used by Blueprints. It acts as a template but can be overridden.
 
-### Module Builder & Wheel Management
-*   **Purpose**: Compile heavy Python/CUDA modules (e.g., `SageAttention`, `FlashAttn`) dynamically to match the host's GPU architecture, using the system-level CUDA toolkit provided by the base image.
+### Module Builder (Dynamic Compilation)
+The Builder is a core component that allows users to compile optimized wheels on-demand.
+*   **Presets**: Includes `FlashAttention-2`, `SageAttention`, `XFormers`, `BitsAndBytes`, `Nvdiffrast`, `Kaolin`, `Diso`, `Diff-Gaussian-Rasterization`, `Vox2Seq`.
+*   **Dynamic Scraping**: The backend scrapes `download.pytorch.org` to list all available Torch versions for the selected CUDA version, ensuring the UI is always up-to-date.
+*   **Smart Mapping**: Automatically maps Torch versions to compatible Torchvision versions (e.g., Torch 2.5.1 -> Vision 0.20.1) to prevent build failures.
 *   **Workflow**:
-    1.  **Build**: Uses isolated Conda envs to compile wheels from builder presets into `config/instances/.wheels` (Global).
-    2.  **Sync**: Users use the **"Manage Wheels"** tool to select wheels. The backend copies them to `config/instances/{name}/wheels` (Local).
-    3.  **Install**: Blueprints detect files in the local `/wheels` folder and install them via `pip install /wheels/*.whl` *before* processing requirements.
-*   **Conflict Prevention**: Blueprints strictly filter `requirements.txt` (via `grep -v`) to exclude packages provided by local wheels to prevent PIP from overwriting optimized versions.
+    1.  **Select**: User chooses Preset, Python Ver, CUDA Ver, and Torch Ver (dynamically populated).
+    2.  **Isolate**: Builder creates a temporary Conda env with exact dependencies.
+    3.  **Compile**: Uses system `nvcc` to build the wheel.
+    4.  **Save**: Wheel is saved to `config/instances/.wheels` with metadata (Arch, Torch Ver, CUDA Ver) in `manifest.json`.
+
+### Wheel Management & Sync
+*   **Global vs Local**: Built wheels are stored globally. The "Manage Wheels" tool allows users to select which wheels to sync to a specific instance's `/wheels` folder.
+*   **Conflict Prevention**: Blueprints strictly filter `requirements.txt` to exclude packages provided by local wheels.
 
 ### UI/UX Design Standards (Ultra-Compact)
 *   **Scale**: Global **80%** scale.
 *   **Table Metrics**: Rows at **28px**.
-*   **Dynamic Buttons**: Secondary action buttons (like "Build Module") are injected dynamically near primary actions.
+*   **Resizers**: Custom column resizing logic in `tools.js`.
 
 ### Port Management
 *   Public Pool (Docker Compose) vs Internal Ephemeral Ports.
 *   Self-healing logic in `instances.py`.
-
-### Lazy Filesystem Provisioning
-*   Instance folders created only on the first `start` action.
 
 ---
 
