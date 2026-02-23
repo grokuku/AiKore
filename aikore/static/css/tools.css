@@ -281,17 +281,14 @@
     width: 100%;
     border-collapse: collapse;
     font-size: 0.85rem;
-    table-layout: fixed; /* Allow columns to hold width and ellipsis */
-    min-width: 400px;
+    table-layout: fixed; /* Force fixed layout */
+    min-width: 600px; /* Increased min-width to accommodate new columns */
 }
 
 .wheels-table th, 
 .wheels-table td {
     border: 1px solid #444; /* Grid lines */
     padding: 0.5rem;
-}
-
-.wheels-table td {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -301,18 +298,28 @@
     background-color: #252545;
     color: #ddd;
     text-align: left;
-    position: sticky;
+    position: sticky; /* Sticky header */
     top: 0;
-    position: relative; /* Need for resizer positioning */
-    /* Removed resize: horizontal */
+    z-index: 1;
 }
 
-/* Default widths: Filename (1st) is fluid (auto). Others are fixed pixels. */
-.wheels-table th:nth-child(1) { width: auto; } /* Filename */
-.wheels-table th:nth-child(2) { width: 60px; } /* Arch */
-.wheels-table th:nth-child(3) { width: 80px; } /* Size */
-.wheels-table th:nth-child(4) { width: 140px; } /* Date */
-.wheels-table th:nth-child(5) { width: 100px; } /* Act */
+/* 
+   COLUMN WIDTHS CONFIGURATION 
+   1: Filename (Flexible)
+   2: Arch (Fixed)
+   3: CUDA (Fixed)
+   4: Torch (Fixed)
+   5: Size (Fixed)
+   6: Date (Fixed)
+   7: Act (Fixed)
+*/
+.wheels-table th:nth-child(1) { width: auto; }  /* Filename takes remaining space */
+.wheels-table th:nth-child(2) { width: 50px; }  /* Arch (e.g. 8.9) */
+.wheels-table th:nth-child(3) { width: 60px; }  /* CUDA (e.g. cu121) */
+.wheels-table th:nth-child(4) { width: 100px; } /* Torch (e.g. 2.10.0+cu130) */
+.wheels-table th:nth-child(5) { width: 70px; }  /* Size (e.g. 14.88 MB) */
+.wheels-table th:nth-child(6) { width: 120px; } /* Date */
+.wheels-table th:nth-child(7) { width: 50px; text-align: center; }  /* Act */
 
 .wheels-table tr:hover { background-color: #2a2a2a; }
 

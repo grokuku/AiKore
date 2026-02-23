@@ -65,6 +65,20 @@ PRESETS = {
             "rm -rf source_code"
         )
     },
+    "flash-attn": {
+        "label": "FlashAttention-2 (Dao-AILab)",
+        "git_url": "https://github.com/Dao-AILab/flash-attention.git",
+        "description": "Fast and memory-efficient exact attention.",
+        "cmd_template": (
+            "git clone {git_url} source_code && "
+            "cd source_code && "
+            "export MAX_JOBS=2 && "
+            "export TORCH_CUDA_ARCH_LIST='{arch}' && "
+            "{python} -m pip wheel --no-build-isolation . -w {output_dir} && "
+            "cd .. && "
+            "rm -rf source_code"
+        )
+    },
     "bitsandbytes": {
         "label": "BitsAndBytes (Quantization)",
         "git_url": "https://github.com/TimDettmers/bitsandbytes.git",
