@@ -24,13 +24,13 @@ function hideAllToolViews() {
 
     DOM.instanceIframe.src = 'about:blank';
     DOM.welcomeIframe.src = 'about:blank';
-    
+
     clearInterval(state.activeLogInterval);
     state.activeLogInstanceId = null;
-    
+
     closeTerminal();
     closeBuilderTerminal();
-    
+
     if (state.viewResizeObserver) {
         state.viewResizeObserver.disconnect();
     }
@@ -41,9 +41,9 @@ function hideAllToolViews() {
 let builderSocket = null;
 let builderTerminal = null;
 let builderFitAddon = null;
-let builderBtnInterval = null; 
+let builderBtnInterval = null;
 let builderResizeObserver = null;
-let builderSplit = null; 
+let builderSplit = null;
 
 async function fetchBuilderInfo() {
     const res = await fetch('/api/builder/info');
@@ -54,35 +54,35 @@ async function fetchBuilderInfo() {
 async function populateTorchVersions() {
     const cudaSelect = document.getElementById('builder-cuda');
     const torchSelect = document.getElementById('builder-torch');
-    
-    if(!cudaSelect || !torchSelect) return;
-    
+
+    if (!cudaSelect || !torchSelect) return;
+
     const cudaVer = cudaSelect.value;
     torchSelect.innerHTML = '<option>Loading...</option>';
     torchSelect.disabled = true;
-    
+
     try {
         const res = await fetch(`/api/builder/versions/torch/${cudaVer}`);
-        if(!res.ok) throw new Error("Failed to fetch versions");
-        
+        if (!res.ok) throw new Error("Failed to fetch versions");
+
         const versions = await res.json();
         torchSelect.innerHTML = '';
-        
-        if(versions.length === 0) {
-             const opt = document.createElement('option');
-             opt.textContent = "Error: No versions found";
-             torchSelect.appendChild(opt);
+
+        if (versions.length === 0) {
+            const opt = document.createElement('option');
+            opt.textContent = "Error: No versions found";
+            torchSelect.appendChild(opt);
         } else {
-             versions.forEach(v => {
-                 const opt = document.createElement('option');
-                 opt.value = v;
-                 opt.textContent = v;
-                 torchSelect.appendChild(opt);
-             });
-             // Select the first one (highest version) by default
-             torchSelect.selectedIndex = 0;
+            versions.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                torchSelect.appendChild(opt);
+            });
+            // Select the first one (highest version) by default
+            torchSelect.selectedIndex = 0;
         }
-    } catch(e) {
+    } catch (e) {
         console.error(e);
         torchSelect.innerHTML = '<option value="2.5.1">2.5.1 (Fallback)</option>';
     } finally {
@@ -102,11 +102,11 @@ export async function renderBuilderStatus() {
             if (btn.textContent === "Build Module") {
                 btn.textContent = "BUILDING...";
             }
-            btn.style.backgroundColor = "#e67e22"; 
+            btn.style.backgroundColor = "#e67e22";
             btn.style.borderColor = "#e67e22";
         } else {
             btn.textContent = "Build Module";
-            btn.style.backgroundColor = "#6f42c1"; 
+            btn.style.backgroundColor = "#6f42c1";
             btn.style.borderColor = "#6f42c1";
         }
     } catch (e) {
@@ -120,9 +120,9 @@ async function fetchWheelsList() {
 }
 
 async function deleteWheel(filename) {
-    if(!confirm(`Delete ${filename}?`)) return;
+    if (!confirm(`Delete ${filename}?`)) return;
     await fetch(`/api/builder/wheels/${filename}`, { method: 'DELETE' });
-    renderWheelsTable(); 
+    renderWheelsTable();
 }
 
 function downloadWheel(filename) {
@@ -131,13 +131,13 @@ function downloadWheel(filename) {
 
 async function renderWheelsTable() {
     const tbody = document.getElementById('wheels-table-body');
-    if(!tbody) return;
+    if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
-    
+
     try {
         const wheels = await fetchWheelsList();
         tbody.innerHTML = '';
-        if(wheels.length === 0) {
+        if (wheels.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#666;">No wheels built yet.</td></tr>';
             return;
         }
@@ -158,10 +158,10 @@ async function renderWheelsTable() {
             `;
             tr.querySelector('.btn-delete').onclick = () => deleteWheel(w.filename);
             tr.querySelector('.btn-download').onclick = () => downloadWheel(w.filename);
-            
+
             tbody.appendChild(tr);
         });
-    } catch(e) {
+    } catch (e) {
         tbody.innerHTML = `<tr><td colspan="7" style="color:red">Error loading wheels</td></tr>`;
     }
 }
@@ -180,7 +180,7 @@ function closeBuilderTerminal() {
         builderResizeObserver.disconnect();
         builderResizeObserver = null;
     }
-    
+
     if (builderBtnInterval) {
         clearInterval(builderBtnInterval);
         builderBtnInterval = null;
@@ -194,17 +194,17 @@ function closeBuilderTerminal() {
 
 function initBuilderTerminal() {
     const container = document.getElementById('builder-terminal');
-    container.innerHTML = ''; 
-    
+    container.innerHTML = '';
+
     builderTerminal = new Terminal({
         cursorBlink: false,
-        disableStdin: true, 
+        disableStdin: true,
         fontSize: 12,
         fontFamily: 'Courier New, Courier, monospace',
         theme: { background: '#000000', foreground: '#e0e0e0' },
-        convertEol: true 
+        convertEol: true
     });
-    
+
     builderFitAddon = new FitAddon.FitAddon();
     builderTerminal.loadAddon(builderFitAddon);
     builderTerminal.open(container);
@@ -212,7 +212,7 @@ function initBuilderTerminal() {
 
     builderResizeObserver = new ResizeObserver(() => {
         if (builderFitAddon) {
-            try { builderFitAddon.fit(); } catch(e) {}
+            try { builderFitAddon.fit(); } catch (e) { }
         }
     });
     builderResizeObserver.observe(container);
@@ -225,7 +225,7 @@ function initTableResizers() {
 
     // Attach resizers to Arch (1), CUDA (2), Torch (3), Size (4), Date (5)
     const headers = table.querySelectorAll('th');
-    
+
     [1, 2, 3, 4, 5].forEach(index => {
         const th = headers[index];
         if (!th || th.querySelector('.resizer')) return;
@@ -241,12 +241,12 @@ function createResizableColumn(th, resizer) {
     let startX, startWidth;
 
     const onMouseDown = (e) => {
-        e.preventDefault(); 
+        e.preventDefault();
         startX = e.pageX;
         startWidth = th.offsetWidth;
-        
+
         resizer.classList.add('resizing');
-        
+
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
     };
@@ -254,9 +254,9 @@ function createResizableColumn(th, resizer) {
     const onMouseMove = (e) => {
         const diffX = e.pageX - startX;
         const newWidth = startWidth - diffX;
-        
-        if (newWidth > 30) { 
-             th.style.width = `${newWidth}px`;
+
+        if (newWidth > 30) {
+            th.style.width = `${newWidth}px`;
         }
     };
 
@@ -274,7 +274,7 @@ async function startBuild() {
     const archSelect = document.getElementById('builder-arch');
     const pythonSelect = document.getElementById('builder-python');
     const cudaSelect = document.getElementById('builder-cuda');
-    const torchSelect = document.getElementById('builder-torch'); 
+    const torchSelect = document.getElementById('builder-torch');
     const customUrlInput = document.getElementById('builder-custom-url');
     const btn = document.getElementById('btn-start-build');
 
@@ -284,11 +284,11 @@ async function startBuild() {
         git_url: customUrlInput.value,
         python_ver: pythonSelect.value,
         cuda_ver: cudaSelect.value,
-        torch_ver: torchSelect.value 
+        torch_ver: torchSelect.value
     };
 
     btn.disabled = true;
-    
+
     // Animation Logic
     let dots = 0;
     btn.textContent = "BUILDING";
@@ -296,23 +296,23 @@ async function startBuild() {
         dots = (dots + 1) % 4;
         btn.textContent = "BUILDING" + ".".repeat(dots);
     }, 500);
-    
+
     // Reset Terminal
-    if(builderTerminal) builderTerminal.clear();
+    if (builderTerminal) builderTerminal.clear();
     else initBuilderTerminal();
 
     // Connect WS
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     builderSocket = new WebSocket(`${protocol}//${window.location.host}/api/builder/build`);
-    
+
     builderSocket.onopen = () => {
         builderSocket.send(JSON.stringify(payload));
     };
-    
+
     builderSocket.onmessage = (event) => {
         builderTerminal.write(event.data);
     };
-    
+
     builderSocket.onclose = () => {
         if (builderBtnInterval) {
             clearInterval(builderBtnInterval);
@@ -320,13 +320,13 @@ async function startBuild() {
         }
         btn.disabled = false;
         btn.textContent = "BUILD MODULE";
-        renderWheelsTable(); 
+        renderWheelsTable();
     };
 }
 
 export async function showBuilderView() {
     hideAllToolViews();
-    
+
     // Create Layout if not exists
     let container = document.getElementById('builder-container');
     if (!container) {
@@ -334,22 +334,33 @@ export async function showBuilderView() {
         <div id="builder-container">
             <div id="builder-top-pane">
                 <div id="builder-options">
+                    
+                    <!-- Row 1 -->
                     <div class="builder-field">
                         <label>Module Preset</label>
                         <select id="builder-preset"></select>
                     </div>
                     
-                    <div class="builder-field" id="builder-field-custom" style="display:none;">
-                        <label>Git URL / Package Name</label>
-                        <input type="text" id="builder-custom-url" placeholder="https://github.com/user/repo.git">
-                    </div>
-
                     <div class="builder-field">
                         <label>Python Version</label>
                         <select id="builder-python">
                             <option value="3.12" selected>3.12 (Default)</option>
                             <option value="3.11">3.11</option>
                             <option value="3.10">3.10</option>
+                        </select>
+                    </div>
+
+                    <!-- Custom URL (Spans both columns when visible) -->
+                    <div class="builder-field" id="builder-field-custom" style="display:none;">
+                        <label>Git URL / Package Name</label>
+                        <input type="text" id="builder-custom-url" placeholder="https://github.com/user/repo.git">
+                    </div>
+
+                    <!-- Row 2 -->
+                    <div class="builder-field">
+                        <label>PyTorch Version (Dynamically Fetched)</label>
+                        <select id="builder-torch">
+                            <option>Loading...</option>
                         </select>
                     </div>
 
@@ -363,14 +374,7 @@ export async function showBuilderView() {
                         </select>
                     </div>
                     
-                    <!-- DYNAMIC TORCH SELECT -->
-                    <div class="builder-field">
-                        <label>PyTorch Version (Dynamically Fetched)</label>
-                        <select id="builder-torch">
-                            <option>Loading...</option>
-                        </select>
-                    </div>
-
+                    <!-- Row 3 -->
                     <div class="builder-field">
                         <label>
                             Target GPU Architecture 
@@ -388,7 +392,10 @@ export async function showBuilderView() {
                         </select>
                     </div>
 
-                    <button id="btn-start-build">BUILD MODULE</button>
+                    <div class="builder-field build-btn-container">
+                        <button id="btn-start-build">BUILD MODULE</button>
+                    </div>
+
                 </div>
                 <div id="builder-wheels">
                     <div style="padding:0.5rem; background:#252545; color:#fff; font-weight:bold; border-bottom:1px solid #444;">Available Wheels</div>
@@ -418,23 +425,17 @@ export async function showBuilderView() {
         `;
         DOM.logViewerContainer.insertAdjacentHTML('afterend', html);
         container = document.getElementById('builder-container');
-        
+
         document.getElementById('btn-start-build').addEventListener('click', startBuild);
         document.getElementById('builder-preset').addEventListener('change', (e) => {
             const isCustom = e.target.value === 'custom';
+            // Display flex to maintain correct behavior inside grid cell when visible
             document.getElementById('builder-field-custom').style.display = isCustom ? 'flex' : 'none';
         });
-        
+
         // NEW: Event listener for dynamic versions
         const cudaSelect = document.getElementById('builder-cuda');
         cudaSelect.addEventListener('change', populateTorchVersions);
-
-        Split(['#builder-options', '#builder-wheels'], {
-            sizes: [66, 34],
-            minSize: [200, 200],
-            gutterSize: 5,
-            cursor: 'col-resize'
-        });
 
         initTableResizers();
     }
@@ -444,25 +445,25 @@ export async function showBuilderView() {
     DOM.toolsPaneTitle.textContent = "Tools / Module Builder (Experimental)";
 
     const info = await fetchBuilderInfo();
-    
+
     const presetSelect = document.getElementById('builder-preset');
     presetSelect.innerHTML = '';
-    for(const [key, val] of Object.entries(info.presets)) {
+    for (const [key, val] of Object.entries(info.presets)) {
         const opt = document.createElement('option');
         opt.value = key;
         opt.textContent = val.label;
         presetSelect.appendChild(opt);
     }
-    
+
     const archSelect = document.getElementById('builder-arch');
-    if(!archSelect.querySelector('option[value="auto"]')) {
+    if (!archSelect.querySelector('option[value="auto"]')) {
         const autoOpt = document.createElement('option');
         autoOpt.value = info.detected_arch;
         autoOpt.textContent = `Auto-Detect (${info.detected_arch}) - Recommended`;
         autoOpt.selected = true;
         archSelect.prepend(autoOpt);
     }
-    
+
     // NEW: Initial population of torch versions
     await populateTorchVersions();
 
@@ -474,7 +475,7 @@ export async function showBuilderView() {
 
 export async function showInstanceWheelsManager(instanceId, instanceName) {
     hideAllToolViews();
-    
+
     let container = document.getElementById('wheels-manager-container');
     if (!container) {
         const html = `
@@ -506,7 +507,7 @@ export async function showInstanceWheelsManager(instanceId, instanceName) {
         `;
         DOM.logViewerContainer.insertAdjacentHTML('afterend', html);
         container = document.getElementById('wheels-manager-container');
-        
+
         document.getElementById('btn-wheels-refresh').onclick = () => loadInstanceWheels(instanceId);
         document.getElementById('btn-wheels-apply').onclick = () => saveInstanceWheels(instanceId);
         document.getElementById('wheels-select-all').onchange = (e) => {
@@ -514,29 +515,29 @@ export async function showInstanceWheelsManager(instanceId, instanceName) {
             checkboxes.forEach(cb => cb.checked = e.target.checked);
         };
     }
-    
+
     container.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
     DOM.toolsPaneTitle.textContent = `Manage Wheels: ${instanceName}`;
-    
+
     await loadInstanceWheels(instanceId);
 }
 
 async function loadInstanceWheels(instanceId) {
     const tbody = document.getElementById('instance-wheels-body');
     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center">Loading...</td></tr>';
-    
+
     try {
         const res = await fetch(`/api/instances/${instanceId}/wheels`);
-        if(!res.ok) throw new Error("Failed to fetch");
+        if (!res.ok) throw new Error("Failed to fetch");
         const wheels = await res.json();
-        
+
         tbody.innerHTML = '';
-        if(wheels.length === 0) {
+        if (wheels.length === 0) {
             tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#888">No compiled wheels found in Builder.</td></tr>';
             return;
         }
-        
+
         wheels.forEach(w => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
@@ -552,15 +553,15 @@ async function loadInstanceWheels(instanceId) {
                 </td>
             `;
             tr.addEventListener('click', (e) => {
-                if(e.target.type !== 'checkbox') {
+                if (e.target.type !== 'checkbox') {
                     const cb = tr.querySelector('input[type="checkbox"]');
                     cb.checked = !cb.checked;
                 }
             });
             tbody.appendChild(tr);
         });
-        
-    } catch(e) {
+
+    } catch (e) {
         tbody.innerHTML = `<tr><td colspan="4" style="color:red">Error loading wheels: ${e.message}</td></tr>`;
     }
 }
@@ -569,25 +570,25 @@ async function saveInstanceWheels(instanceId) {
     const btn = document.getElementById('btn-wheels-apply');
     const checkboxes = document.querySelectorAll('.wheel-checkbox:checked');
     const filenames = Array.from(checkboxes).map(cb => cb.value);
-    
+
     btn.disabled = true;
     btn.textContent = "SYNCING...";
-    
+
     try {
         const res = await fetch(`/api/instances/${instanceId}/wheels`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filenames })
         });
-        
-        if(res.ok) {
+
+        if (res.ok) {
             showToast("Wheels synchronized successfully", "success");
-            loadInstanceWheels(instanceId); 
+            loadInstanceWheels(instanceId);
         } else {
             const err = await res.json();
             showToast(`Error: ${err.detail}`, "error");
         }
-    } catch(e) {
+    } catch (e) {
         showToast(`Sync failed: ${e.message}`, "error");
     } finally {
         btn.disabled = false;
@@ -725,7 +726,7 @@ export async function showLogViewer(instanceId, instanceName) {
     DOM.logContentArea.textContent = 'Loading logs...';
     state.activeLogInstanceId = instanceId;
     state.logSize = 0;
-    
+
     const updateLogs = async () => {
         if (!state.activeLogInstanceId) return;
         try {
