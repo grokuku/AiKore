@@ -458,3 +458,153 @@
 .resizing {
     background-color: #4da6ff;
 }
+
+/* --- INSTANCE WHEELS MANAGER --- */
+#wheels-manager-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background-color: #111;
+    overflow: hidden;
+}
+
+.toolbar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background-color: #2c2c54;
+    border-bottom: 2px solid #3b3b6b;
+}
+
+.toolbar-info {
+    color: #ddd;
+    font-size: 0.9rem;
+}
+
+.toolbar-info code {
+    background: #111;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    color: #4da6ff;
+}
+
+.toolbar-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.wheels-manager-columns {
+    display: flex;
+    flex: 1;
+    gap: 1rem;
+    padding: 1rem;
+    overflow: hidden;
+    /* Prevent body scroll */
+}
+
+.wheels-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.wheels-column h3 {
+    margin: 0;
+    padding: 0.75rem;
+    background-color: #252545;
+    color: #fff;
+    font-size: 1rem;
+    border-bottom: 1px solid #444;
+    text-align: center;
+}
+
+.wheels-column .table-container {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.manager-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    text-align: left;
+    table-layout: fixed;
+}
+
+.manager-table th,
+.manager-table td {
+    border-bottom: 1px solid #333;
+    padding: 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.manager-table th {
+    background-color: #222;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    color: #aaa;
+}
+
+.manager-table tr:hover {
+    background-color: #2a2a2a;
+}
+
+.manager-table th:nth-child(1) {
+    width: auto;
+}
+
+/* Filename */
+.manager-table th:nth-child(2) {
+    width: 80px;
+    text-align: right;
+}
+
+/* Size */
+.manager-table th:nth-child(3) {
+    width: 50px;
+    text-align: center;
+}
+
+/* Act */
+
+.action-cell {
+    text-align: center;
+}
+
+.btn-action {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.btn-action.install {
+    color: #28a745;
+}
+
+.btn-action.install:hover {
+    background-color: rgba(40, 167, 69, 0.2);
+}
+
+.btn-action.remove {
+    color: #dc3545;
+}
+
+.btn-action.remove:hover {
+    background-color: rgba(220, 53, 69, 0.2);
+}

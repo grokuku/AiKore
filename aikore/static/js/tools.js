@@ -50,7 +50,6 @@ async function fetchBuilderInfo() {
     return await res.json();
 }
 
-// NEW: Function to dynamically fetch available torch versions
 async function populateTorchVersions() {
     const cudaSelect = document.getElementById('builder-cuda');
     const torchSelect = document.getElementById('builder-torch');
@@ -79,7 +78,6 @@ async function populateTorchVersions() {
                 opt.textContent = v;
                 torchSelect.appendChild(opt);
             });
-            // Select the first one (highest version) by default
             torchSelect.selectedIndex = 0;
         }
     } catch (e) {
@@ -218,12 +216,10 @@ function initBuilderTerminal() {
     builderResizeObserver.observe(container);
 }
 
-// Table Resizing Logic
 function initTableResizers() {
     const table = document.querySelector('.wheels-table');
     if (!table) return;
 
-    // Attach resizers to Arch (1), CUDA (2), Torch (3), Size (4), Date (5)
     const headers = table.querySelectorAll('th');
 
     [1, 2, 3, 4, 5].forEach(index => {
@@ -289,7 +285,6 @@ async function startBuild() {
 
     btn.disabled = true;
 
-    // Animation Logic
     let dots = 0;
     btn.textContent = "BUILDING";
     builderBtnInterval = setInterval(() => {
@@ -297,11 +292,9 @@ async function startBuild() {
         btn.textContent = "BUILDING" + ".".repeat(dots);
     }, 500);
 
-    // Reset Terminal
     if (builderTerminal) builderTerminal.clear();
     else initBuilderTerminal();
 
-    // Connect WS
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     builderSocket = new WebSocket(`${protocol}//${window.location.host}/api/builder/build`);
 
@@ -327,7 +320,6 @@ async function startBuild() {
 export async function showBuilderView() {
     hideAllToolViews();
 
-    // Create Layout if not exists
     let container = document.getElementById('builder-container');
     if (!container) {
         const html = `
@@ -335,7 +327,6 @@ export async function showBuilderView() {
             <div id="builder-top-pane">
                 <div id="builder-options">
                     
-                    <!-- Row 1 -->
                     <div class="builder-field">
                         <label>Module Preset</label>
                         <select id="builder-preset"></select>
@@ -350,13 +341,11 @@ export async function showBuilderView() {
                         </select>
                     </div>
 
-                    <!-- Custom URL (Spans both columns when visible) -->
                     <div class="builder-field" id="builder-field-custom" style="display:none;">
                         <label>Git URL / Package Name</label>
                         <input type="text" id="builder-custom-url" placeholder="https://github.com/user/repo.git">
                     </div>
 
-                    <!-- Row 2 -->
                     <div class="builder-field">
                         <label>PyTorch Version (Dynamically Fetched)</label>
                         <select id="builder-torch">
@@ -374,7 +363,6 @@ export async function showBuilderView() {
                         </select>
                     </div>
                     
-                    <!-- Row 3 -->
                     <div class="builder-field">
                         <label>
                             Target GPU Architecture 
@@ -429,11 +417,9 @@ export async function showBuilderView() {
         document.getElementById('btn-start-build').addEventListener('click', startBuild);
         document.getElementById('builder-preset').addEventListener('change', (e) => {
             const isCustom = e.target.value === 'custom';
-            // Display flex to maintain correct behavior inside grid cell when visible
             document.getElementById('builder-field-custom').style.display = isCustom ? 'flex' : 'none';
         });
 
-        // NEW: Event listener for dynamic versions
         const cudaSelect = document.getElementById('builder-cuda');
         cudaSelect.addEventListener('change', populateTorchVersions);
 
@@ -464,7 +450,6 @@ export async function showBuilderView() {
         archSelect.prepend(autoOpt);
     }
 
-    // NEW: Initial population of torch versions
     await populateTorchVersions();
 
     renderWheelsTable();
@@ -472,6 +457,8 @@ export async function showBuilderView() {
 }
 
 // --- INSTANCE WHEELS MANAGER ---
+
+let currentWheelsData = [];
 
 export async function showInstanceWheelsManager(instanceId, instanceName) {
     hideAllToolViews();
@@ -486,35 +473,55 @@ export async function showInstanceWheelsManager(instanceId, instanceName) {
                     Files will be copied to <code>/wheels</code> folder.
                 </div>
                 <div class="toolbar-actions">
-                    <button id="btn-wheels-refresh" class="btn-secondary">Refresh</button>
-                    <button id="btn-wheels-apply" class="btn-primary">APPLY CHANGES</button>
+                    <button id="btn-wheels-refresh" class="btn-secondary" style="padding: 0.5rem 1rem; cursor:pointer;">Refresh</button>
+                    <button id="btn-wheels-apply" class="btn-primary" style="padding: 0.5rem 1rem; background-color:#28a745; color:white; border:none; font-weight:bold; border-radius:4px; cursor:pointer;">APPLY CHANGES</button>
                 </div>
             </div>
-            <div class="table-container">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 40px"><input type="checkbox" id="wheels-select-all"></th>
-                            <th>Filename</th>
-                            <th style="width: 100px">Size (MB)</th>
-                            <th style="width: 100px">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="instance-wheels-body"></tbody>
-                </table>
+            <div class="wheels-manager-columns">
+                <!-- Available Column -->
+                <div class="wheels-column">
+                    <h3>Available Wheels (Global)</h3>
+                    <div class="table-container">
+                        <table class="manager-table">
+                            <thead>
+                                <tr>
+                                    <th>Filename</th>
+                                    <th>Size</th>
+                                    <th>Act</th>
+                                </tr>
+                            </thead>
+                            <tbody id="wheels-available-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- Installed Column -->
+                <div class="wheels-column">
+                    <h3>Installed in Instance</h3>
+                    <div class="table-container">
+                        <table class="manager-table">
+                            <thead>
+                                <tr>
+                                    <th>Filename</th>
+                                    <th>Size</th>
+                                    <th>Act</th>
+                                </tr>
+                            </thead>
+                            <tbody id="wheels-installed-body"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
         `;
         DOM.logViewerContainer.insertAdjacentHTML('afterend', html);
         container = document.getElementById('wheels-manager-container');
 
-        document.getElementById('btn-wheels-refresh').onclick = () => loadInstanceWheels(instanceId);
-        document.getElementById('btn-wheels-apply').onclick = () => saveInstanceWheels(instanceId);
-        document.getElementById('wheels-select-all').onchange = (e) => {
-            const checkboxes = document.querySelectorAll('.wheel-checkbox');
-            checkboxes.forEach(cb => cb.checked = e.target.checked);
-        };
+        // Event Listeners attached ONCE
+        document.getElementById('btn-wheels-refresh').addEventListener('click', () => loadInstanceWheels(state.currentWheelsInstanceId));
+        document.getElementById('btn-wheels-apply').addEventListener('click', () => saveInstanceWheels(state.currentWheelsInstanceId));
     }
+
+    state.currentWheelsInstanceId = instanceId;
 
     container.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
@@ -524,52 +531,79 @@ export async function showInstanceWheelsManager(instanceId, instanceName) {
 }
 
 async function loadInstanceWheels(instanceId) {
-    const tbody = document.getElementById('instance-wheels-body');
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center">Loading...</td></tr>';
+    document.getElementById('wheels-available-body').innerHTML = '<tr><td colspan="3" style="text-align:center">Loading...</td></tr>';
+    document.getElementById('wheels-installed-body').innerHTML = '<tr><td colspan="3" style="text-align:center">Loading...</td></tr>';
 
     try {
         const res = await fetch(`/api/instances/${instanceId}/wheels`);
         if (!res.ok) throw new Error("Failed to fetch");
-        const wheels = await res.json();
+        currentWheelsData = await res.json();
 
-        tbody.innerHTML = '';
-        if (wheels.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#888">No compiled wheels found in Builder.</td></tr>';
-            return;
-        }
-
-        wheels.forEach(w => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td style="text-align:center">
-                    <input type="checkbox" class="wheel-checkbox" value="${w.filename}" ${w.installed ? 'checked' : ''}>
-                </td>
-                <td title="${w.filename}">${w.filename}</td>
-                <td>${w.size_mb}</td>
-                <td>
-                    <span class="status-badge ${w.installed ? 'status-installed' : 'status-available'}">
-                        ${w.installed ? 'INSTALLED' : 'AVAILABLE'}
-                    </span>
-                </td>
-            `;
-            tr.addEventListener('click', (e) => {
-                if (e.target.type !== 'checkbox') {
-                    const cb = tr.querySelector('input[type="checkbox"]');
-                    cb.checked = !cb.checked;
-                }
-            });
-            tbody.appendChild(tr);
-        });
+        renderManagerTables();
 
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="4" style="color:red">Error loading wheels: ${e.message}</td></tr>`;
+        document.getElementById('wheels-available-body').innerHTML = `<tr><td colspan="3" style="color:red">Error: ${e.message}</td></tr>`;
+        document.getElementById('wheels-installed-body').innerHTML = `<tr><td colspan="3" style="color:red">Error: ${e.message}</td></tr>`;
+    }
+}
+
+// Function exposed to window to handle button clicks inside dynamically created HTML
+window.toggleWheelState = function (filename, install) {
+    const wheel = currentWheelsData.find(w => w.filename === filename);
+    if (wheel) {
+        wheel.installed = install;
+        renderManagerTables();
+    }
+};
+
+function renderManagerTables() {
+    const availableBody = document.getElementById('wheels-available-body');
+    const installedBody = document.getElementById('wheels-installed-body');
+
+    availableBody.innerHTML = '';
+    installedBody.innerHTML = '';
+
+    const availableWheels = currentWheelsData.filter(w => !w.installed);
+    const installedWheels = currentWheelsData.filter(w => w.installed);
+
+    if (availableWheels.length === 0) {
+        availableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888;">No global wheels available.</td></tr>';
+    } else {
+        availableWheels.forEach(w => {
+            availableBody.innerHTML += `
+                <tr>
+                    <td title="${w.filename}">${w.filename}</td>
+                    <td style="text-align:right;">${w.size_mb} MB</td>
+                    <td class="action-cell">
+                        <button class="btn-action install" onclick="window.toggleWheelState('${w.filename}', true)" title="Install">➕</button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    if (installedWheels.length === 0) {
+        installedBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888;">No wheels currently installed.</td></tr>';
+    } else {
+        installedWheels.forEach(w => {
+            installedBody.innerHTML += `
+                <tr>
+                    <td title="${w.filename}">${w.filename}</td>
+                    <td style="text-align:right;">${w.size_mb} MB</td>
+                    <td class="action-cell">
+                        <button class="btn-action remove" onclick="window.toggleWheelState('${w.filename}', false)" title="Remove">❌</button>
+                    </td>
+                </tr>
+            `;
+        });
     }
 }
 
 async function saveInstanceWheels(instanceId) {
     const btn = document.getElementById('btn-wheels-apply');
-    const checkboxes = document.querySelectorAll('.wheel-checkbox:checked');
-    const filenames = Array.from(checkboxes).map(cb => cb.value);
+
+    // Filter current state to get only the installed ones
+    const filenames = currentWheelsData.filter(w => w.installed).map(w => w.filename);
 
     btn.disabled = true;
     btn.textContent = "SYNCING...";
@@ -583,7 +617,7 @@ async function saveInstanceWheels(instanceId) {
 
         if (res.ok) {
             showToast("Wheels synchronized successfully", "success");
-            loadInstanceWheels(instanceId);
+            await loadInstanceWheels(instanceId); // Reload to reflect actual server state
         } else {
             const err = await res.json();
             showToast(`Error: ${err.detail}`, "error");

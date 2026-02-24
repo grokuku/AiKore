@@ -802,7 +802,7 @@ def _clean_wheel_name(filename: str) -> str:
     to restore PEP 425 compatibility for pip.
     Example: sage..._x86_64+arch8.9.whl -> sage..._x86_64.whl
     """
-    return re.sub(r'\+arch[\d\.]+', '', filename)
+    return re.sub(r'\+arch[\d\.]+(?=\.whl)', '', filename)
 
 @router.get("/instances/{instance_id}/wheels", response_model=List[InstanceWheel], tags=["Instance Assets"])
 def get_instance_wheels(instance_id: int, db: Session = Depends(get_db)):
