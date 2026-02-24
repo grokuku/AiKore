@@ -63,14 +63,14 @@ It relies on a **"Neutral Image Architecture"**: the base Docker image is lightw
 │   │   │   ├── components.css          # Context Menus, Compact Progress Bars
 │   │   │   ├── instances.css           # Compact Table (28px rows), Grouping logic
 │   │   │   ├── modals.css              # Popups
-│   │   │   └── tools.css               # Tools layout. Handles Resizers, Grid, & Builder Table.
+│   │   │   └── tools.css               # Tools layout. Handles Resizers, Grid (Builder/Wheels Manager 2-column layouts).
 │   │   ├── js/
 │   │   │   ├── api.js                  # Fetch wrappers
 │   │   │   ├── eventHandlers.js        # Global Save & Creation at bottom logic
 │   │   │   ├── main.js                 # Entry Point: Polling & Grouped Rendering, Builder button injection
 │   │   │   ├── modals.js               # Modal logic
 │   │   │   ├── state.js                # Centralized State Store
-│   │   │   ├── tools.js                # Tools logic. Builder dynamic versions, Column Resizing, Wheel Manager.
+│   │   │   ├── tools.js                # Tools logic. Builder dynamic versions, Column Resizing, Dual-pane Wheel Manager.
 │   │   │   └── ui.js                   # DOM Manipulation (Dirty rows, Normalization)
 │   │   ├── welcome/                    # "CRT Style" Welcome Screen
 │   │   └── index.html                  # Main HTML Entry Point
@@ -113,6 +113,7 @@ It relies on a **"Neutral Image Architecture"**: the base Docker image is lightw
 
 ### Module Builder (Dynamic Compilation)
 The Builder is a core component that allows users to compile optimized wheels on-demand.
+*   **UI Layout**: The configuration pane uses a compact, fixed-width 2-column grid to maximize screen real estate for the wheels table and terminal logs.
 *   **Presets**: Includes `FlashAttention-2`, `SageAttention`, `XFormers`, `BitsAndBytes`, `Nvdiffrast`, `Kaolin`, `Diso`, `Diff-Gaussian-Rasterization`, `Vox2Seq`.
 *   **Dynamic Scraping**: The backend scrapes `download.pytorch.org` to list all available Torch versions for the selected CUDA version, ensuring the UI is always up-to-date.
 *   **Smart Mapping**: Automatically maps Torch versions to compatible Torchvision versions (e.g., Torch 2.5.1 -> Vision 0.20.1) to prevent build failures.
@@ -123,7 +124,9 @@ The Builder is a core component that allows users to compile optimized wheels on
     4.  **Save**: Wheel is saved to `config/instances/.wheels` with metadata (Arch, Torch Ver, CUDA Ver) in `manifest.json`.
 
 ### Wheel Management & Sync
-*   **Global vs Local**: Built wheels are stored globally. The "Manage Wheels" tool allows users to select which wheels to sync to a specific instance's `/wheels` folder.
+*   **Global vs Local**: Built wheels are stored globally. 
+*   **Interactive UI**: The "Manage Wheels" tool features a dual-pane interactive UI (Available Global Wheels vs Installed in Instance) allowing users to easily install (➕) or remove (❌) specific dependencies.
+*   **PEP 425 Compliance**: A backend regex (using positive lookahead) ensures wheels are properly renamed to strip internal architecture tags (e.g., `+arch8.9`) and restore standard PIP compatibility during synchronization to the instance's `/wheels` folder.
 *   **Conflict Prevention**: Blueprints strictly filter `requirements.txt` to exclude packages provided by local wheels.
 
 ### UI/UX Design Standards (Ultra-Compact)
