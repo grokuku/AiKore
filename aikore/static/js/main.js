@@ -1,5 +1,5 @@
 import { state, DOM } from './state.js';
-import { fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSystemStats } from './api.js';
+import { fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSystemStats, fetchAvailablePythonVersions } from './api.js';
 import { renderInstanceRow, updateSystemStats, checkRowForChanges } from './ui.js';
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
@@ -43,7 +43,7 @@ export async function fetchAndRenderInstances() {
 
         // --- NEW RENDERING LOGIC FOR GROUPING ---
         const instanceMap = new Map(instances.map(inst => [inst.id, { ...inst, children: [] }]));
-        const rootInstances = [];
+        const rootInstances =[];
         
         instances.forEach(inst => {
             if (inst.parent_instance_id && instanceMap.has(inst.parent_instance_id)) {
@@ -67,28 +67,28 @@ export async function fetchAndRenderInstances() {
 
         const dirtyRows = document.querySelectorAll('tr.row-dirty');
         if (dirtyRows.length > 0) {
-             // Partial Update Mode: Do not destroy structure
-             instances.forEach(inst => {
-                 const row = DOM.instancesTable.querySelector(`tr[data-id="${inst.id}"]`);
-                 if (row) {
-                     const statusSpan = row.querySelector('.status');
-                     if (statusSpan && row.dataset.status !== inst.status) {
-                         statusSpan.textContent = inst.status;
-                         statusSpan.className = `status status-${inst.status.toLowerCase()}`;
-                         row.dataset.status = inst.status;
-                         
-                         const allButtons = row.querySelectorAll('button.action-btn');
-                         const isActive = inst.status !== 'stopped';
-                         allButtons.forEach(btn => {
-                             const action = btn.dataset.action;
-                             if (action === 'start') btn.disabled = isActive;
-                             else if (action === 'stop') btn.disabled = !isActive;
-                             else if (action === 'delete') btn.disabled = isActive;
-                             else if (action === 'view') btn.disabled = (inst.status !== 'started');
-                         });
-                     }
-                 }
-             });
+                // Partial Update Mode: Do not destroy structure
+                instances.forEach(inst => {
+                    const row = DOM.instancesTable.querySelector(`tr[data-id="${inst.id}"]`);
+                    if (row) {
+                        const statusSpan = row.querySelector('.status');
+                        if (statusSpan && row.dataset.status !== inst.status) {
+                            statusSpan.textContent = inst.status;
+                            statusSpan.className = `status status-${inst.status.toLowerCase()}`;
+                            row.dataset.status = inst.status;
+                            
+                            const allButtons = row.querySelectorAll('button.action-btn');
+                            const isActive = inst.status !== 'stopped';
+                            allButtons.forEach(btn => {
+                                const action = btn.dataset.action;
+                                if (action === 'start') btn.disabled = isActive;
+                                else if (action === 'stop') btn.disabled = !isActive;
+                                else if (action === 'delete') btn.disabled = isActive;
+                                else if (action === 'view') btn.disabled = (inst.status !== 'started');
+                            });
+                        }
+                    }
+                });
         } else {
             // Full Re-render Mode: Destroy and Rebuild bodies
             
@@ -119,16 +119,12 @@ export async function fetchAndRenderInstances() {
 
             rootInstances.forEach(node => renderFamily(node, node.children));
             
-            // Re-append "New Instance" row if it was there (conceptual, usually handled by add button logic which appends to table)
-            // But since we wipe, we lose unsaved new rows if we are not careful.
-            // However, the check `isInteracting` above saves us if the user is typing in the new row.
-            // If they are not typing, it disappears. This is consistent with current behavior.
         }
 
         if (rootInstances.length === 0) {
             // Create a temporary body for the empty message
             const emptyTbody = document.createElement('tbody');
-            emptyTbody.innerHTML = `<tr class="no-instances-row"><td colspan="11" style="text-align: center;">No instances created yet.</td></tr>`;
+            emptyTbody.innerHTML = `<tr class="no-instances-row"><td colspan="12" style="text-align: center;">No instances created yet.</td></tr>`;
             DOM.instancesTable.appendChild(emptyTbody);
         }
 
@@ -141,7 +137,13 @@ export async function fetchAndRenderInstances() {
 
 async function initializeApp() {
     try {
-        const [systemInfo, blueprints, ports] = await Promise.all([
+        // --- NEW: Inject dynamic Python versions discovery ---
+        const discoveredPyVersions = await fetchAvailablePythonVersions();
+        if (discoveredPyVersions && discoveredPyVersions.length > 0) {
+                state.versions.python = discoveredPyVersions;
+        }
+
+        const[systemInfo, blueprints, ports] = await Promise.all([
             fetchSystemInfo(),
             fetchAndStoreBlueprints(),
             fetchAvailablePorts()
@@ -162,8 +164,6 @@ async function initializeApp() {
     }
     
     // --- INJECT BUILDER BUTTON ---
-    // Try to find the Add Instance button. Based on typical bootstrap or text content.
-    // Assuming it's a button element with text "Add New Instance"
     const buttons = document.querySelectorAll('button');
     let addBtn = null;
     for (const btn of buttons) {
@@ -175,12 +175,11 @@ async function initializeApp() {
 
     if (addBtn) {
         const buildBtn = document.createElement('button');
-        buildBtn.className = addBtn.className; // Copy styles (btn btn-primary etc)
-        buildBtn.id = 'btn-open-builder'; // --- NEW ID ---
+        buildBtn.className = addBtn.className; 
+        buildBtn.id = 'btn-open-builder'; 
         buildBtn.textContent = "Build Module";
-        buildBtn.style.marginRight = "10px"; // Add spacing
-        // Change color to distinguish (if bootstrap, use btn-secondary or custom style)
-        buildBtn.style.backgroundColor = "#6f42c1"; // Purple
+        buildBtn.style.marginRight = "10px"; 
+        buildBtn.style.backgroundColor = "#6f42c1"; 
         buildBtn.style.borderColor = "#6f42c1";
         
         buildBtn.onclick = () => {
@@ -211,11 +210,10 @@ async function initializeApp() {
 
     DOM.toolsCloseBtn.addEventListener('click', showWelcomeScreen);
     
-    // CHANGED: Sortable now sorts TBODY elements within the TABLE
     new Sortable(DOM.instancesTable, {
         animation: 150, 
         handle: '.drag-handle', 
-        draggable: 'tbody.instance-group', // Sort groups, not rows
+        draggable: 'tbody.instance-group', 
         ghostClass: 'sortable-ghost', 
         dragClass: 'sortable-drag',
         onEnd: function (evt) {
@@ -257,7 +255,7 @@ async function initializeApp() {
     
     Split(['#tools-pane', '#monitoring-pane'], { 
         sizes: state.split.savedSizes.horizontal, 
-        minSize: [300, 200], 
+        minSize:[300, 200], 
         gutterSize: 5, 
         direction: 'horizontal', 
         cursor: 'col-resize', 

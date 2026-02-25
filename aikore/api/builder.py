@@ -277,6 +277,47 @@ def get_builder_info():
         "gpu_name": gpu_name,
         "python_path": sys.executable
     }
+    
+# --- NEW: Cache for python versions ---
+_cached_python_versions =[]
+
+@router.get("/versions/python")
+async def get_available_python_versions():
+    """
+    Finds available python versions using conda search.
+    Results are cached to avoid slow repeated calls.
+    """
+    global _cached_python_versions
+    if _cached_python_versions:
+        return _cached_python_versions
+
+    try:
+        cmd = f"{CONDA_EXE} search ^python$ --json"
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await proc.communicate()
+        
+        if proc.returncode == 0:
+            data = json.loads(stdout.decode())
+            versions = set()
+            for entry in data.get("python",[]):
+                ver = entry.get("version", "")
+                # Match major.minor and ensure it's >= 3.10
+                match = re.match(r'^(3\.(1[0-9]|[0-9]))', ver)
+                if match:
+                    versions.add(match.group(1))
+            
+            # Sort descending (e.g. 3.15, 3.14...)
+            _cached_python_versions = sorted(list(versions), key=lambda x:[int(p) for p in x.split('.')], reverse=True)
+            return _cached_python_versions
+    except Exception as e:
+        print(f"[DEBUG] Failed to discover python versions: {e}")
+    
+    # Fallback if conda search fails
+    return["3.15", "3.14", "3.13", "3.12", "3.11", "3.10"]
 
 @router.get("/versions/torch/{cuda_ver}")
 def get_torch_versions_for_cuda(cuda_ver: str):
@@ -320,11 +361,11 @@ def get_torch_versions_for_cuda(cuda_ver: str):
     except Exception as e:
         print(f"[DEBUG] Failed to fetch torch versions: {e}")
         return sorted(fallback_versions, reverse=True)
-        
+
 @router.get("/wheels", response_model=List[WheelMetadata])
 def list_wheels():
     manifest = get_manifest()
-    wheels = []
+    wheels =[]
     
     # Scan directory
     files = glob.glob(os.path.join(WHEELS_DIR, "*.whl"))
@@ -441,11 +482,11 @@ async def build_websocket(websocket: WebSocket):
             vision_ver = TORCH_VISION_MAP.get(requested_torch_ver)
             
             if not vision_ver:
-                 await websocket.send_text(f"\x1b[33m[WARN] Unknown Torch version {requested_torch_ver}. Installing latest compatible torchvision (might break).\x1b[0m\r\n")
-                 # If unknown, we do NOT pin torchvision and let pip resolve it
-                 torch_pkg = f"torch=={requested_torch_ver} torchvision"
+                    await websocket.send_text(f"\x1b[33m[WARN] Unknown Torch version {requested_torch_ver}. Installing latest compatible torchvision (might break).\x1b[0m\r\n")
+                    # If unknown, we do NOT pin torchvision and let pip resolve it
+                    torch_pkg = f"torch=={requested_torch_ver} torchvision"
             else:
-                 torch_pkg = f"torch=={requested_torch_ver} torchvision=={vision_ver}"
+                    torch_pkg = f"torch=={requested_torch_ver} torchvision=={vision_ver}"
 
             await websocket.send_text(f"\x1b[34m[INFO] Installing {torch_pkg}...\x1b[0m\r\n")
             index_url = f"https://download.pytorch.org/whl/{cuda_ver}"

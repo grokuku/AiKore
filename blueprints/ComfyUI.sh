@@ -13,6 +13,12 @@ set -e
 source /opt/sd-install/functions.sh
 source /opt/sd-install/versions.env
 
+# --- NEW: Load custom instance versions if they exist ---
+if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+    echo "--- Loading custom environment variables ---"
+    source "${INSTANCE_CONF_DIR}/aikore_vars.env"
+fi
+
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
 # The following variables are provided by the process manager:
@@ -62,7 +68,9 @@ clean_env "${VENV_DIR}"
 
 # Create the Conda environment if it doesn't exist
 if [ ! -d "${VENV_DIR}" ]; then
-    conda create -p "${VENV_DIR}" python=3.12 -y
+    # --- NEW: Dynamic Python version with fallback ---
+    echo "Creating Conda environment with Python ${PYTHON_VERSION:-3.12}..."
+    conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.12}" -y
 fi
 
 # Activate the environment
@@ -72,7 +80,8 @@ source activate "${VENV_DIR}"
 echo "--- Installing dependencies ---"
 
 echo "--- Installing PyTorch ---"
-pip install torch==${TORCH_VERSION} torchvision==${TORCHVISION_VERSION} torchaudio==${TORCHAUDIO_VERSION} --index-url ${PYTORCH_INDEX_URL}
+# --- NEW: Let pip resolve torchvision/torchaudio dynamically based on torch version ---
+pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
 pip install torchsde
 
 # 1. Install pre-built performance and utility libraries from wheels first.

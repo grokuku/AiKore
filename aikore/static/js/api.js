@@ -173,3 +173,12 @@ export async function fetchTorchVersions(cudaVer) {
     // Updated fallback list
     return['2.11.0', '2.10.0', '2.9.1', '2.8.0', '2.7.0', '2.6.0', '2.5.1'];
 }
+export async function fetchAvailablePythonVersions() {
+    try {
+        const response = await fetch('/api/builder/versions/python');
+        if (row.ok) return await response.json();
+    } catch (e) {
+        console.error("Discovery failed", e);
+    }
+    return ['3.15', '3.14', '3.13', '3.12', '3.11', '3.10']; // Fallback
+}
