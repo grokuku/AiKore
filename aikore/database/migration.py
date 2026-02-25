@@ -11,7 +11,7 @@ from .session import SessionLocal, DATABASE_URL, connect_args
 
 # --- AUTOMATED DATABASE MIGRATION LOGIC ---
 
-EXPECTED_DB_VERSION = 5
+EXPECTED_DB_VERSION = 6
 
 def _get_db_version(db_session):
     """Checks the version of the database."""
@@ -370,6 +370,43 @@ def _perform_v4_to_v5_migration():
         print(f"[DB Migration] FATAL: Error during V4 to V5 migration: {e}", file=sys.stderr)
         print("[DB Migration] Manual inspection of the database is required.", file=sys.stderr)
         sys.exit(1)
+        
+def _perform_v5_to_v6_migration():
+    """
+    Migrates the database from schema V5 to V6.
+    V5 -> V6 Change: Adds python_version, cuda_version, torch_version columns.
+    """
+    print("[DB Migration] Starting migration from V5 to V6...")
+    engine = create_engine(DATABASE_URL, connect_args=connect_args)
+    
+    try:
+        with engine.connect() as connection:
+            with connection.begin():
+                inspector = inspect(engine)
+                columns = [col['name'] for col in inspector.get_columns('instances')]
+                
+                print("[DB Migration] 1. Adding custom version columns to 'instances' table...")
+                if 'python_version' not in columns:
+                    connection.execute(text('ALTER TABLE instances ADD COLUMN python_version VARCHAR'))
+                if 'cuda_version' not in columns:
+                    connection.execute(text('ALTER TABLE instances ADD COLUMN cuda_version VARCHAR'))
+                if 'torch_version' not in columns:
+                    connection.execute(text('ALTER TABLE instances ADD COLUMN torch_version VARCHAR'))
+                    
+                print("[DB Migration] 2. Updating schema version to 6...")
+                with Session(bind=connection) as db:
+                    version_entry = db.query(models.AikoreMeta).filter_by(key="schema_version").first()
+                    if version_entry:
+                        version_entry.value = "6"
+                    else:
+                        db.add(models.AikoreMeta(key="schema_version", value="6"))
+                    db.commit()
+
+        print("[DB Migration] Migration from V5 to V6 complete.")
+    except Exception as e:
+        print(f"[DB Migration] FATAL: Error during V5 to V6 migration: {e}", file=sys.stderr)
+        print("[DB Migration] Manual inspection of the database is required.", file=sys.stderr)
+        sys.exit(1)
 
 def run_db_migration():
     # This is a hack to get the correct engine for the migration check
@@ -398,6 +435,8 @@ def run_db_migration():
                 _perform_v3_to_v4_migration()
             elif current_version == 4:
                 _perform_v4_to_v5_migration()
+            elif current_version == 5:
+                _perform_v5_to_v6_migration()
             else:
                 print(f"[DB Migration] FATAL: Unsupported migration path from v{current_version} to v{EXPECTED_DB_VERSION}.", file=sys.stderr)
                 sys.exit(1)

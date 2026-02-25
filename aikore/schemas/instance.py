@@ -11,6 +11,11 @@ class InstanceBase(BaseModel):
     persistent_mode: bool = False
     hostname: str | None = None # NEW: Add hostname field
     use_custom_hostname: bool = False
+    
+    # --- NEW: Custom Versions ---
+    python_version: str | None = None
+    cuda_version: str | None = None
+    torch_version: str | None = None
 
 # --- Creation Schema ---
 # Inherits from Base and is used specifically when creating a new instance via the API.
@@ -29,6 +34,9 @@ class InstanceUpdate(BaseModel):
     persistent_mode: bool | None = None
     hostname: str | None = None
     use_custom_hostname: bool | None = None
+    python_version: str | None = None
+    cuda_version: str | None = None
+    torch_version: str | None = None
 
 # --- Read Schema ---
 # This schema is used when returning instance data from the API.

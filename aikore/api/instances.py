@@ -269,7 +269,8 @@ def update_instance_details(
     # --- HOT-SWAP / SMART UPDATE LOGIC ---
     # Define fields that require a full stop/start cycle if they are present
     restart_fields = {
-        'name', 'base_blueprint', 'output_path', 'gpu_ids', 'persistent_mode', 'port'
+        'name', 'base_blueprint', 'output_path', 'gpu_ids', 'persistent_mode', 'port',
+        'python_version', 'cuda_version', 'torch_version' # <--- NOUVEAU ICI
     }
 
     requires_restart = any(field in restart_fields for field in update_data.keys())

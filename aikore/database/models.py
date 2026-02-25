@@ -29,6 +29,11 @@ class Instance(Base):
     use_custom_hostname = Column(Boolean, default=False, nullable=False, server_default='0')
     output_path = Column(String, nullable=True) # Schema V4 field
     
+    # --- NEW: Custom Versions ---
+    python_version = Column(String, nullable=True)
+    cuda_version = Column(String, nullable=True)
+    torch_version = Column(String, nullable=True)
+    
     # Possible statuses: 'stopped', 'starting', 'stalled', 'started'
     status = Column(String, default="stopped", nullable=False)
     

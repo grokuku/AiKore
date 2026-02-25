@@ -109,6 +109,10 @@ def create_copy_placeholder(db: Session, source_instance_id: int, new_name: str)
         output_path=source_instance.output_path,
         hostname=source_instance.hostname,
         use_custom_hostname=False,
+        # --- NEW: Copy custom versions ---
+        python_version=source_instance.python_version,
+        cuda_version=source_instance.cuda_version,
+        torch_version=source_instance.torch_version,
         status="installing", # <--- NEW STATUS indicating background work
         port=None,
         persistent_port=None,
@@ -159,8 +163,7 @@ def process_background_copy(db: Session, new_instance_id: int, source_instance_i
 
         if os.path.isdir(source_env_path):
             print(f"[Background] Cloning Conda environment...")
-            subprocess.run(
-                ["conda", "create", "--prefix", clone_env_path, "--clone", source_env_path, "-y"],
+            subprocess.run(["conda", "create", "--prefix", clone_env_path, "--clone", source_env_path, "-y"],
                 capture_output=True, text=True, check=True
             )
 
@@ -228,6 +231,10 @@ def instantiate_instance(db: Session, source_instance_id: int, new_name: str):
         output_path=source_instance.output_path,
         hostname=None, # Satellites get their own hostname/port when started
         use_custom_hostname=False,
+        # --- NEW: Copy custom versions ---
+        python_version=source_instance.python_version,
+        cuda_version=source_instance.cuda_version,
+        torch_version=source_instance.torch_version,
         status="stopped",
         port=None,
         persistent_port=None,
