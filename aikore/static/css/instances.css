@@ -1,359 +1,373 @@
 /* --- INSTANCE MANAGER --- */
-    .add-new-btn {
-        background-color: #007bff;
-        color: white;
-        padding: 5px 12px; /* Compacted */
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 14px;
-        transition: background-color 0.2s ease;
+.add-new-btn {
+    background-color: #007bff;
+    color: white;
+    padding: 5px 12px; /* Compacted */
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.add-new-btn:hover {
+    background-color: #0056b3;
+}
+
+.instances-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0; /* Remove default spacing */
+}
+
+/* STICKY HEADER IMPLEMENTATION */
+.instances-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: #2a2a4a;
+    /* Match pane background for solid effect */
+}
+
+/* Add space below header for visual separation */
+.instances-table thead tr {
+    border-bottom: var(--global-gutter-size) solid #2a2a4a;
+}
+
+.instances-table th {
+    padding: 6px 10px; /* Reduced from 12px 15px */
+    text-align: left;
+    color: #e0e0e0;
+    font-weight: 500;
+    white-space: nowrap;
+    background-color: #1e1e3f;
+    border-bottom: var(--global-gutter-size) solid #2a2a4a; /* Gutter effect */
+    font-size: 13px;
+}
+
+.instances-table th.actions-column {
+    width: 1%;
+    /* Allow this column to be as wide as its content */
+}
+
+.instances-table th:first-child {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+.instances-table th:last-child {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+/* --- GROUPING STYLES (NEW) --- */
+/* Each family (parent + satellites) is wrapped in a tbody.instance-group */
+
+tbody.instance-group {
+    background-color: #2e2e50; /* Slightly distinct background */
+    border-left: 4px solid #6f42c1; /* Strong visual indicator of grouping (purple) */
+}
+
+/* SPACER REMOVED to compact vertically as requested */
+tbody.instance-group::before {
+    content: '';
+    display: block;
+    height: 0; /* Reduced to 0 for maximum compaction */
+    background-color: #2a2a4a;
+}
+
+tbody.instance-group tr:first-child td {
+    border-top: 1px solid #3b3b6b;
+}
+
+tbody.instance-group tr:last-child td {
+    border-bottom: 1px solid #3b3b6b;
+}
+
+/* Ensure cells inside the group align nicely */
+.instances-table td {
+    padding: 3px 5px; /* Drastic reduction from 8px 5px */
+    vertical-align: middle;
+    border: none; /* Remove internal borders to unify the block */
+}
+
+/* CENTER CHECKBOX COLUMNS & REDUCE WIDTH */
+/* Columns map: 1:Drag, 2:Name, 3:Blueprint, 4:Environment, 5:Output Path, 6:GPU IDs, 7:Autostart, 8:Persistent UI */
+.instances-table th:nth-child(6),
+.instances-table th:nth-child(7),
+.instances-table th:nth-child(8),
+.instances-table td:nth-child(6),
+.instances-table td:nth-child(7),
+.instances-table td:nth-child(8) {
+    text-align: center;
+}
+
+.instances-table th:nth-child(7),
+.instances-table th:nth-child(8) {
+    width: 80px;
+}
+
+/* STYLING FOR "CASES" (INPUTS, SELECTS, ETC.) */
+.instances-table input[type="text"],
+.instances-table select {
+    width: 100%;
+    padding: 4px 10px; /* Reduced from 10px */
+    background-color: #1e1e3f;
+    border: 1px solid #3b3b6b;
+    color: #e0e0e0;
+    border-radius: 6px;
+    box-sizing: border-box;
+    font-size: 14px;
+    height: 28px; /* Fixed height to match action buttons */
+    user-select: text;
+    /* Allow text selection inside inputs */
+}
+
+/* Visual feedback for disabled inputs (Satellite fields) */
+.instances-table input[type="text"]:disabled,
+.instances-table select:disabled {
+    background-color: rgba(0, 0, 0, 0.3);
+    color: #888;
+    cursor: not-allowed;
+    border: 1px dashed #444;
+    font-style: italic;
+}
+
+.instances-table input[type="checkbox"] {
+    width: 18px; /* Slightly smaller */
+    height: 18px;
+    vertical-align: middle;
+}
+
+.status {
+    font-weight: bold;
+    padding: 0 12px;
+    /* Adjusted vertical padding to match input height */
+    border-radius: 6px;
+    display: block;
+    text-align: center;
+    text-transform: capitalize;
+    box-sizing: border-box;
+    height: 28px; /* Match inputs and buttons */
+    line-height: 28px; /* Center text vertically */
+    font-size: 13px;
+    /* Ensures padding is calculated consistently */
+}
+
+.status-stopped {
+    background-color: #6c757d;
+    color: white;
+}
+
+/* Bootstrap Secondary Grey */
+.status-starting {
+    background-color: #ffc107;
+    color: #212529;
+}
+
+/* Bootstrap Warning Yellow */
+.status-stalled {
+    background-color: #fd7e14;
+    color: white;
+}
+
+/* Bootstrap Orange */
+.status-started {
+    background-color: #28a745;
+    color: white;
+}
+
+/* Bootstrap Success Green */
+.status-error {
+    background-color: #dc3545;
+    color: white;
+}
+
+/* NEW STATUS FOR BACKGROUND CLONING */
+.status-installing {
+    background-color: #17a2b8;
+    /* Cyan */
+    color: white;
+    animation: pulse-install 1.5s infinite;
+    cursor: wait;
+}
+
+@keyframes pulse-install {
+    0% {
+        opacity: 1;
     }
-    
-    .add-new-btn:hover {
-        background-color: #0056b3;
+
+    50% {
+        opacity: 0.6;
     }
-    
-    .instances-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0; /* Remove default spacing */
+
+    100% {
+        opacity: 1;
     }
-    
-    /* STICKY HEADER IMPLEMENTATION */
-    .instances-table thead {
-        position: sticky;
-        top: 0;
-        z-index: 10;
-        background-color: #2a2a4a;
-        /* Match pane background for solid effect */
-    }
-    
-    /* Add space below header for visual separation */
-    .instances-table thead tr {
-        border-bottom: var(--global-gutter-size) solid #2a2a4a;
-    }
-    
-    .instances-table th {
-        padding: 6px 10px; /* Reduced from 12px 15px */
-        text-align: left;
-        color: #e0e0e0;
-        font-weight: 500;
-        white-space: nowrap;
-        background-color: #1e1e3f;
-        border-bottom: var(--global-gutter-size) solid #2a2a4a; /* Gutter effect */
-        font-size: 13px;
-    }
-    
-    .instances-table th.actions-column {
-        width: 1%;
-        /* Allow this column to be as wide as its content */
-    }
-    
-    .instances-table th:first-child {
-        border-top-left-radius: 6px;
-        border-bottom-left-radius: 6px;
-    }
-    
-    .instances-table th:last-child {
-        border-top-right-radius: 6px;
-        border-bottom-right-radius: 6px;
-    }
-    
-    /* --- GROUPING STYLES (NEW) --- */
-    /* Each family (parent + satellites) is wrapped in a tbody.instance-group */
-    
-    tbody.instance-group {
-        background-color: #2e2e50; /* Slightly distinct background */
-        border-left: 4px solid #6f42c1; /* Strong visual indicator of grouping (purple) */
-    }
-    
-    /* SPACER REMOVED to compact vertically as requested */
-    tbody.instance-group::before {
-        content: '';
-        display: block;
-        height: 0; /* Reduced to 0 for maximum compaction */
-        background-color: #2a2a4a;
-    }
-    
-    tbody.instance-group tr:first-child td {
-        border-top: 1px solid #3b3b6b;
-    }
-    
-    tbody.instance-group tr:last-child td {
-        border-bottom: 1px solid #3b3b6b;
-    }
-    
-    /* Ensure cells inside the group align nicely */
-    .instances-table td {
-        padding: 3px 5px; /* Drastic reduction from 8px 5px */
-        vertical-align: middle;
-        border: none; /* Remove internal borders to unify the block */
-    }
-    
-    /* CENTER CHECKBOX COLUMNS & REDUCE WIDTH */
-    .instances-table th:nth-child(4),
-    /* GPU IDs */
-    .instances-table th:nth-child(5),
-    /* Autostart */
-    .instances-table th:nth-child(6),
-    /* Persistent UI */
-    .instances-table td:nth-child(4),
-    .instances-table td:nth-child(5),
-    .instances-table td:nth-child(6) {
-        text-align: center;
-    }
-    
-    .instances-table th:nth-child(5),
-    .instances-table th:nth-child(6) {
-        width: 80px;
-    }
-    
-    /* STYLING FOR "CASES" (INPUTS, SELECTS, ETC.) */
-    .instances-table input[type="text"],
-    .instances-table select {
-        width: 100%;
-        padding: 4px 10px; /* Reduced from 10px */
-        background-color: #1e1e3f;
-        border: 1px solid #3b3b6b;
-        color: #e0e0e0;
-        border-radius: 6px;
-        box-sizing: border-box;
-        font-size: 14px;
-        height: 28px; /* Fixed height to match action buttons */
-        user-select: text;
-        /* Allow text selection inside inputs */
-    }
-    
-    /* Visual feedback for disabled inputs (Satellite fields) */
-    .instances-table input[type="text"]:disabled,
-    .instances-table select:disabled {
-        background-color: rgba(0, 0, 0, 0.3);
-        color: #888;
-        cursor: not-allowed;
-        border: 1px dashed #444;
-        font-style: italic;
-    }
-    
-    .instances-table input[type="checkbox"] {
-        width: 18px; /* Slightly smaller */
-        height: 18px;
-        vertical-align: middle;
-    }
-    
-    .status {
-        font-weight: bold;
-        padding: 0 12px;
-        /* Adjusted vertical padding to match input height */
-        border-radius: 6px;
-        display: block;
-        text-align: center;
-        text-transform: capitalize;
-        box-sizing: border-box;
-        height: 28px; /* Match inputs and buttons */
-        line-height: 28px; /* Center text vertically */
-        font-size: 13px;
-        /* Ensures padding is calculated consistently */
-    }
-    
-    .status-stopped {
-        background-color: #6c757d;
-        color: white;
-    }
-    
-    /* Bootstrap Secondary Grey */
-    .status-starting {
-        background-color: #ffc107;
-        color: #212529;
-    }
-    
-    /* Bootstrap Warning Yellow */
-    .status-stalled {
-        background-color: #fd7e14;
-        color: white;
-    }
-    
-    /* Bootstrap Orange */
-    .status-started {
-        background-color: #28a745;
-        color: white;
-    }
-    
-    /* Bootstrap Success Green */
-    .status-error {
-        background-color: #dc3545;
-        color: white;
-    }
-    
-    /* NEW STATUS FOR BACKGROUND CLONING */
-    .status-installing {
-        background-color: #17a2b8;
-        /* Cyan */
-        color: white;
-        animation: pulse-install 1.5s infinite;
-        cursor: wait;
-    }
-    
-    @keyframes pulse-install {
-        0% {
-            opacity: 1;
-        }
-    
-        50% {
-            opacity: 0.6;
-        }
-    
-        100% {
-            opacity: 1;
-        }
-    }
-    
-    /* If the row is installing, make it look disabled/processing */
-    tr[data-status="installing"] {
-        opacity: 0.7;
-        pointer-events: none;
-        /* Block clicks on the row */
-    }
-    
-    /* Bootstrap Danger Red */
-    
-    /* ACTION BUTTONS STYLING */
-    .action-btn {
-        padding: 0 12px; /* No vertical padding, rely on height/line-height */
-        border: none;
-        color: #ffffff;
-        cursor: pointer;
-        border-radius: 6px;
-        white-space: nowrap;
-        transition: filter 0.2s ease, opacity 0.2s ease;
-        font-weight: 500;
-        font-size: 13px;
-        /* Slightly smaller for more buttons */
-        text-decoration: none;
-        /* For <a> tags */
-        display: inline-block;
-        /* For <a> tags */
-        height: 28px; /* Fixed height for compaction */
-        line-height: 28px; /* Vertical centering */
-        box-sizing: border-box;
-    }
-    
-    .action-btn:hover:not(:disabled):not(.disabled) {
-        filter: brightness(1.15);
-    }
-    
-    /* Unified disabled style for both <button disabled> and <a class="disabled"> */
-    .action-btn:disabled,
-    .action-btn.disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        pointer-events: none;
-        /* Important for <a> tags */
-    }
-    
-    .instances-table td.actions-column {
-        display: flex;
-        justify-content: flex-end;
-        align-items: center;
-        gap: 5px;
-        padding: 3px 5px;
-        /* Match row cell padding */
-    }
-    
-    /* BUTTON COLORS */
-    [data-action="start"],
-    [data-action="save"],
-    [data-action="update"] {
-        background-color: #28a745;
-    }
-    
-    [data-action="stop"] {
-        background-color: #ffc107;
-        color: #333;
-    }
-    
-    [data-action="delete"] {
-        background-color: #dc3545;
-    }
-    
-    [data-action="logs"] {
-        background-color: #17a2b8;
-    }
-    
-    [data-action="script"],
-    [data-action="parameters"],
-    [data-action="tools_menu"] {
-        background-color: #6f42c1;
-    }
-    
-    [data-action="open"],
-    [data-action="view"] {
-        background-color: #4a4a70;
-    }
-    
-    [data-action="cancel_new"] {
-        background-color: #f8f9fa;
-        /* Light grey */
-        color: #212529;
-        /* Dark text */
-    }
-    
-    .action-btn:not([data-action]) {
-        background-color: #4a4a70;
-    }
-    
-    /* Drag and Drop Handle */
-    .instances-table th.drag-handle-column {
-        width: 30px;
-        padding: 6px 0;
-    }
-    
-    .drag-handle {
-        cursor: grab;
-        text-align: center;
-        color: #888;
-        font-size: 1.2rem;
-        vertical-align: middle;
-    }
-    
-    .drag-handle:hover {
-        color: #e0e0e0;
-    }
-    
-    /* SortableJS helper classes */
-    .sortable-ghost {
-        opacity: 0.4;
-        background-color: #4a4a70;
-    }
-    
-    .sortable-drag .drag-handle {
-        cursor: grabbing;
-    }
-    
-    /* --- SATELLITE INSTANCE STYLES --- */
-    .satellite-instance {
-        background-color: rgba(0, 0, 0, 0.2); /* Darker internal background for satellites */
-    }
-    
-    .satellite-instance .drag-handle {
-        color: #666;
-        cursor: default;
-        visibility: hidden;
-        /* NEW: Hide non-functional drag handle */
-    }
-    
-    .indented-cell {
-        position: relative;
-    }
-    
-    /* Le connecteur visuel */
-    .tree-connector {
-        display: inline-block;
-        width: 15px;
-        height: 25px; /* Reduced height to match compact row */
-        border-bottom: 2px solid #666;
-        border-left: 2px solid #666;
-        margin-right: 10px;
-        margin-bottom: 8px; /* Adjusted alignment */
-        opacity: 0.8;
-    }
+}
+
+/* Bootstrap Danger Red */
+
+/* ACTION BUTTONS STYLING */
+.action-btn {
+    padding: 0 12px; /* No vertical padding, rely on height/line-height */
+    border: none;
+    color: #ffffff;
+    cursor: pointer;
+    border-radius: 6px;
+    white-space: nowrap;
+    transition: filter 0.2s ease, opacity 0.2s ease;
+    font-weight: 500;
+    font-size: 13px;
+    /* Slightly smaller for more buttons */
+    text-decoration: none;
+    /* For <a> tags */
+    display: inline-block;
+    /* For <a> tags */
+    height: 28px; /* Fixed height for compaction */
+    line-height: 28px; /* Vertical centering */
+    box-sizing: border-box;
+}
+
+.action-btn:hover:not(:disabled):not(.disabled) {
+    filter: brightness(1.15);
+}
+
+/* Unified disabled style for both <button disabled> and <a class="disabled"> */
+.action-btn:disabled,
+.action-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+    /* Important for <a> tags */
+}
+
+.instances-table td.actions-column {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 5px;
+    /* Match row cell padding */
+}
+
+/* BUTTON COLORS */
+[data-action="start"],
+[data-action="save"],[data-action="update"] {
+    background-color: #28a745;
+}
+
+[data-action="stop"] {
+    background-color: #ffc107;
+    color: #333;
+}
+
+[data-action="delete"] {
+    background-color: #dc3545;
+}[data-action="logs"] {
+    background-color: #17a2b8;
+}
+
+[data-action="script"],
+[data-action="parameters"],[data-action="tools_menu"] {
+    background-color: #6f42c1;
+}
+
+[data-action="open"],
+[data-action="view"] {
+    background-color: #4a4a70;
+}[data-action="cancel_new"] {
+    background-color: #f8f9fa;
+    /* Light grey */
+    color: #212529;
+    /* Dark text */
+}
+
+.action-btn:not([data-action]) {
+    background-color: #4a4a70;
+}
+
+/* Drag and Drop Handle */
+.instances-table th.drag-handle-column {
+    width: 30px;
+    padding: 6px 0;
+}
+
+.drag-handle {
+    cursor: grab;
+    text-align: center;
+    color: #888;
+    font-size: 1.2rem;
+    vertical-align: middle;
+}
+
+.drag-handle:hover {
+    color: #e0e0e0;
+}
+
+/* SortableJS helper classes */
+.sortable-ghost {
+    opacity: 0.4;
+    background-color: #4a4a70;
+}
+
+.sortable-drag .drag-handle {
+    cursor: grabbing;
+}
+
+/* --- SATELLITE INSTANCE STYLES --- */
+.satellite-instance {
+    background-color: rgba(0, 0, 0, 0.2); /* Darker internal background for satellites */
+}
+
+.satellite-instance .drag-handle {
+    color: #666;
+    cursor: default;
+    visibility: hidden;
+    /* NEW: Hide non-functional drag handle */
+}
+
+.indented-cell {
+    position: relative;
+}
+
+/* Le connecteur visuel */
+.tree-connector {
+    display: inline-block;
+    width: 15px;
+    height: 25px; /* Reduced height to match compact row */
+    border-bottom: 2px solid #666;
+    border-left: 2px solid #666;
+    margin-right: 10px;
+    margin-bottom: 8px; /* Adjusted alignment */
+    opacity: 0.8;
+}
+
+/* --- ENVIRONNEMENT SELECTORS (ULTRA COMPACT) --- */
+.env-cell-wrapper {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+select.compact-env-select {
+    width: 80px; /* Force small width */
+    padding: 2px 4px; /* Minimal padding */
+    font-size: 12px;
+    height: 24px; /* Even smaller than the 28px standard to fit visually */
+    border-radius: 4px;
+    background-color: #1e1e3f;
+    border: 1px solid #3b3b6b;
+    color: #e0e0e0;
+}
+
+select.compact-env-select:focus {
+    outline: none;
+    border-color: #6f42c1;
+}
+
+select.compact-env-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

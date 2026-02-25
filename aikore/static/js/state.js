@@ -1,5 +1,5 @@
 export const DOM = {
-    instancesTable: document.getElementById('instances-table'), // CHANGED: Points to table, not tbody
+    instancesTable: document.getElementById('instances-table'),
     addInstanceBtn: document.querySelector('.add-new-btn'),
     toolsPaneTitle: document.getElementById('tools-pane-title'),
     welcomeScreenContainer: document.getElementById('welcome-screen-container'),
@@ -35,8 +35,14 @@ export const DOM = {
 
 export const state = {
     availableBlueprints: { stock: [], custom: [] },
-    availablePorts: [],
-    systemInfo: { gpu_count: 0, gpus: [] },
+    availablePorts:[],
+    systemInfo: { gpu_count: 0, gpus:[] },
+    // --- NEW: Custom Versions Configuration ---
+    versions: {
+        python:['3.10', '3.11', '3.12', '3.13', '3.14', '3.15'],
+        cuda: ['11.8', '12.1', '12.4'],
+        torchCache: {} // Will store torch versions fetched dynamically per cuda version
+    },
     currentMenuInstance: null,
     instanceToDeleteId: null,
     instanceToRebuild: null,
@@ -57,6 +63,6 @@ export const state = {
     instancesPollInterval: null,
     viewResizeObserver: null,
     split: {
-        savedSizes: { vertical: [60, 40], horizontal: [65, 35] }
+        savedSizes: { vertical:[60, 40], horizontal: [65, 35] }
     }
 };

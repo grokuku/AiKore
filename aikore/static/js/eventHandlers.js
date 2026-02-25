@@ -11,7 +11,6 @@ export function setupMainEventListeners() {
     DOM.addInstanceBtn.addEventListener('click', async () => {
         if (document.querySelector('tr[data-is-new="true"]')) return;
         
-        // Find and remove empty row if present
         const noInstancesRow = DOM.instancesTable.querySelector('.no-instances-row');
         if (noInstancesRow) noInstancesRow.closest('tbody').remove();
 
@@ -38,28 +37,24 @@ export function setupMainEventListeners() {
 
         const newRow = renderInstanceRow(newInstance, true);
         
-        // Create a new tbody specifically for this new row
         const newTbody = document.createElement('tbody');
         newTbody.classList.add('instance-group');
         newTbody.dataset.groupId = 'new';
         newTbody.appendChild(newRow);
         
-        // Append at the bottom as requested to match final instance placement
         DOM.instancesTable.appendChild(newTbody);
         
-        // Scroll the row into view so the user sees it immediately
         newRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         
         newRow.querySelector('input[data-field="name"]').focus();
     });
 
-    // GLOBAL SAVE LISTENER
     if (globalSaveBtn) {
         globalSaveBtn.addEventListener('click', () => {
             const dirtyRows = document.querySelectorAll('tr.row-dirty');
             if (dirtyRows.length === 0) return;
 
-            state.pendingUpdates = []; // Store all pending updates
+            state.pendingUpdates =[];
             const changesContainer = document.getElementById('update-confirm-changes');
             changesContainer.innerHTML = '';
 
@@ -81,7 +76,10 @@ export function setupMainEventListeners() {
                     use_custom_hostname: 'Use Custom Address',
                     hostname: 'Custom Address',
                     port: 'Port',
-                    autostart: 'Autostart'
+                    autostart: 'Autostart',
+                    python_version: 'Python Ver.',
+                    cuda_version: 'CUDA Ver.',
+                    torch_version: 'Torch Ver.'
                 };
 
                 const nameField = row.querySelector('input[data-field="name"]');
@@ -121,8 +119,21 @@ export function setupMainEventListeners() {
                 if (autostartField && autostartField.checked.toString() !== row.dataset.originalAutostart) {
                     changes.autostart = { old: row.dataset.originalAutostart, new: autostartField.checked ? 'true' : 'false' };
                 }
+                
+                // --- NEW: Env fields check ---
+                const pyField = row.querySelector('select[data-field="python_version"]');
+                if (pyField && !pyField.disabled && (pyField.value || '') !== (row.dataset.originalPythonVersion || '')) {
+                    changes.python_version = { old: row.dataset.originalPythonVersion || 'Auto', new: pyField.value || 'Auto' };
+                }
+                const cudaField = row.querySelector('select[data-field="cuda_version"]');
+                if (cudaField && !cudaField.disabled && (cudaField.value || '') !== (row.dataset.originalCudaVersion || '')) {
+                    changes.cuda_version = { old: row.dataset.originalCudaVersion || 'Auto', new: cudaField.value || 'Auto' };
+                }
+                const torchField = row.querySelector('select[data-field="torch_version"]');
+                if (torchField && !torchField.disabled && (torchField.value || '') !== (row.dataset.originalTorchVersion || '')) {
+                    changes.torch_version = { old: row.dataset.originalTorchVersion || 'Auto', new: torchField.value || 'Auto' };
+                }
 
-                // Store for execution
                 if (Object.keys(changes).length > 0) {
                     state.pendingUpdates.push({
                         id: instanceId,
@@ -130,17 +141,17 @@ export function setupMainEventListeners() {
                         changes: changes
                     });
 
-                    // Visual list
                     Object.keys(changes).forEach(key => {
                         const div = document.createElement('div');
                         div.innerHTML = `<strong>[${instanceName}] ${fieldMap[key]}:</strong> ${changes[key].old} &rarr; ${changes[key].new}`;
                         changesContainer.appendChild(div);
                     });
 
-                    // Check if restart is needed (if running and changed something critical)
                     if (status !== 'stopped') {
-                        // Autostart change doesn't need restart. Others do.
-                        const criticalChanges = ['name', 'base_blueprint', 'output_path', 'gpu_ids', 'persistent_mode', 'port'];
+                        const criticalChanges =[
+                            'name', 'base_blueprint', 'output_path', 'gpu_ids', 
+                            'persistent_mode', 'port', 'python_version', 'cuda_version', 'torch_version'
+                        ];
                         const hasCritical = Object.keys(changes).some(k => criticalChanges.includes(k));
                         if (hasCritical) requiresRestart = true;
                     }
@@ -162,36 +173,41 @@ export function setupMainEventListeners() {
         });
     }
 
-    // Handle confirm click for global update
     document.getElementById('update-confirm-btn-confirm').addEventListener('click', async () => {
         DOM.updateConfirmModal.classList.add('hidden');
-        const updates = state.pendingUpdates || [];
+        const updates = state.pendingUpdates ||[];
         
         let successCount = 0;
         let errorCount = 0;
 
         for (const update of updates) {
             try {
-                // Prepare API Payload
                 const row = update.row;
-                // Important: Use null/inherited values if disabled
                 const bpSelect = row.querySelector('select[data-field="base_blueprint"]');
                 const outPathInput = row.querySelector('input[data-field="output_path"]');
+                
+                const pyField = row.querySelector('select[data-field="python_version"]');
+                const cudaField = row.querySelector('select[data-field="cuda_version"]');
+                const torchField = row.querySelector('select[data-field="torch_version"]');
 
                 const data = {
                     name: row.querySelector('input[data-field="name"]').value,
-                    base_blueprint: bpSelect.disabled ? undefined : bpSelect.value, // Don't send if disabled
+                    base_blueprint: bpSelect.disabled ? undefined : bpSelect.value,
                     output_path: outPathInput.disabled ? undefined : (outPathInput.value || null),
                     gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
                     autostart: row.querySelector('input[data-field="autostart"]').checked,
                     persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
                     hostname: row.querySelector('input[data-field="hostname"]').value || null,
                     use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
-                    port: row.querySelector('select[data-field="port"]').value ? parseInt(row.querySelector('select[data-field="port"]').value, 10) : null
+                    port: row.querySelector('select[data-field="port"]').value ? parseInt(row.querySelector('select[data-field="port"]').value, 10) : null,
+                    // --- NEW: Env variables ---
+                    python_version: (pyField && !pyField.disabled) ? (pyField.value || null) : undefined,
+                    cuda_version: (cudaField && !cudaField.disabled) ? (cudaField.value || null) : undefined,
+                    torch_version: (torchField && !torchField.disabled) ? (torchField.value || null) : undefined,
                 };
 
                 await api.updateInstance(update.id, data);
-                row.classList.remove('row-dirty'); // Clear dirty status on success
+                row.classList.remove('row-dirty');
                 successCount++;
             } catch (err) {
                 console.error(`Failed to update instance ${update.id}:`, err);
@@ -203,7 +219,7 @@ export function setupMainEventListeners() {
         if (successCount > 0) showToast(`${successCount} instance(s) updated successfully.`);
         if (errorCount > 0) showToast(`${errorCount} update(s) failed.`, 'error');
         
-        document.getElementById('global-save-btn').style.display = 'none'; // Hide button if all success (or refresh will handle it)
+        document.getElementById('global-save-btn').style.display = 'none';
         await fetchAndRenderInstances();
     });
 
@@ -211,7 +227,6 @@ export function setupMainEventListeners() {
         DOM.updateConfirmModal.classList.add('hidden');
     });
 
-    // CHANGED: Listen on Table, not tbody
     DOM.instancesTable.addEventListener('click', async (event) => {
         const target = event.target.closest('[data-action]');
         if (!target) return;
@@ -248,16 +263,17 @@ export function setupMainEventListeners() {
                         persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
                         hostname: row.querySelector('input[data-field="hostname"]').value || null,
                         use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
-                        port: portValue ? parseInt(portValue, 10) : null
+                        port: portValue ? parseInt(portValue, 10) : null,
+                        // --- NEW: Env variables ---
+                        python_version: row.querySelector('select[data-field="python_version"]').value || null,
+                        cuda_version: row.querySelector('select[data-field="cuda_version"]').value || null,
+                        torch_version: row.querySelector('select[data-field="torch_version"]').value || null,
                     };
                     await api.createInstance(data);
                     showToast(`Instance '${data.name}' created successfully.`);
-                    // Remove the temporary tbody and row
                     row.closest('tbody').remove();
                     await fetchAndRenderInstances();
                     break;
-
-                // 'update' case removed as per requirements
 
                 case 'delete':
                     state.instanceToDeleteId = instanceId;
@@ -276,7 +292,6 @@ export function setupMainEventListeners() {
 
                 case 'cancel_new':
                     row.closest('tbody').remove();
-                    // Check if table is empty (only thead remains)
                     if (DOM.instancesTable.querySelectorAll('tbody').length === 0) fetchAndRenderInstances();
                     break;
             }
@@ -303,7 +318,7 @@ export function setupMainEventListeners() {
                     case 'version-check':
                         showVersionCheckView(id, name);
                         break;
-                    case 'manage-wheels': // ADDED
+                    case 'manage-wheels':
                         showInstanceWheelsManager(id, name);
                         break;
                     case 'rebuild-env':

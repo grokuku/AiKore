@@ -157,3 +157,19 @@ export async function performVersionCheck(instanceId) {
     });
     return handleResponse(response);
 }
+// --- NEW: Fetch available PyTorch versions for a specific CUDA version ---
+export async function fetchTorchVersions(cudaVer) {
+    if (!cudaVer) return[];
+    // Convert "12.1" to "cu121" to match backend expectations
+    const cuString = 'cu' + cudaVer.replace('.', '');
+    try {
+        const response = await fetch(`/api/builder/versions/torch/${cuString}`);
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        console.error(`Failed to fetch torch versions for ${cudaVer}:`, error);
+    }
+    // Fallback list if offline or error
+    return['2.5.1', '2.4.1', '2.3.1', '2.1.2'];
+}
