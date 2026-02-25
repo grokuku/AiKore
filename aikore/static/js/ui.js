@@ -8,10 +8,12 @@ export function showToast(message, type = 'success') {
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
     
+    // Create content wrapper
     const content = document.createElement('span');
     content.textContent = message;
     toast.appendChild(content);
 
+    // Create close button
     const closeBtn = document.createElement('span');
     closeBtn.className = 'toast-close';
     closeBtn.innerHTML = '&times;';
@@ -26,6 +28,7 @@ export function showToast(message, type = 'success') {
         toast.classList.add('show');
     }, 10);
 
+    // Extended timeout to 20 seconds
     setTimeout(() => {
         if (toast.parentNode) {
             toast.classList.remove('show');
@@ -75,13 +78,14 @@ function createBlueprintSelect(selectedValue = '') {
     return select;
 }
 
+// --- HELPER: Normalize Data for Comparison ---
 function normalizeGpuIds(str) {
     if (str === null || str === undefined) return '';
     return String(str)
         .split(',')
-        .map(s => s.trim())
+        .map(s => s.trim()) // Remove spaces "0, 1" -> "0,1"
         .filter(s => s !== '')
-        .sort()
+        .sort() // Ensure order doesn't matter
         .join(',');
 }
 
@@ -92,18 +96,21 @@ function normalizeStr(str) {
 export function checkRowForChanges(row) {
     let changed = false;
 
+    // Defensive checks with Strict Normalization
     const nameField = row.querySelector('input[data-field="name"]');
     if (nameField && nameField.value !== row.dataset.originalName) changed = true;
 
     const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
+    // Only check if NOT disabled (Satellites are disabled)
     if (blueprintField && !blueprintField.disabled && blueprintField.value !== row.dataset.originalBlueprint) changed = true;
 
     const outputPathField = row.querySelector('input[data-field="output_path"]');
     if (outputPathField && !outputPathField.disabled && normalizeStr(outputPathField.value) !== row.dataset.originalOutputPath) changed = true;
 
+    // GPU Logic: Get checked boxes, normalize them, compare with normalized original
     const currentGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked'))
         .map(cb => cb.value)
-        .join(',');
+        .join(','); // Already sorted by DOM order (0, 1, 2)
     
     if (normalizeGpuIds(currentGpuIds) !== row.dataset.originalGpuIds) changed = true;
 
@@ -117,11 +124,12 @@ export function checkRowForChanges(row) {
     if (useHostnameField && useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) changed = true;
 
     const portField = row.querySelector('select[data-field="port"]');
+    // Compare string values to handle "19000" (str) vs 19000 (int)
     if (portField && normalizeStr(portField.value) !== row.dataset.originalPort) changed = true;
 
     const autostartField = row.querySelector('input[data-field="autostart"]');
     if (autostartField && autostartField.checked.toString() !== row.dataset.originalAutostart) changed = true;
-    
+
     // --- NEW: Env Fields ---
     const pyField = row.querySelector('select[data-field="python_version"]');
     if (pyField && !pyField.disabled && normalizeStr(pyField.value) !== row.dataset.originalPythonVersion) changed = true;
@@ -132,12 +140,14 @@ export function checkRowForChanges(row) {
     const torchField = row.querySelector('select[data-field="torch_version"]');
     if (torchField && !torchField.disabled && normalizeStr(torchField.value) !== row.dataset.originalTorchVersion) changed = true;
 
+    // Toggle dirty class
     if (changed) {
         row.classList.add('row-dirty');
     } else {
         row.classList.remove('row-dirty');
     }
 
+    // Update Global Save Button visibility
     updateGlobalSaveButton();
 }
 
@@ -200,8 +210,10 @@ export function updateInstanceRow(row, instance) {
 
     const currentPublicPort = instance.persistent_mode ? instance.persistent_port : instance.port;
     
+    // Sync originals ONLY if row is NOT dirty (prevents overwriting user typing)
     if (!row.classList.contains('row-dirty')) {
-            row.dataset.originalPort = normalizeStr(currentPublicPort);
+         row.dataset.originalPort = normalizeStr(currentPublicPort);
+         // No need to sync others here, they are static or handled by render
     }
 
     const statusSpan = row.querySelector('.status');
@@ -210,30 +222,31 @@ export function updateInstanceRow(row, instance) {
         statusSpan.className = `status status-${instance.status.toLowerCase()}`;
     }
 
+    // Update Port Select logic...
     const portSelect = row.querySelector('select[data-field="port"]');
     if (portSelect && currentPublicPort) {
-            let optionFound = false;
-            const autoOption = portSelect.querySelector('option[value=""]');
-            if (autoOption) autoOption.remove();
+         let optionFound = false;
+         const autoOption = portSelect.querySelector('option[value=""]');
+         if (autoOption) autoOption.remove();
 
-            for (let i = 0; i < portSelect.options.length; i++) {
-                if (portSelect.options[i].value == currentPublicPort) {
-                    if (!row.classList.contains('row-dirty')) {
+         for (let i = 0; i < portSelect.options.length; i++) {
+             if (portSelect.options[i].value == currentPublicPort) {
+                 if (!row.classList.contains('row-dirty')) {
                     portSelect.options[i].selected = true;
-                    }
-                    optionFound = true;
-                    break;
-                }
-            }
-            if (!optionFound) {
-                const option = document.createElement('option');
-                option.value = currentPublicPort;
-                option.textContent = currentPublicPort;
-                if (!row.classList.contains('row-dirty')) {
+                 }
+                 optionFound = true;
+                 break;
+             }
+         }
+         if (!optionFound) {
+             const option = document.createElement('option');
+             option.value = currentPublicPort;
+             option.textContent = currentPublicPort;
+             if (!row.classList.contains('row-dirty')) {
                 option.selected = true;
-                }
-                portSelect.insertBefore(option, portSelect.firstChild);
-            }
+             }
+             portSelect.insertBefore(option, portSelect.firstChild);
+         }
     }
 
     const allButtons = row.querySelectorAll('button.action-btn, a.action-btn');
@@ -281,6 +294,8 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
 
     const currentPublicPort = instance.persistent_mode ? instance.persistent_port : instance.port;
 
+    // Initial datasets (source of truth for changes)
+    // USE NORMALIZATION HERE TO PREVENT IMMEDIATE DIRTY STATE
     row.dataset.originalName = instance.name || '';
     row.dataset.originalBlueprint = instance.base_blueprint || '';
     row.dataset.originalGpuIds = normalizeGpuIds(instance.gpu_ids);
@@ -296,6 +311,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     row.dataset.originalCudaVersion = normalizeStr(instance.cuda_version);
     row.dataset.originalTorchVersion = normalizeStr(instance.torch_version);
 
+    // Current data helpers for UI logic
     row.dataset.status = instance.status;
     row.dataset.name = instance.name || '';
     row.dataset.port = instance.port || '';
@@ -313,10 +329,12 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         handleCell.innerHTML = '';
     }
 
+    // Name Cell with Tree Visuals
     const nameCell = row.insertCell();
     const nameWrapper = document.createElement('div');
     nameWrapper.className = 'name-cell-wrapper';
     
+    // Indentation + Connector
     nameWrapper.style.paddingLeft = `${level * 25}px`;
     if (level > 0) {
         const connector = document.createElement('span');
@@ -369,20 +387,22 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
 
     const pySelect = createEnvSelect('python_version', state.versions.python, instance.python_version, 'Py Auto');
     const cudaSelect = createEnvSelect('cuda_version', state.versions.cuda, instance.cuda_version, 'CUDA Auto');
-    const torchSelect = createEnvSelect('torch_version',[], instance.torch_version, 'Torch Auto');
+    const torchSelect = createEnvSelect('torch_version', [], instance.torch_version, 'Torch Auto');
 
     // Logic to dynamically populate Torch options based on selected CUDA
     const updateTorchOptions = async (cudaVal, initialTorchVal) => {
         // Keep only the placeholder
         while (torchSelect.options.length > 1) torchSelect.remove(1);
-        if (!cudaVal) return;
+        
+        // Always try to fetch something, default to 12.8 if auto
+        const fetchCudaVal = cudaVal || '12.8'; 
         
         torchSelect.options[0].textContent = "Loading...";
         
-        let versions = state.versions.torchCache[cudaVal];
+        let versions = state.versions.torchCache[fetchCudaVal];
         if (!versions) {
-            versions = await fetchTorchVersions(cudaVal);
-            state.versions.torchCache[cudaVal] = versions;
+            versions = await fetchTorchVersions(fetchCudaVal);
+            state.versions.torchCache[fetchCudaVal] = versions;
         }
         
         versions.forEach(opt => {
@@ -409,15 +429,8 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         updateTorchOptions(cudaSelect.value, null);
     });
 
-    if (instance.cuda_version) {
-        updateTorchOptions(instance.cuda_version, instance.torch_version);
-    } else if (instance.torch_version) {
-        const o = document.createElement('option');
-        o.value = instance.torch_version;
-        o.textContent = instance.torch_version;
-        torchSelect.appendChild(o);
-        torchSelect.value = instance.torch_version;
-    }
+    // --- FIX: Always initialize the torch options, even if cuda_version is empty ---
+    updateTorchOptions(instance.cuda_version, instance.torch_version);
 
     envWrapper.appendChild(pySelect);
     envWrapper.appendChild(cudaSelect);
@@ -436,6 +449,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     }
     row.insertCell().appendChild(outputPathInput);
 
+    // GPU Cell
     const gpuCell = row.insertCell();
     const gpuContainer = document.createElement('div');
     gpuContainer.className = 'gpu-checkbox-container';
@@ -456,12 +470,14 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     if (gpuCount === 0) gpuContainer.textContent = 'N/A';
     gpuCell.appendChild(gpuContainer);
 
+    // Autostart
     const autostartCheckbox = document.createElement('input');
     autostartCheckbox.type = 'checkbox';
     autostartCheckbox.checked = instance.autostart;
     autostartCheckbox.dataset.field = 'autostart';
     row.insertCell().appendChild(autostartCheckbox);
 
+    // Persistent Mode
     const persistentModeCheckbox = document.createElement('input');
     persistentModeCheckbox.type = 'checkbox';
     persistentModeCheckbox.checked = instance.persistent_mode;
@@ -470,6 +486,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
 
     row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
 
+    // Hostname
     const hostnameCell = row.insertCell();
     const hostnameContainer = document.createElement('div');
     hostnameContainer.className = 'hostname-container';
@@ -492,6 +509,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     hostnameContainer.appendChild(hostnameInput);
     hostnameCell.appendChild(hostnameContainer);
 
+    // Port
     const portCell = row.insertCell();
     const portSelect = document.createElement('select');
     portSelect.dataset.field = 'port';
@@ -527,6 +545,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     }
     portCell.appendChild(portSelect);
 
+    // Actions
     const actionsCell = row.insertCell();
     actionsCell.classList.add('actions-column');
     if (isNew) {
@@ -566,12 +585,15 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
             field.addEventListener('change', () => checkRowForChanges(row));
         });
 
+        // --- ADDED: Specific logic for Blueprint Changes ---
         const bpSelect = row.querySelector('select[data-field="base_blueprint"]');
         if (bpSelect && !bpSelect.disabled) {
+            // Track previous value on focus
             bpSelect.addEventListener('focus', function() {
                 this.dataset.previousValue = this.value;
             });
 
+            // Intercept change event
             bpSelect.addEventListener('change', function() {
                 const confirmed = confirm(
                     "Warning: The startup script will be updated to match the selected blueprint.\n\n" +
@@ -580,14 +602,17 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
                 );
 
                 if (!confirmed) {
+                    // Revert to value before this change
                     this.value = this.dataset.previousValue || row.dataset.originalBlueprint;
                     checkRowForChanges(row);
                 } else {
+                    // Update tracked value and allow dirty state (handled by generic listener)
                     this.dataset.previousValue = this.value;
                     checkRowForChanges(row);
                 }
             });
         }
+        // ---------------------------------------------------
 
         updateInstanceRow(row, instance);
     }

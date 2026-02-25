@@ -285,38 +285,24 @@ def get_torch_versions_for_cuda(cuda_ver: str):
     for the specific CUDA version. 
     Fallback to a default list if offline.
     """
-    
-    # Normalize input (e.g. "cu130" -> "cu130")
-    if not cuda_ver.startswith("cu"):
-        # Assuming cpu or rocm, but let's stick to cu for now
-        pass
-        
     index_url = f"https://download.pytorch.org/whl/{cuda_ver}/torch/"
     versions = set()
     
-    # Default fallback list (in case of network failure)
-    # Includes 2.10 as requested by user context
-    fallback_versions = ["2.10.0", "2.9.1", "2.5.1", "2.4.1", "2.3.1", "2.1.2"]
+    # Updated fallback list for 2026 (CUDA 12.6, 12.8, 13.0 compatible)
+    fallback_versions =["2.11.0", "2.10.0", "2.9.1", "2.8.0", "2.7.0", "2.6.0", "2.5.1", "2.4.1"]
     
     try:
         print(f"[DEBUG] Fetching versions from {index_url}...")
-        # Use urllib to avoid adding 'requests' dependency if not present
-        with urllib.request.urlopen(index_url, timeout=5) as response:
+        # Added User-Agent to prevent 403 Forbidden from PyTorch CDN
+        req = urllib.request.Request(
+            index_url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
             html = response.read().decode('utf-8')
-            
-            # Regex to find links like: torch-2.5.1%2Bcu124-...
-            # Pattern matches: torch-X.Y.Z%2B or torch-X.Y.Z+
-            # We look for versions that match the requested cuda tag
-            # Note: PyTorch index uses %2B for + sign
-            
-            # Simple pattern to extract "2.5.1" from "torch-2.5.1%2Bcu124-..."
-            # We enforce that it must be followed by %2B or + and our cuda_ver (or compatible)
-            # Actually, the directory /whl/cu130/ contains ONLY compatible wheels,
-            # so we just need to extract the version number from "torch-X.Y.Z..."
             
             matches = re.findall(r'torch-([0-9]+\.[0-9]+\.[0-9]+)%2B', html)
             if not matches:
-                # Try finding without %2B (older format or diff encoding)
                 matches = re.findall(r'torch-([0-9]+\.[0-9]+\.[0-9]+)\+', html)
                 
             for m in matches:
@@ -326,14 +312,15 @@ def get_torch_versions_for_cuda(cuda_ver: str):
             print("[DEBUG] No versions found via regex, using fallback.")
             return sorted(fallback_versions, reverse=True)
             
-        # Convert to list and sort descending
-        # We use a simple lambda to handle semantic versioning broadly
-        return sorted(list(versions), key=lambda s: list(map(int, s.split('.'))), reverse=True)
+        def safe_version_key(s):
+            return[int(p) if p.isdigit() else 0 for p in re.split(r'\D+', s) if p]
+            
+        return sorted(list(versions), key=safe_version_key, reverse=True)
 
     except Exception as e:
         print(f"[DEBUG] Failed to fetch torch versions: {e}")
         return sorted(fallback_versions, reverse=True)
-
+        
 @router.get("/wheels", response_model=List[WheelMetadata])
 def list_wheels():
     manifest = get_manifest()

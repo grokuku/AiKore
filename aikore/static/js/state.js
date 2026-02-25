@@ -38,9 +38,10 @@ export const state = {
     availablePorts:[],
     systemInfo: { gpu_count: 0, gpus:[] },
     // --- NEW: Custom Versions Configuration ---
+    // --- NEW: Custom Versions Configuration ---
     versions: {
         python:['3.10', '3.11', '3.12', '3.13', '3.14', '3.15'],
-        cuda: ['11.8', '12.1', '12.4'],
+        cuda:['11.8', '12.1', '12.4', '12.6', '12.8', '13.0', '13.1'],
         torchCache: {} // Will store torch versions fetched dynamically per cuda version
     },
     currentMenuInstance: null,
