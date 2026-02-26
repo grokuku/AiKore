@@ -344,14 +344,14 @@
 }
 
 /* 
-   COLUMN WIDTHS CONFIGURATION 
-   1: Filename (Flexible)
-   2: Arch (Fixed)
-   3: CUDA (Fixed)
-   4: Torch (Fixed)
-   5: Size (Fixed)
-   6: Date (Fixed)
-   7: Act (Fixed)
+    COLUMN WIDTHS CONFIGURATION 
+    1: Filename (Flexible)
+    2: Arch (Fixed)
+    3: CUDA (Fixed)
+    4: Torch (Fixed)
+    5: Size (Fixed)
+    6: Date (Fixed)
+    7: Act (Fixed)
 */
 .wheels-table th:nth-child(1) {
     width: auto;

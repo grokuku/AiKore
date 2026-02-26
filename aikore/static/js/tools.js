@@ -1,5 +1,5 @@
 import { state, DOM } from './state.js';
-import { fetchLogs, performVersionCheck, fetchFileContent } from './api.js';
+import { fetchLogs, performVersionCheck, fetchFileContent, fetchTorchVersions } from './api.js';
 import { showToast } from './ui.js';
 
 const ansi_up = new AnsiUp();
@@ -43,13 +43,13 @@ let builderTerminal = null;
 let builderFitAddon = null;
 let builderBtnInterval = null;
 let builderResizeObserver = null;
-let builderSplit = null;
 
 async function fetchBuilderInfo() {
     const res = await fetch('/api/builder/info');
     return await res.json();
 }
 
+// CHANGED: Now uses the centralized API call and caching mechanism
 async function populateTorchVersions() {
     const cudaSelect = document.getElementById('builder-cuda');
     const torchSelect = document.getElementById('builder-torch');
@@ -61,24 +61,27 @@ async function populateTorchVersions() {
     torchSelect.disabled = true;
 
     try {
-        const res = await fetch(`/api/builder/versions/torch/${cudaVer}`);
-        if (!res.ok) throw new Error("Failed to fetch versions");
+        // Check cache first
+        let versions = state.versions.torchCache[cudaVer];
+        if (!versions) {
+            versions = await fetchTorchVersions(cudaVer);
+            state.versions.torchCache[cudaVer] = versions;
+        }
 
-        const versions = await res.json();
         torchSelect.innerHTML = '';
 
-        if (versions.length === 0) {
+        if (!versions || versions.length === 0) {
             const opt = document.createElement('option');
             opt.textContent = "Error: No versions found";
             torchSelect.appendChild(opt);
         } else {
-            versions.forEach(v => {
+            versions.forEach((v, index) => {
                 const opt = document.createElement('option');
                 opt.value = v;
-                opt.textContent = v;
+                opt.textContent = index === 0 ? `${v} (Latest)` : v;
                 torchSelect.appendChild(opt);
             });
-            torchSelect.selectedIndex = 0;
+            torchSelect.selectedIndex = 0; // Default to newest
         }
     } catch (e) {
         console.error(e);
@@ -220,9 +223,7 @@ function initTableResizers() {
     const table = document.querySelector('.wheels-table');
     if (!table) return;
 
-    const headers = table.querySelectorAll('th');
-
-    [1, 2, 3, 4, 5].forEach(index => {
+    const headers = table.querySelectorAll('th');[1, 2, 3, 4, 5].forEach(index => {
         const th = headers[index];
         if (!th || th.querySelector('.resizer')) return;
 
@@ -322,6 +323,21 @@ export async function showBuilderView() {
 
     let container = document.getElementById('builder-container');
     if (!container) {
+
+        // --- NEW: Dynamic Options Generation ---
+        // Python Options
+        const pyOptionsHtml = state.versions.python.map((v, i) =>
+            `<option value="${v}">${v}${i === 0 ? ' (Latest)' : ''}</option>`
+        ).join('');
+
+        // CUDA Options
+        // We expect state.versions.cuda to be like["13.0", "12.8", "12.6", ...]
+        // But builder expects "cu130"
+        const cudaOptionsHtml = state.versions.cuda.map((v, i) => {
+            const cuFormat = 'cu' + v.replace('.', '');
+            return `<option value="${cuFormat}">CUDA ${v}${i === 0 ? ' (Latest)' : ''}</option>`;
+        }).join('');
+
         const html = `
         <div id="builder-container">
             <div id="builder-top-pane">
@@ -335,9 +351,7 @@ export async function showBuilderView() {
                     <div class="builder-field">
                         <label>Python Version</label>
                         <select id="builder-python">
-                            <option value="3.12" selected>3.12 (Default)</option>
-                            <option value="3.11">3.11</option>
-                            <option value="3.10">3.10</option>
+                            ${pyOptionsHtml}
                         </select>
                     </div>
 
@@ -356,10 +370,7 @@ export async function showBuilderView() {
                     <div class="builder-field">
                         <label>PyTorch CUDA Version</label>
                         <select id="builder-cuda">
-                            <option value="cu130" selected>CUDA 13.0 (Default)</option>
-                            <option value="cu124">CUDA 12.4</option>
-                            <option value="cu121">CUDA 12.1</option>
-                            <option value="cu118">CUDA 11.8</option>
+                            ${cudaOptionsHtml}
                         </select>
                     </div>
                     
@@ -428,7 +439,7 @@ export async function showBuilderView() {
 
     container.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
-    DOM.toolsPaneTitle.textContent = "Tools / Module Builder (Experimental)";
+    DOM.toolsPaneTitle.textContent = "Tools / Module Builder";
 
     const info = await fetchBuilderInfo();
 
