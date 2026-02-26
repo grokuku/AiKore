@@ -494,7 +494,14 @@ async def build_websocket(websocket: WebSocket):
             
             if await stream_subprocess(install_cmd, WHEELS_DIR, websocket) != 0:
                 raise Exception("Failed to install PyTorch in builder environment.")
-        
+
+        # --- NEW: Ensure modern build tools are present (fixes bitsandbytes and others) ---
+        # Exécuté systématiquement, même si l'environnement existait déjà.
+        await websocket.send_text(f"\x1b[34m[INFO] Verifying modern build tools (cmake, scikit-build-core)...\x1b[0m\r\n")
+        build_tools_cmd = f"source {CONDA_BASE_DIR}/bin/activate {env_name} && pip install cmake scikit-build-core"
+        if await stream_subprocess(build_tools_cmd, WHEELS_DIR, websocket) != 0:
+            await websocket.send_text(f"\x1b[33m[WARN] Failed to update build tools. Build might fail.\x1b[0m\r\n")
+
         # 2.5 DETECT TORCH VERSION (NEW)
         # We query the environment to find out exactly what version was installed
         detect_cmd = f"source {CONDA_BASE_DIR}/bin/activate {env_name} && python -c 'import torch; print(torch.__version__)'"

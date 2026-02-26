@@ -17,14 +17,14 @@ async function scheduleNextPoll(interval = 2000) {
 
 export async function fetchAndRenderInstances() {
     let nextInterval = 2000; // Default
-    
+
     try {
         // If user is typing (row is dirty), we might still want to update statuses, 
         // but we must be careful not to overwrite input values.
-        
+
         const activeElement = document.activeElement;
         const isInteracting = activeElement && activeElement.closest('#instances-table tr');
-        
+
         const response = await fetch('/api/instances/');
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         let instances = await response.json();
@@ -38,13 +38,13 @@ export async function fetchAndRenderInstances() {
         if (isInteracting) {
             // Just schedule next and return, don't break UI
             scheduleNextPoll(nextInterval);
-            return; 
+            return;
         }
 
         // --- NEW RENDERING LOGIC FOR GROUPING ---
         const instanceMap = new Map(instances.map(inst => [inst.id, { ...inst, children: [] }]));
-        const rootInstances =[];
-        
+        const rootInstances = [];
+
         instances.forEach(inst => {
             if (inst.parent_instance_id && instanceMap.has(inst.parent_instance_id)) {
                 instanceMap.get(inst.parent_instance_id).children.push(instanceMap.get(inst.id));
@@ -67,35 +67,35 @@ export async function fetchAndRenderInstances() {
 
         const dirtyRows = document.querySelectorAll('tr.row-dirty');
         if (dirtyRows.length > 0) {
-                // Partial Update Mode: Do not destroy structure
-                instances.forEach(inst => {
-                    const row = DOM.instancesTable.querySelector(`tr[data-id="${inst.id}"]`);
-                    if (row) {
-                        const statusSpan = row.querySelector('.status');
-                        if (statusSpan && row.dataset.status !== inst.status) {
-                            statusSpan.textContent = inst.status;
-                            statusSpan.className = `status status-${inst.status.toLowerCase()}`;
-                            row.dataset.status = inst.status;
-                            
-                            const allButtons = row.querySelectorAll('button.action-btn');
-                            const isActive = inst.status !== 'stopped';
-                            allButtons.forEach(btn => {
-                                const action = btn.dataset.action;
-                                if (action === 'start') btn.disabled = isActive;
-                                else if (action === 'stop') btn.disabled = !isActive;
-                                else if (action === 'delete') btn.disabled = isActive;
-                                else if (action === 'view') btn.disabled = (inst.status !== 'started');
-                            });
-                        }
+            // Partial Update Mode: Do not destroy structure
+            instances.forEach(inst => {
+                const row = DOM.instancesTable.querySelector(`tr[data-id="${inst.id}"]`);
+                if (row) {
+                    const statusSpan = row.querySelector('.status');
+                    if (statusSpan && row.dataset.status !== inst.status) {
+                        statusSpan.textContent = inst.status;
+                        statusSpan.className = `status status-${inst.status.toLowerCase()}`;
+                        row.dataset.status = inst.status;
+
+                        const allButtons = row.querySelectorAll('button.action-btn');
+                        const isActive = inst.status !== 'stopped';
+                        allButtons.forEach(btn => {
+                            const action = btn.dataset.action;
+                            if (action === 'start') btn.disabled = isActive;
+                            else if (action === 'stop') btn.disabled = !isActive;
+                            else if (action === 'delete') btn.disabled = isActive;
+                            else if (action === 'view') btn.disabled = (inst.status !== 'started');
+                        });
                     }
-                });
+                }
+            });
         } else {
             // Full Re-render Mode: Destroy and Rebuild bodies
-            
+
             // Remove existing tbodys (keep thead)
             const oldTbodies = DOM.instancesTable.querySelectorAll('tbody');
             oldTbodies.forEach(tb => tb.remove());
-            
+
             // Helper to render a family
             const renderFamily = (parent, children) => {
                 const tbody = document.createElement('tbody');
@@ -113,12 +113,12 @@ export async function fetchAndRenderInstances() {
                         tbody.appendChild(childRow);
                     });
                 }
-                
+
                 DOM.instancesTable.appendChild(tbody);
             };
 
             rootInstances.forEach(node => renderFamily(node, node.children));
-            
+
         }
 
         if (rootInstances.length === 0) {
@@ -140,10 +140,10 @@ async function initializeApp() {
         // --- NEW: Inject dynamic Python versions discovery ---
         const discoveredPyVersions = await fetchAvailablePythonVersions();
         if (discoveredPyVersions && discoveredPyVersions.length > 0) {
-                state.versions.python = discoveredPyVersions;
+            state.versions.python = discoveredPyVersions;
         }
 
-        const[systemInfo, blueprints, ports] = await Promise.all([
+        const [systemInfo, blueprints, ports] = await Promise.all([
             fetchSystemInfo(),
             fetchAndStoreBlueprints(),
             fetchAvailablePorts()
@@ -162,7 +162,7 @@ async function initializeApp() {
         </div>`;
         return;
     }
-    
+
     // --- INJECT BUILDER BUTTON ---
     const buttons = document.querySelectorAll('button');
     let addBtn = null;
@@ -175,13 +175,13 @@ async function initializeApp() {
 
     if (addBtn) {
         const buildBtn = document.createElement('button');
-        buildBtn.className = addBtn.className; 
-        buildBtn.id = 'btn-open-builder'; 
+        buildBtn.className = addBtn.className;
+        buildBtn.id = 'btn-open-builder';
         buildBtn.textContent = "Build Module";
-        buildBtn.style.marginRight = "10px"; 
-        buildBtn.style.backgroundColor = "#6f42c1"; 
+        buildBtn.style.marginRight = "10px";
+        buildBtn.style.backgroundColor = "#6f42c1";
         buildBtn.style.borderColor = "#6f42c1";
-        
+
         buildBtn.onclick = () => {
             showBuilderView();
         };
@@ -190,31 +190,31 @@ async function initializeApp() {
     } else {
         console.warn("Could not find 'Add New Instance' button to inject Builder button.");
     }
-    
+
     // Start the polling loop
     await fetchAndRenderInstances();
-    
+
     const initialStats = await getSystemStats();
     updateSystemStats(initialStats);
-    
+
     showWelcomeScreen();
-    
+
     // System stats polling (separate loop)
     setInterval(async () => {
         const stats = await getSystemStats();
         updateSystemStats(stats);
-        
+
         // --- NEW: Polling builder status ---
         renderBuilderStatus();
     }, 2000);
 
     DOM.toolsCloseBtn.addEventListener('click', showWelcomeScreen);
-    
+
     new Sortable(DOM.instancesTable, {
-        animation: 150, 
-        handle: '.drag-handle', 
-        draggable: 'tbody.instance-group', 
-        ghostClass: 'sortable-ghost', 
+        animation: 150,
+        handle: '.drag-handle',
+        draggable: 'tbody.instance-group',
+        ghostClass: 'sortable-ghost',
         dragClass: 'sortable-drag',
         onEnd: function (evt) {
             const groups = DOM.instancesTable.querySelectorAll('tbody.instance-group');
@@ -229,53 +229,53 @@ async function initializeApp() {
     setupModalEventHandlers();
 
     const SPLIT_STORAGE_KEY = 'aikoreSplitSizes';
-    try { 
-        const storedSizes = localStorage.getItem(SPLIT_STORAGE_KEY); 
-        if (storedSizes) { 
-            const parsedSizes = JSON.parse(storedSizes); 
-            if (parsedSizes.vertical && parsedSizes.horizontal) { 
-                state.split.savedSizes = parsedSizes; 
-            } 
-        } 
-    } catch (e) { 
-        console.error("Failed to load or parse split sizes from localStorage.", e); 
+    try {
+        const storedSizes = localStorage.getItem(SPLIT_STORAGE_KEY);
+        if (storedSizes) {
+            const parsedSizes = JSON.parse(storedSizes);
+            if (parsedSizes.vertical && parsedSizes.horizontal) {
+                state.split.savedSizes = parsedSizes;
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load or parse split sizes from localStorage.", e);
     }
-    
-    Split(['#instance-pane', '#bottom-split'], { 
-        sizes: state.split.savedSizes.vertical, 
-        minSize: [200, 150], 
-        gutterSize: 5, 
-        direction: 'vertical', 
-        cursor: 'row-resize', 
-        onEnd: function (sizes) { 
-            state.split.savedSizes.vertical = sizes; 
-            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes)); 
-        } 
-    });
-    
-    Split(['#tools-pane', '#monitoring-pane'], { 
-        sizes: state.split.savedSizes.horizontal, 
-        minSize:[300, 200], 
-        gutterSize: 5, 
-        direction: 'horizontal', 
-        cursor: 'col-resize', 
-        onEnd: function (sizes) { 
-            state.split.savedSizes.horizontal = sizes; 
-            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes)); 
-        } 
+
+    Split(['#instance-pane', '#bottom-split'], {
+        sizes: state.split.savedSizes.vertical,
+        minSize: [200, 150],
+        gutterSize: 5,
+        direction: 'vertical',
+        cursor: 'row-resize',
+        onEnd: function (sizes) {
+            state.split.savedSizes.vertical = sizes;
+            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes));
+        }
     });
 
-    state.viewResizeObserver = new ResizeObserver(() => { 
-        if (DOM.instanceIframe && DOM.instanceIframe.contentWindow) { 
-            DOM.instanceIframe.contentWindow.dispatchEvent(new Event('resize')); 
-        } 
+    Split(['#tools-pane', '#monitoring-pane'], {
+        sizes: state.split.savedSizes.horizontal,
+        minSize: [300, 200],
+        gutterSize: 5,
+        direction: 'horizontal',
+        cursor: 'col-resize',
+        onEnd: function (sizes) {
+            state.split.savedSizes.horizontal = sizes;
+            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes));
+        }
+    });
+
+    state.viewResizeObserver = new ResizeObserver(() => {
+        if (DOM.instanceIframe && DOM.instanceIframe.contentWindow) {
+            DOM.instanceIframe.contentWindow.dispatchEvent(new Event('resize'));
+        }
     });
 
     const toolsPane = document.getElementById('tools-pane');
-    const resizeObserver = new ResizeObserver(() => { 
-        if (state.fitAddon) { 
-            try { state.fitAddon.fit(); } catch (e) { } 
-        } 
+    const resizeObserver = new ResizeObserver(() => {
+        if (state.fitAddon) {
+            try { state.fitAddon.fit(); } catch (e) { }
+        }
     });
     resizeObserver.observe(toolsPane);
 }
