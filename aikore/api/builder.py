@@ -179,7 +179,8 @@ PRESETS = {
         "git_url": "", 
         "description": "Build a wheel from any Git repo containing setup.py or pyproject.toml.",
         "cmd_template": (
-            "pip wheel {git_url} --wheel-dir={output_dir} --no-deps --no-build-isolation"
+            "export TORCH_CUDA_ARCH_LIST='{arch}' && "
+            "{python} -m pip wheel {git_url} --wheel-dir={output_dir} --no-deps --no-build-isolation"
         )
     }
 }
@@ -442,6 +443,12 @@ async def build_websocket(websocket: WebSocket):
 
         preset = PRESETS[preset_key]
         git_url = custom_url if preset_key == "custom" else preset["git_url"]
+        
+        # --- NEW: Auto-fix git URLs for pip wheel ---
+        if preset_key == "custom" and git_url:
+            # If it's a standard web URL, not already git+, and not explicitly an archive
+            if git_url.startswith("http") and not git_url.startswith("git+") and not git_url.endswith((".whl", ".zip", ".tar.gz")):
+                git_url = "git+" + git_url
         
         # Environment name includes torch version now to distinguish them
         safe_torch_ver = requested_torch_ver.replace(".", "")
