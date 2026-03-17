@@ -174,6 +174,34 @@ PRESETS = {
             "rm -rf source_code"
         )
     },
+    "open3d": {
+        "label": "Open3D (CUDA & PyTorch Ops)",
+        "git_url": "https://github.com/isl-org/Open3D.git",
+        "description": "3D data processing library. Compiled with CUDA and PyTorch ops (Headless). Very heavy build.",
+        "cmd_template": (
+            "git clone {git_url} source_code --recurse-submodules && "
+            "cd source_code && "
+            "mkdir build && cd build && "
+            "export ARCH_NUM=$(echo {arch} | tr -d '.') && "
+            "export PT_ABI=$({python} -c \"import torch; print('ON' if torch._C._GLIBCXX_USE_CXX11_ABI else 'OFF')\") && "
+            "cmake -DCMAKE_BUILD_TYPE=Release "
+            "-DCMAKE_PREFIX_PATH=$CONDA_PREFIX "
+            "-DBUILD_CUDA_MODULE=ON "
+            "-DBUILD_PYTORCH_OPS=ON "
+            "-DBUILD_TENSORFLOW_OPS=OFF "
+            "-DBUILD_GUI=OFF "
+            "-DBUILD_EXAMPLES=OFF "
+            "-DENABLE_HEADLESS_RENDERING=ON "
+            "-DGLIBCXX_USE_CXX11_ABI=${{PT_ABI}} "
+            "-DPython3_EXECUTABLE=$(which python) "
+            "-DCMAKE_CUDA_ARCHITECTURES=${{ARCH_NUM}} "
+            ".. && "
+            "make -j4 pip-package && "
+            "cp lib/python_package/pip_package/*.whl {output_dir}/ && "
+            "cd ../../ && "
+            "rm -rf source_code"
+        )
+    },
     "custom": {
         "label": "Custom Git Repository",
         "git_url": "", 
@@ -316,7 +344,7 @@ async def get_available_python_versions():
     except Exception as e:
         print(f"[DEBUG] Failed to discover python versions: {e}")
     
-    # Fallback if conda search fails
+    # Fallback if conda fails
     return["3.15", "3.14", "3.13", "3.12", "3.11", "3.10"]
 
 @router.get("/versions/torch/{cuda_ver}")
