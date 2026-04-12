@@ -1,15 +1,24 @@
+--- Wan2GP.sh ---
+#!/bin/bash
+
 ### AIKORE-METADATA-START ###
 # aikore.name = Wan2GP
 # aikore.category = Video Generation
-# aikore.description = A fast AI Video Generator using PyTorch 2.9 (ComfyUI Stack).
+# aikore.description = A fast AI Video Generator using PyTorch (ComfyUI Stack).
 # aikore.venv_type = conda
 # aikore.venv_path = ./env
 ### AIKORE-METADATA-END ###
 
-#!/bin/bash
 set -e
 
 source /opt/sd-install/functions.sh
+source /opt/sd-install/versions.env
+
+# --- Load custom instance versions if they exist ---
+if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+    echo "--- Loading custom environment variables ---"
+    source "${INSTANCE_CONF_DIR}/aikore_vars.env"
+fi
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
@@ -36,9 +45,9 @@ fi
 
 # --- 2. Environment Setup ---
 echo "--- Setting up Conda environment ---"
-if [ ! -d "${VENV_DIR}" ]; then
-    echo "Creating Conda environment with Python 3.12..."
-    conda create -p "${VENV_DIR}" python=3.12 -y
+if[ ! -d "${VENV_DIR}" ]; then
+    echo "Creating Conda environment with Python ${PYTHON_VERSION:-3.12}..."
+    conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.12}" -y
 fi
 
 source activate "${VENV_DIR}"
@@ -48,9 +57,9 @@ echo "--- Installing dependencies ---"
 
 conda install -c conda-forge ffmpeg -y
 
-# 1. Install PyTorch (ComfyUI Stack: 2.9.1 + cu130)
-echo "--- Installing PyTorch 2.9.1 ---"
-pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/cu130
+# 1. Install PyTorch (using AiKore variables)
+echo "--- Installing PyTorch ---"
+pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
 
 # 2. Install Pre-built Wheels (YOUR CUSTOM BUILD)
 WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
@@ -62,7 +71,7 @@ else
 fi
 
 # 3. Install App Requirements (STRICT FILTER)
-if [ -f "${APP_DIR}/requirements.txt" ]; then
+if[ -f "${APP_DIR}/requirements.txt" ]; then
     echo "--- Filtering requirements ---"
     
     # WE STRICTLY EXCLUDE:
@@ -77,7 +86,7 @@ if [ -f "${APP_DIR}/requirements.txt" ]; then
     pip install -r "${APP_DIR}/requirements-filtered.txt"
 fi
 
-if [ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then
+if[ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then
     pip install -r "${INSTANCE_CONF_DIR}/requirements.txt"
 fi
 
@@ -86,7 +95,7 @@ echo "--- Dependency installation complete ---"
 # --- 4. Configuration & Symlinks ---
 
 # Output Directory
-if [ -d "${APP_DIR}/outputs" ] && [ ! -L "${APP_DIR}/outputs" ]; then
+if [ -d "${APP_DIR}/outputs" ] &&[ ! -L "${APP_DIR}/outputs" ]; then
     rm -rf "${APP_DIR}/outputs"
 fi
 ln -sfn "${INSTANCE_OUTPUT_DIR}" "${APP_DIR}/outputs"

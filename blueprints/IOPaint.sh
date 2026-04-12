@@ -1,3 +1,6 @@
+--- IOPaint.sh ---
+#!/bin/bash
+
 ### AIKORE-METADATA-START ###
 # aikore.name = IOPaint
 # aikore.category = Image Editing
@@ -6,11 +9,17 @@
 # aikore.venv_path = ./env
 ### AIKORE-METADATA-END ###
 
-#!/bin/bash
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
 source /opt/sd-install/functions.sh
+source /opt/sd-install/versions.env
+
+# --- Load custom instance versions if they exist ---
+if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+    echo "--- Loading custom environment variables ---"
+    source "${INSTANCE_CONF_DIR}/aikore_vars.env"
+fi
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
@@ -42,10 +51,10 @@ conda clean -ya
 clean_env "${VENV_DIR}"
 
 # Create the Conda environment if it doesn't exist
-# Using Python 3.11 (Recommended for IOPaint)
-if [ ! -d "${VENV_DIR}" ]; then
-    echo "Creating Conda environment with Python 3.11..."
-    conda create -p "${VENV_DIR}" python=3.11 -y
+# Using Python variable (fallback 3.11 Recommended for IOPaint)
+if[ ! -d "${VENV_DIR}" ]; then
+    echo "Creating Conda environment with Python ${PYTHON_VERSION:-3.11}..."
+    conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.11}" -y
 fi
 
 # Activate the environment
@@ -54,10 +63,9 @@ source activate "${VENV_DIR}"
 # --- Dependency Installation ---
 echo "--- Installing dependencies ---"
 
-# 1. Install PyTorch manually to ensure CUDA support
-# IOPaint might try to pull CPU versions otherwise.
-echo "--- Installing PyTorch (CUDA 12.1 compatible) ---"
-pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
+# 1. Install PyTorch using AiKore variables
+echo "--- Installing PyTorch ---"
+pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
 
 # 2. Install Pre-built Wheels (Custom Modules)
 # Standard AiKore block to use local compiled wheels if available
@@ -101,13 +109,13 @@ echo "--- Launching IOPaint ---"
 CMD="iopaint start --host 0.0.0.0 --port ${WEBUI_PORT} --model-dir ${INSTANCE_CONF_DIR}/models --output-dir ${INSTANCE_OUTPUT_DIR}"
 
 # Add user-defined arguments from launch_args.txt (AiKore Standard)
-if [ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
+if[ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
     USER_ARGS=$(cat "${INSTANCE_CONF_DIR}/launch_args.txt")
     CMD+=" ${USER_ARGS}"
 fi
 
 # Fallback for legacy parameters.txt support (from the ancestor script)
-if [ -f "${INSTANCE_CONF_DIR}/parameters.txt" ] && [ ! -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/parameters.txt" ] &&[ ! -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
     echo "Legacy parameters.txt found. Appending arguments..."
     while IFS= read -r param; do
         if [[ $param != \#* ]]; then

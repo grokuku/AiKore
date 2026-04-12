@@ -1,17 +1,28 @@
+--- DPGui.sh ---
 #!/bin/bash
-# Exit immediately if a command exits with a non-zero status.
-set -e
 
 ### AIKORE-METADATA-START ###
 # aikore.name = DPGui
 # aikore.category = Training
-# aikore.description = A web UI for managing and launching diffusion-pipe training jobs. The blueprint prepares a minimal Conda environment and runs the app's native launcher.
+# aikore.description = A web UI for managing and launching diffusion-pipe training jobs.
 # aikore.venv_type = conda
 # aikore.venv_path = ./env
 ### AIKORE-METADATA-END ###
 
-# Source the global helper functions
+# Exit immediately if a command exits with a non-zero status.
+set -e
+
+# Source the global helper functions and versions
 source /opt/sd-install/functions.sh
+source /opt/sd-install/versions.env
+
+# --- Load custom instance versions if they exist ---
+if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+    echo "--- Loading custom environment variables ---"
+    source "${INSTANCE_CONF_DIR}/aikore_vars.env"
+fi
+
+export PATH="/home/abc/miniconda3/bin:$PATH"
 
 echo "--- Starting Blueprint: DPGui (Minimal Launcher) for Instance: ${INSTANCE_NAME} ---"
 
@@ -41,13 +52,18 @@ echo "--- Setting up Conda environment ---"
 clean_env "${VENV_DIR}"
 
 if [ ! -d "${VENV_DIR}" ]; then
-    echo "Creating Conda environment with Python 3.11 and Node.js..."
-    conda create -p "${VENV_DIR}" python=3.11 nodejs -c conda-forge -y
+    echo "Creating Conda environment with Python ${PYTHON_VERSION:-3.11} and Node.js..."
+    conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.11}" nodejs -c conda-forge -y
 fi
 
 # Activate the environment for the rest of the script
 source activate "${VENV_DIR}"
 echo "--- Conda environment activated. ---"
+
+# --- Pre-install PyTorch (AiKore Standard) ---
+# To prevent the native launcher from downloading random PyTorch versions
+echo "--- Installing PyTorch ---"
+pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
 
 # --- Install Pre-built Wheels (Custom Modules) ---
 WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
@@ -76,12 +92,11 @@ echo "Changing directory to ${DPGUI_DIR}"
 cd "${DPGUI_DIR}"
 
 LAUNCH_SCRIPT_PATH="./scripts/launcher.sh"
-if [ -f "$LAUNCH_SCRIPT_PATH" ]; then
+if[ -f "$LAUNCH_SCRIPT_PATH" ]; then
     bash "$LAUNCH_SCRIPT_PATH"
 else
     echo "FATAL: Launcher script not found at ${LAUNCH_SCRIPT_PATH}"
     exit 1
 fi
-
 
 echo "--- DPGui Blueprint Finished ---"

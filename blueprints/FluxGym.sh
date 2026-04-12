@@ -1,3 +1,6 @@
+--- FluxGym.sh ---
+#!/bin/bash
+
 ### AIKORE-METADATA-START ###
 # aikore.name = FluxGym
 # aikore.category = Training
@@ -6,8 +9,14 @@
 # aikore.venv_path = ./env
 ### AIKORE-METADATA-END ###
 
-#!/bin/bash
 source /opt/sd-install/functions.sh
+source /opt/sd-install/versions.env
+
+# --- Load custom instance versions if they exist ---
+if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+    echo "--- Loading custom environment variables ---"
+    source "${INSTANCE_CONF_DIR}/aikore_vars.env"
+fi
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
@@ -28,7 +37,7 @@ mkdir -p "${INSTANCE_OUTPUT_DIR}"
 APP_DIR="${INSTANCE_CONF_DIR}/fluxgym"
 
 # Install or update the main fluxgym repository
-if [ ! -d "${APP_DIR}/.git" ]; then
+if[ ! -d "${APP_DIR}/.git" ]; then
     echo "Cloning fluxgym repository..."
     git clone https://github.com/cocktailpeanut/fluxgym.git "${APP_DIR}"
     cd "${APP_DIR}"
@@ -62,13 +71,17 @@ source activate "${INSTANCE_CONF_DIR}/env"
 echo "--- Updating Conda and installing base packages ---"
 conda update -n base conda -y
 conda install -n base conda-libmamba-solver -y
-conda install -c conda-forge python=3.12 pip gfortran --solver=libmamba -y
+conda install -c conda-forge python="${PYTHON_VERSION:-3.12}" pip gfortran --solver=libmamba -y
 
 # Install Python requirements
 echo "--- Installing Python dependencies ---"
 pip install --upgrade pip
 
-# Install our pre-built wheels first
+# 1. Install PyTorch using AiKore variables BEFORE doing anything else
+echo "--- Installing PyTorch ---"
+pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
+
+# 2. Install our pre-built wheels first
 WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
 if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
     echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"

@@ -1,6 +1,5 @@
+--- PersonaLive.sh ---
 #!/bin/bash
-# Exit immediately if a command exits with a non-zero status.
-set -e
 
 ### AIKORE-METADATA-START ###
 # aikore.name = PersonaLive
@@ -10,7 +9,17 @@ set -e
 # aikore.venv_path = ./env
 ### AIKORE-METADATA-END ###
 
+# Exit immediately if a command exits with a non-zero status.
+set -e
+
 source /opt/sd-install/functions.sh
+source /opt/sd-install/versions.env
+
+# --- Load custom instance versions if they exist ---
+if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+    echo "--- Loading custom environment variables ---"
+    source "${INSTANCE_CONF_DIR}/aikore_vars.env"
+fi
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
@@ -24,13 +33,13 @@ APP_DIR="${INSTANCE_CONF_DIR}/PersonaLive"
 VENV_DIR="${INSTANCE_CONF_DIR}/env"
 
 # --- 1. Git Clone ---
-if [ ! -d "${APP_DIR}/.git" ]; then
+if[ ! -d "${APP_DIR}/.git" ]; then
     echo "Cloning PersonaLive repository..."
     git clone https://github.com/GVCLab/PersonaLive.git "${APP_DIR}"
 else
     echo "Existing PersonaLive repository found. Synchronizing..."
     cd "${APP_DIR}"
-    sync_repo
+    check_remote "GIT_REF"
 fi
 
 # --- 2. Environment Setup ---
@@ -40,9 +49,9 @@ echo "--- Setting up Conda environment ---"
 clean_env "${VENV_DIR}"
 
 # Create the Conda environment if it doesn't exist
-# Using Python 3.10 as it is generally the most compatible for audio/video AI tools currently.
+# Using Python fallback 3.10 as it is generally the most compatible for audio/video AI tools currently.
 if [ ! -d "${VENV_DIR}" ]; then
-    conda create -p "${VENV_DIR}" python=3.10 -y
+    conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.10}" -y
 fi
 
 # Activate the environment
@@ -54,9 +63,9 @@ echo "--- Installing dependencies ---"
 # Install FFmpeg, PyAV (av) and pycuda via conda to avoid compilation issues
 conda install -c conda-forge ffmpeg av pycuda nodejs=18 -y
 
-# Install PyTorch 2.1.0
-echo "--- Installing PyTorch 2.1.0 (Strict Requirement) ---"
-pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch using AiKore variables
+echo "--- Installing PyTorch ---"
+pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
 
 # Install TensorRT python bindings
 echo "--- Installing TensorRT ---"
@@ -64,7 +73,7 @@ pip install tensorrt
 
 # Install Pre-built Wheels (Custom Modules)
 WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
-if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
+if[ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
     echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"
     pip install "${WHEELS_DIR}"/*.whl
 else
@@ -107,7 +116,7 @@ export GRADIO_SERVER_NAME="0.0.0.0"
 CMD="python inference_online.py --port ${WEBUI_PORT}"
 
 # User override via launch_args.txt
-if [ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
+if[ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
     USER_ARGS=$(cat "${INSTANCE_CONF_DIR}/launch_args.txt")
     CMD+=" ${USER_ARGS}"
 fi

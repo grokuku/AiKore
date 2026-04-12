@@ -1,3 +1,6 @@
+--- AIToolkit.sh ---
+#!/bin/bash
+
 ### AIKORE-METADATA-START ###
 # aikore.name = AIToolkit
 # aikore.category = Training
@@ -6,11 +9,17 @@
 # aikore.venv_path = ./env
 ### AIKORE-METADATA-END ###
 
-#!/bin/bash
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
 source /opt/sd-install/functions.sh
+source /opt/sd-install/versions.env
+
+# --- Load custom instance versions if they exist ---
+if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+    echo "--- Loading custom environment variables ---"
+    source "${INSTANCE_CONF_DIR}/aikore_vars.env"
+fi
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
@@ -49,10 +58,10 @@ conda clean -ya
 clean_env "${VENV_DIR}"
 
 # Create the Conda environment if it doesn't exist
-# Using Python 3.12 and Node.js
-if [ ! -d "${VENV_DIR}" ]; then
-    echo "Creating Conda environment with Python 3.12 and Node.js..."
-    conda create -p "${VENV_DIR}" python=3.12 nodejs -c conda-forge -y
+# Using Python variable (default 3.12) and Node.js
+if[ ! -d "${VENV_DIR}" ]; then
+    echo "Creating Conda environment with Python ${PYTHON_VERSION:-3.12} and Node.js..."
+    conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.12}" nodejs -c conda-forge -y
 fi
 
 # Activate the environment
@@ -61,9 +70,9 @@ source activate "${VENV_DIR}"
 # --- Dependency Installation ---
 echo "--- Installing dependencies ---"
 
-# 1. Install specific PyTorch version (Torch 2.8 + CUDA 12.8)
-echo "--- Installing PyTorch 2.8.0 (CUDA 12.8) ---"
-pip install torch==2.8.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+# 1. Install specific PyTorch version (using AiKore standard)
+echo "--- Installing PyTorch ---"
+pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
 
 # 2. Install torchao manually
 echo "--- Installing torchao 0.10.0 ---"
@@ -72,7 +81,7 @@ pip install torchao==0.10.0
 # 3. Install Pre-built Wheels (Custom Modules)
 # This step installs your custom compiled wheels (e.g. SageAttention, FlashAttn)
 WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
-if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
+if[ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
     echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"
     pip install "${WHEELS_DIR}"/*.whl
 else

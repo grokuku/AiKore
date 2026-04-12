@@ -1,3 +1,6 @@
+--- EasyDiffusion.sh ---
+#!/bin/bash
+
 ### AIKORE-METADATA-START ###
 # aikore.name = EasyDiffusion
 # aikore.category = Image Generation
@@ -6,11 +9,17 @@
 # aikore.venv_path = ./env
 ### AIKORE-METADATA-END ###
 
-#!/bin/bash
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
 source /opt/sd-install/functions.sh
+source /opt/sd-install/versions.env
+
+# --- Load custom instance versions if they exist ---
+if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+    echo "--- Loading custom environment variables ---"
+    source "${INSTANCE_CONF_DIR}/aikore_vars.env"
+fi
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
 
@@ -27,7 +36,7 @@ APP_DIR="${INSTANCE_CONF_DIR}/easy-diffusion"
 VENV_DIR="${INSTANCE_CONF_DIR}/env"
 
 # --- 1. Git Clone ---
-if [ ! -d "${APP_DIR}/.git" ]; then
+if[ ! -d "${APP_DIR}/.git" ]; then
     echo "Cloning Easy Diffusion repository..."
     git clone https://github.com/easydiffusion/easydiffusion.git "${APP_DIR}"
 else
@@ -41,10 +50,10 @@ echo "--- Setting up Conda environment ---"
 conda clean -ya
 clean_env "${VENV_DIR}"
 
-# Easy Diffusion works best with Python 3.10 stable
+# Easy Diffusion works best with Python 3.10
 if [ ! -d "${VENV_DIR}" ]; then
-    echo "Creating Conda environment (Python 3.10)..."
-    conda create -p "${VENV_DIR}" python=3.10 -y
+    echo "Creating Conda environment (Python ${PYTHON_VERSION:-3.10})..."
+    conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.10}" -y
 fi
 
 source activate "${VENV_DIR}"
@@ -52,9 +61,9 @@ source activate "${VENV_DIR}"
 # --- 3. Dependency Installation ---
 echo "--- Installing dependencies ---"
 
-# Install PyTorch manually (CUDA 12.1)
-echo "--- Installing PyTorch 2.1.2 ---"
-pip install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
+# Install PyTorch using AiKore variables
+echo "--- Installing PyTorch ---"
+pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
 
 # Install Pre-built Wheels (Custom Modules)
 WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
@@ -91,7 +100,7 @@ echo "--- Setting up symlinks ---"
 # Output folder
 # Easy Diffusion typically saves to 'outputs' inside its folder.
 # We back it up if it exists and create a symlink to the AiKore output dir.
-if [ -d "${APP_DIR}/outputs" ] && [ ! -L "${APP_DIR}/outputs" ]; then
+if[ -d "${APP_DIR}/outputs" ] && [ ! -L "${APP_DIR}/outputs" ]; then
     mv "${APP_DIR}/outputs" "${APP_DIR}/outputs_backup_$(date +%s)"
 fi
 ln -sfn "${INSTANCE_OUTPUT_DIR}" "${APP_DIR}/outputs"
