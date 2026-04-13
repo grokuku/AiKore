@@ -13,7 +13,7 @@ source /opt/sd-install/functions.sh
 source /opt/sd-install/versions.env
 
 # --- Load custom instance versions if they exist ---
-if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
     echo "--- Loading custom environment variables ---"
     source "${INSTANCE_CONF_DIR}/aikore_vars.env"
 fi
@@ -37,7 +37,7 @@ mkdir -p "${INSTANCE_OUTPUT_DIR}"
 APP_DIR="${INSTANCE_CONF_DIR}/fluxgym"
 
 # Install or update the main fluxgym repository
-if[ ! -d "${APP_DIR}/.git" ]; then
+if [ ! -d "${APP_DIR}/.git" ]; then
     echo "Cloning fluxgym repository..."
     git clone https://github.com/cocktailpeanut/fluxgym.git "${APP_DIR}"
     cd "${APP_DIR}"

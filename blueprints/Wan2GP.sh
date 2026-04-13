@@ -15,7 +15,7 @@ source /opt/sd-install/functions.sh
 source /opt/sd-install/versions.env
 
 # --- Load custom instance versions if they exist ---
-if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
     echo "--- Loading custom environment variables ---"
     source "${INSTANCE_CONF_DIR}/aikore_vars.env"
 fi
@@ -45,7 +45,7 @@ fi
 
 # --- 2. Environment Setup ---
 echo "--- Setting up Conda environment ---"
-if[ ! -d "${VENV_DIR}" ]; then
+if [ ! -d "${VENV_DIR}" ]; then
     echo "Creating Conda environment with Python ${PYTHON_VERSION:-3.12}..."
     conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.12}" -y
 fi
@@ -71,7 +71,7 @@ else
 fi
 
 # 3. Install App Requirements (STRICT FILTER)
-if[ -f "${APP_DIR}/requirements.txt" ]; then
+if [ -f "${APP_DIR}/requirements.txt" ]; then
     echo "--- Filtering requirements ---"
     
     # WE STRICTLY EXCLUDE:
@@ -86,7 +86,7 @@ if[ -f "${APP_DIR}/requirements.txt" ]; then
     pip install -r "${APP_DIR}/requirements-filtered.txt"
 fi
 
-if[ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then
     pip install -r "${INSTANCE_CONF_DIR}/requirements.txt"
 fi
 

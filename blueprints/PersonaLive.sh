@@ -33,7 +33,7 @@ APP_DIR="${INSTANCE_CONF_DIR}/PersonaLive"
 VENV_DIR="${INSTANCE_CONF_DIR}/env"
 
 # --- 1. Git Clone ---
-if[ ! -d "${APP_DIR}/.git" ]; then
+if [ ! -d "${APP_DIR}/.git" ]; then
     echo "Cloning PersonaLive repository..."
     git clone https://github.com/GVCLab/PersonaLive.git "${APP_DIR}"
 else
@@ -73,7 +73,7 @@ pip install tensorrt
 
 # Install Pre-built Wheels (Custom Modules)
 WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
-if[ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
+if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
     echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"
     pip install "${WHEELS_DIR}"/*.whl
 else
@@ -116,7 +116,7 @@ export GRADIO_SERVER_NAME="0.0.0.0"
 CMD="python inference_online.py --port ${WEBUI_PORT}"
 
 # User override via launch_args.txt
-if[ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
     USER_ARGS=$(cat "${INSTANCE_CONF_DIR}/launch_args.txt")
     CMD+=" ${USER_ARGS}"
 fi

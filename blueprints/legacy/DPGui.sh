@@ -17,7 +17,7 @@ source /opt/sd-install/functions.sh
 source /opt/sd-install/versions.env
 
 # --- Load custom instance versions if they exist ---
-if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
     echo "--- Loading custom environment variables ---"
     source "${INSTANCE_CONF_DIR}/aikore_vars.env"
 fi
@@ -92,7 +92,7 @@ echo "Changing directory to ${DPGUI_DIR}"
 cd "${DPGUI_DIR}"
 
 LAUNCH_SCRIPT_PATH="./scripts/launcher.sh"
-if[ -f "$LAUNCH_SCRIPT_PATH" ]; then
+if [ -f "$LAUNCH_SCRIPT_PATH" ]; then
     bash "$LAUNCH_SCRIPT_PATH"
 else
     echo "FATAL: Launcher script not found at ${LAUNCH_SCRIPT_PATH}"

@@ -16,7 +16,7 @@ source /opt/sd-install/functions.sh
 source /opt/sd-install/versions.env
 
 # --- Load custom instance versions if they exist ---
-if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
     echo "--- Loading custom environment variables ---"
     source "${INSTANCE_CONF_DIR}/aikore_vars.env"
 fi
@@ -40,7 +40,7 @@ echo "Instance Home Directory set to: ${FAKE_HOME}"
 
 # --- 2. Environment Setup ---
 echo "--- Setting up Conda environment ---"
-if[ ! -d "${VENV_DIR}" ]; then
+if [ ! -d "${VENV_DIR}" ]; then
     echo "Creating Conda environment with Xorg libraries..."
     conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.10}" \
         gtk3 gdk-pixbuf cairo pango \
@@ -74,7 +74,7 @@ echo "Checking for the truly latest version..."
 # Extracting filename from redirect headers (e.g., LM-Studio-0.4.3-x64.AppImage)
 LATEST_FILENAME=$(curl -sI "$REDIRECT_URL" | grep -i "location:" | awk '{print $2}' | tr -d '\r' | xargs basename)
 
-if[ -z "$LATEST_FILENAME" ]; then
+if [ -z "$LATEST_FILENAME" ]; then
     echo "WARNING: Could not determine latest version from redirect. Falling back."
     LATEST_VERSION="0.3.35" # Legacy fallback
     DOWNLOAD_URL="https://installers.lmstudio.ai/linux/x64/0.3.35-1/LM-Studio-0.3.35-1-x64.AppImage"
@@ -91,10 +91,10 @@ if [ -f "$VERSION_FILE" ]; then
 fi
 
 NEED_UPDATE=false
-if[ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
     NEED_UPDATE=true
 fi
-if[ ! -f "squashfs-root/lm-studio" ]; then
+if [ ! -f "squashfs-root/lm-studio" ]; then
     echo "Binary missing. Forcing installation."
     NEED_UPDATE=true
 fi
@@ -135,7 +135,7 @@ count=0
 while [ ! -e "$SOCKET_FILE" ]; do
     sleep 1
     count=$((count+1))
-    if[ $count -ge $MAX_RETRIES ]; then
+    if [ $count -ge $MAX_RETRIES ]; then
         break
     fi
 done

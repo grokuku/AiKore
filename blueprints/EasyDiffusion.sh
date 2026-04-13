@@ -36,7 +36,7 @@ APP_DIR="${INSTANCE_CONF_DIR}/easy-diffusion"
 VENV_DIR="${INSTANCE_CONF_DIR}/env"
 
 # --- 1. Git Clone ---
-if[ ! -d "${APP_DIR}/.git" ]; then
+if [ ! -d "${APP_DIR}/.git" ]; then
     echo "Cloning Easy Diffusion repository..."
     git clone https://github.com/easydiffusion/easydiffusion.git "${APP_DIR}"
 else
@@ -100,7 +100,7 @@ echo "--- Setting up symlinks ---"
 # Output folder
 # Easy Diffusion typically saves to 'outputs' inside its folder.
 # We back it up if it exists and create a symlink to the AiKore output dir.
-if[ -d "${APP_DIR}/outputs" ] && [ ! -L "${APP_DIR}/outputs" ]; then
+if [ -d "${APP_DIR}/outputs" ] && [ ! -L "${APP_DIR}/outputs" ]; then
     mv "${APP_DIR}/outputs" "${APP_DIR}/outputs_backup_$(date +%s)"
 fi
 ln -sfn "${INSTANCE_OUTPUT_DIR}" "${APP_DIR}/outputs"

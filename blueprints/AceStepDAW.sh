@@ -96,6 +96,11 @@ if [ -f "vite.config.ts" ]; then
     if ! grep -q '"/bridge"' vite.config.ts; then
         sed -i 's|proxy: {|proxy: { "/bridge": { target: "ws://127.0.0.1:8001", ws: true, changeOrigin: true, secure: false, rewrite: (path) => path.replace(/^\\/bridge/, "") },|' vite.config.ts
     fi
+
+    # Fix 4: Disable file watcher to prevent ENOSPC limit reached
+    if ! grep -q "watch: null" vite.config.ts; then
+        sed -i "s|server: {|server: { watch: null,|g" vite.config.ts
+    fi
 fi
 
 # Patch 4: Fix WASM Engine initialization (target the named export)

@@ -16,7 +16,7 @@ source /opt/sd-install/functions.sh
 source /opt/sd-install/versions.env
 
 # --- Load custom instance versions if they exist ---
-if[ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
     echo "--- Loading custom environment variables ---"
     source "${INSTANCE_CONF_DIR}/aikore_vars.env"
 fi
@@ -52,7 +52,7 @@ clean_env "${VENV_DIR}"
 
 # Create the Conda environment if it doesn't exist
 # Using Python variable (fallback 3.11 Recommended for IOPaint)
-if[ ! -d "${VENV_DIR}" ]; then
+if [ ! -d "${VENV_DIR}" ]; then
     echo "Creating Conda environment with Python ${PYTHON_VERSION:-3.11}..."
     conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.11}" -y
 fi
@@ -109,7 +109,7 @@ echo "--- Launching IOPaint ---"
 CMD="iopaint start --host 0.0.0.0 --port ${WEBUI_PORT} --model-dir ${INSTANCE_CONF_DIR}/models --output-dir ${INSTANCE_OUTPUT_DIR}"
 
 # Add user-defined arguments from launch_args.txt (AiKore Standard)
-if[ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
     USER_ARGS=$(cat "${INSTANCE_CONF_DIR}/launch_args.txt")
     CMD+=" ${USER_ARGS}"
 fi

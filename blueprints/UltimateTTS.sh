@@ -31,7 +31,7 @@ APP_DIR="${INSTANCE_CONF_DIR}/UltimateTTS"
 VENV_DIR="${INSTANCE_CONF_DIR}/env"
 
 # --- 1. Git Clone ---
-if[ ! -d "${APP_DIR}/.git" ]; then
+if [ ! -d "${APP_DIR}/.git" ]; then
     echo "Cloning Ultimate-TTS-Studio-SUP3R-Edition..."
     git clone https://github.com/SUP3RMASS1VE/Ultimate-TTS-Studio-SUP3R-Edition.git "${APP_DIR}"
 else
@@ -44,7 +44,7 @@ fi
 echo "--- Setting up Conda environment ---"
 
 # We stick to Python 3.10 as fallback because Tortoise/RVC rely on Numba/LLVMLite versions
-if[ ! -d "${VENV_DIR}" ]; then
+if [ ! -d "${VENV_DIR}" ]; then
     echo "Creating Conda environment (Python ${PYTHON_VERSION:-3.10})..."
     # CRITICAL FIX: We install 'portaudio' and 'pyaudio' via Conda directly.
     # This provides the missing C libraries that caused the pip build error.
@@ -69,7 +69,7 @@ if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
 fi
 
 # 3. Requirements with Filters
-if[ -f "${APP_DIR}/requirements.txt" ]; then
+if [ -f "${APP_DIR}/requirements.txt" ]; then
     echo "--- Filtering and installing requirements ---"
     
     # We filter out:
@@ -97,11 +97,11 @@ cd "${APP_DIR}"
 # Find the entry script (handling spaces in filename)
 ENTRY_SCRIPT=$(find . -maxdepth 1 -name "*.py" | grep -i "Ultimate" | head -n 1)
 
-if[ -z "$ENTRY_SCRIPT" ]; then
+if [ -z "$ENTRY_SCRIPT" ]; then
     ENTRY_SCRIPT=$(find . -maxdepth 1 -name "app.py" -o -name "main.py" | head -n 1)
 fi
 
-if[ -z "$ENTRY_SCRIPT" ]; then
+if [ -z "$ENTRY_SCRIPT" ]; then
     echo "FATAL: Could not find entry script."
     exit 1
 fi
@@ -114,7 +114,7 @@ export GRADIO_SERVER_PORT="${WEBUI_PORT}"
 # Launch using quotes for safety
 CMD="python \"$ENTRY_SCRIPT\""
 
-if[ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
+if [ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
     USER_ARGS=$(cat "${INSTANCE_CONF_DIR}/launch_args.txt")
     CMD+=" ${USER_ARGS}"
 fi
