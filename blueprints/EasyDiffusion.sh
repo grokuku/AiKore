@@ -1,4 +1,3 @@
---- EasyDiffusion.sh ---
 #!/bin/bash
 
 ### AIKORE-METADATA-START ###
@@ -22,9 +21,6 @@ if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
 fi
 
 export PATH="/home/abc/miniconda3/bin:$PATH"
-
-# Variables provided by process manager:
-# INSTANCE_NAME, INSTANCE_CONF_DIR, INSTANCE_OUTPUT_DIR, WEBUI_PORT
 
 echo "--- Starting Blueprint: EasyDiffusion for Instance: ${INSTANCE_NAME} ---"
 
@@ -50,7 +46,7 @@ echo "--- Setting up Conda environment ---"
 conda clean -ya
 clean_env "${VENV_DIR}"
 
-# Easy Diffusion works best with Python 3.10
+# Easy Diffusion works well with Python 3.10
 if [ ! -d "${VENV_DIR}" ]; then
     echo "Creating Conda environment (Python ${PYTHON_VERSION:-3.10})..."
     conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.10}" -y
@@ -61,31 +57,33 @@ source activate "${VENV_DIR}"
 # --- 3. Dependency Installation ---
 echo "--- Installing dependencies ---"
 
-# Install PyTorch using AiKore variables
 echo "--- Installing PyTorch ---"
 pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
 
-# Install Pre-built Wheels (Custom Modules)
 WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
-if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
+if [ -d "${WHEELS_DIR}" ] && [ "$(ls -A "${WHEELS_DIR}"/*.whl 2>/dev/null)" ]; then
     echo "--- Installing pre-built wheels from ${WHEELS_DIR} ---"
     pip install "${WHEELS_DIR}"/*.whl
 else
     echo "No custom wheels found in ${WHEELS_DIR}."
 fi
 
-# Install App Requirements with Filtering
+# Filter requirements to protect PyTorch and custom Wheels
 if [ -f "${APP_DIR}/requirements.txt" ]; then
     echo "--- Filtering and installing app requirements ---"
-    # Exclude torch and potentially custom compiled packages to avoid overwrites
     PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio|xformers|bitsandbytes|flash-attn|sageattention"
     
-    grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "${APP_DIR}/requirements.txt" > "${APP_DIR}/requirements-filtered.txt"
-    pip install -r "${APP_DIR}/requirements-filtered.txt"
+    # Use || true to prevent set -e from killing the script if grep finds nothing
+    grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "${APP_DIR}/requirements.txt" > "${APP_DIR}/requirements-filtered.txt" || true
+    
+    if [ -s "${APP_DIR}/requirements-filtered.txt" ]; then
+        pip install -r "${APP_DIR}/requirements-filtered.txt"
+    fi
 fi
 
-# Easy Diffusion relies on 'sdkit'. If not present in requirements, ensure it's installed.
-pip install sdkit
+# Easy Diffusion doesn't use a standard requirements.txt for the UI engine.
+# We install the core dependencies manually to bypass their check_modules.py
+pip install sdkit uvicorn fastapi ruamel.yaml rich python-multipart pycloudflared sqlalchemy onnxruntime huggingface-hub wandb torchsde basicsr gfpgan stable-diffusion-sdkit diffusers
 
 # Install custom user requirements
 if [ -f "${INSTANCE_CONF_DIR}/requirements.txt" ]; then
@@ -94,42 +92,53 @@ fi
 
 echo "--- Dependency installation complete ---"
 
-# --- 4. Symlinks & Configuration ---
-echo "--- Setting up symlinks ---"
+# --- 4. Configuration & Symlinks ---
+echo "--- Setting up configuration and symlinks ---"
 
-# Output folder
-# Easy Diffusion typically saves to 'outputs' inside its folder.
-# We back it up if it exists and create a symlink to the AiKore output dir.
+# Generate config.yaml to force Easy Diffusion to use the AiKore port and network settings
+cat <<EOF > "${APP_DIR}/config.yaml"
+net:
+    listen_port: ${WEBUI_PORT}
+    listen_to_network: true
+ui:
+    open_browser_on_start: false
+EOF
+
+# Patch hardcoded IP binds in their codebase as a fallback measure
+if [ -f "${APP_DIR}/scripts/check_modules.py" ]; then
+    sed -i 's/bind_ip = "127.0.0.1"/bind_ip = "0.0.0.0"/g' "${APP_DIR}/scripts/check_modules.py" || true
+fi
+if [ -f "${APP_DIR}/ui/easydiffusion/server.py" ]; then
+    sed -i 's/127.0.0.1/0.0.0.0/g' "${APP_DIR}/ui/easydiffusion/server.py" || true
+fi
+
+# Link Outputs folder
 if [ -d "${APP_DIR}/outputs" ] && [ ! -L "${APP_DIR}/outputs" ]; then
     mv "${APP_DIR}/outputs" "${APP_DIR}/outputs_backup_$(date +%s)"
 fi
 ln -sfn "${INSTANCE_OUTPUT_DIR}" "${APP_DIR}/outputs"
 
-# Models (Link Global AiKore Models)
+# Link Global AiKore Models
 mkdir -p "${APP_DIR}/models"
 sl_folder "${APP_DIR}/models" "stable-diffusion" "/config/models" "stable-diffusion"
 sl_folder "${APP_DIR}/models" "vae" "/config/models" "vae"
 sl_folder "${APP_DIR}/models" "lora" "/config/models" "lora"
 sl_folder "${APP_DIR}/models" "embeddings" "/config/models" "embeddings"
-# Easy Diffusion specific model structure might differ slightly, but this covers basics.
 
 # --- 5. Launch ---
-cd "${APP_DIR}"
-
 echo "--- Launching Easy Diffusion ---"
 
-# We bypass 'start.sh' to use our Conda env and control parameters directly.
-# The main entry point is scripts/main.py (or similar depending on version, sometimes just main.py in root or inside ui folder).
-# Checking typical structure:
-LAUNCH_SCRIPT="scripts/main.py"
-if [ ! -f "$LAUNCH_SCRIPT" ]; then
-    # Fallback search
-    LAUNCH_SCRIPT=$(find . -name "main.py" | grep "scripts" | head -n 1)
-fi
+cd "${APP_DIR}"
 
-# Command construction
-# --port and --host for Docker networking
-CMD="python ${LAUNCH_SCRIPT} --port ${WEBUI_PORT} --host 0.0.0.0"
+# CRITICAL: We bypass start.sh and check_modules.py to run the Uvicorn ASGI directly.
+# We must provide the correct paths and environments variables that are usually injected by their scripts.
+export SD_UI_PATH="${APP_DIR}/ui"
+export PYTHONPATH="${APP_DIR}/ui:${PYTHONPATH}"
+export SD_UI_BIND_PORT=${WEBUI_PORT}
+export SD_UI_BIND_IP=0.0.0.0
+
+# uvicorn target is 'server_api' from 'ui/main.py'
+CMD="python -m uvicorn ui.main:server_api --host 0.0.0.0 --port ${WEBUI_PORT}"
 
 # Add user-defined arguments
 if [ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
