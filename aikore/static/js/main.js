@@ -1,6 +1,6 @@
 import { state, DOM } from './state.js';
 import { fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSystemStats, fetchAvailablePythonVersions } from './api.js';
-import { renderInstanceRow, updateSystemStats, checkRowForChanges } from './ui.js';
+import { renderInstanceRow, updateSystemStats, checkRowForChanges, buildInstanceUrl } from './ui.js';
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
 import { showWelcomeScreen, showBuilderView, renderBuilderStatus } from './tools.js';
@@ -77,8 +77,10 @@ export async function fetchAndRenderInstances() {
                         statusSpan.className = `status status-${inst.status.toLowerCase()}`;
                         row.dataset.status = inst.status;
 
-                        const allButtons = row.querySelectorAll('button.action-btn');
                         const isActive = inst.status !== 'stopped';
+
+                        // Update button.action-btn elements
+                        const allButtons = row.querySelectorAll('button.action-btn');
                         allButtons.forEach(btn => {
                             const action = btn.dataset.action;
                             if (action === 'start') btn.disabled = isActive;
@@ -86,6 +88,14 @@ export async function fetchAndRenderInstances() {
                             else if (action === 'delete') btn.disabled = isActive;
                             else if (action === 'view') btn.disabled = (inst.status !== 'started');
                         });
+
+                        // FIX: Also update the <a> Open link (was previously missed)
+                        const openLink = row.querySelector('a[data-action="open"]');
+                        if (openLink) {
+                            const openHref = buildInstanceUrl(row, false);
+                            openLink.href = openHref;
+                            openLink.classList.toggle('disabled', openHref === '#');
+                        }
                     }
                 }
             });
@@ -266,7 +276,7 @@ async function initializeApp() {
         gutterSize: 5,
         direction: 'vertical',
         cursor: 'row-resize',
-        onEnd: function (sizes) {
+        onDragEnd: function (sizes) {
             state.split.savedSizes.vertical = sizes;
             localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes));
         }
@@ -278,7 +288,7 @@ async function initializeApp() {
         gutterSize: 5,
         direction: 'horizontal',
         cursor: 'col-resize',
-        onEnd: function (sizes) {
+        onDragEnd: function (sizes) {
             state.split.savedSizes.horizontal = sizes;
             localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes));
         }
@@ -372,6 +382,35 @@ async function initializeApp() {
             const pane = btn.dataset.pane;
             const delta = btn.classList.contains('zoom-in') ? ZOOM_STEP : -ZOOM_STEP;
             changeZoom(pane, delta);
+        });
+    });
+
+    // Double-click on zoom label resets zoom to 100%
+    document.querySelectorAll('.zoom-label').forEach(label => {
+        label.addEventListener('dblclick', () => {
+            const pane = label.dataset.pane;
+            if (pane === 'tools') {
+                const key = getCurrentToolsZoomKey();
+                state.zoom.tools[key] = 100;
+            } else {
+                state.zoom[pane] = 100;
+            }
+
+            if (pane === 'tools') {
+                const toolsContent = document.querySelector('#tools-pane .pane-content');
+                const key = getCurrentToolsZoomKey();
+                if (toolsContent) toolsContent.style.zoom = (state.zoom.tools[key] / 100);
+            } else {
+                applyZoom(pane === 'instance' ? 'instance-pane' : 'monitoring-pane', state.zoom[pane]);
+            }
+
+            updateZoomLabels();
+            saveZoomLevels();
+
+            // Refit terminal if zooming tools pane
+            if (pane === 'tools' && state.fitAddon) {
+                try { state.fitAddon.fit(); } catch (e) { }
+            }
         });
     });
 

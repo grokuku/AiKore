@@ -30,21 +30,50 @@ class CustomBlueprint(BaseModel):
 def get_available_blueprints():
     """
     Scans stock and custom blueprint directories and returns a categorized list of available .sh scripts.
+    Each entry includes the filename and its category parsed from the metadata block.
     """
     stock_blueprints = []
     custom_blueprints = []
     
+    def _parse_blueprint_category(filepath):
+        """Parse a blueprint .sh file and return the aikore.category value, or None."""
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                in_metadata_block = False
+                for line in f:
+                    line = line.strip()
+                    if '### AIKORE-METADATA-START ###' in line:
+                        in_metadata_block = True
+                        continue
+                    if '### AIKORE-METADATA-END ###' in line:
+                        break
+                    if in_metadata_block and line.startswith('#'):
+                        cleaned_line = line.lstrip('#').strip()
+                        if '=' in cleaned_line:
+                            key, value = cleaned_line.split('=', 1)
+                            if key.strip() == 'aikore.category':
+                                return value.strip()
+        except (IOError, FileNotFoundError):
+            pass
+        return None
+    
     try:
         # Scan stock blueprints
         if os.path.isdir(BLUEPRINTS_DIR):
-            stock_files = os.listdir(BLUEPRINTS_DIR)
-            stock_blueprints = sorted([f for f in stock_files if f.endswith('.sh')])
+            stock_files = sorted([f for f in os.listdir(BLUEPRINTS_DIR) if f.endswith('.sh')])
+            for f in stock_files:
+                filepath = os.path.join(BLUEPRINTS_DIR, f)
+                category = _parse_blueprint_category(filepath)
+                stock_blueprints.append({"filename": f, "category": category})
         
         # Scan custom blueprints
         os.makedirs(CUSTOM_BLUEPRINTS_DIR, exist_ok=True) # Ensure it exists
         if os.path.isdir(CUSTOM_BLUEPRINTS_DIR):
-            custom_files = os.listdir(CUSTOM_BLUEPRINTS_DIR)
-            custom_blueprints = sorted([f for f in custom_files if f.endswith('.sh')])
+            custom_files = sorted([f for f in os.listdir(CUSTOM_BLUEPRINTS_DIR) if f.endswith('.sh')])
+            for f in custom_files:
+                filepath = os.path.join(CUSTOM_BLUEPRINTS_DIR, f)
+                category = _parse_blueprint_category(filepath)
+                custom_blueprints.append({"filename": f, "category": category})
             
         return {"stock": stock_blueprints, "custom": custom_blueprints}
     

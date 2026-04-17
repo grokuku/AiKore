@@ -135,11 +135,13 @@ It uses a **"Neutral Image Architecture"**: the base Docker image is lightweight
 ```bash
 ### AIKORE-METADATA-START ###
 # aikore.name = ComfyUI
+# aikore.category = Image Generation  # Displayed in custom blueprint dropdown
+# aikore.description = A powerful and modular GUI for Stable Diffusion.
 # aikore.venv_type = conda       # or "python"
 # aikore.venv_path = ./env
 ### AIKORE-METADATA-END ###
 ```
-Parsed by `blueprint_parser.py` and `process_manager.parse_blueprint_metadata()`.
+Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_metadata()` (venv_type/venv_path), and `system.py get_available_blueprints()` (category for dropdown display).
 
 ### Module Builder Workflow
 1. User selects Preset + Python + CUDA + Torch + GPU Arch
@@ -186,7 +188,7 @@ Parsed by `blueprint_parser.py` and `process_manager.parse_blueprint_metadata()`
 | WS | `/api/instances/{id}/terminal` | `instance_terminal_endpoint` | PTY terminal (xterm.js) |
 | GET | `/api/system/info` | `get_system_info` | GPU count (pynvml) |
 | GET | `/api/system/stats` | `get_system_stats` | CPU/RAM/GPU real-time stats |
-| GET | `/api/system/blueprints` | `get_available_blueprints` | Stock + custom blueprint listing |
+| GET | `/api/system/blueprints` | `get_available_blueprints` | Stock + custom blueprint listing with `{filename, category}` objects |
 | POST | `/api/system/blueprints/custom` | `create_custom_blueprint` | Save custom .sh file |
 | GET | `/api/system/available-ports` | `get_available_ports` | Free ports in pool |
 | GET | `/api/system/debug-nginx` | `debug_nginx` | NGINX config debug dump |
@@ -377,8 +379,8 @@ Parsed by `blueprint_parser.py` and `process_manager.parse_blueprint_metadata()`
 
 ### 🟡 Bug Fix: Split Pane Layout Not Persisting Across Refreshes
 **File**: `main.js`
-**Problem**: Split pane sizes were stored in `localStorage` with key `aikoreSplitSizes` but the restore logic appeared correct. Further investigation showed the feature was already working — the user's issue was likely that they hadn't dragged any splitter yet (no value saved), or the browser's localStorage was disabled.
-**Status**: Already implemented. No code change needed. Verified that `onEnd` saves sizes and they're restored on load.
+**Problem**: Split pane sizes appeared to save on drag end but were never actually persisted. Root cause: the code used `onEnd` as the Split.js drag callback, but Split.js uses `onDragEnd` — not `onEnd`. The `onEnd` option was silently ignored, so `localStorage.setItem` was never called after dragging a splitter.
+**Fix**: Changed both Split.js initializations to use `onDragEnd` instead of `onEnd`.
 
 ### ✨ Feature: Per-Panel Zoom Controls
 **Files**: `index.html`, `base.css`, `state.js`, `main.js`, `tools.js`
@@ -396,7 +398,38 @@ Parsed by `blueprint_parser.py` and `process_manager.parse_blueprint_metadata()`
 
 ---
 
-## 10. Pending Features (from features.md)
+## 10. Bugs Found and Fixed in Session 4
+
+### 🟠 8.23 — False Dirty State on Page Refresh (4 phantom modifications) ✅ FIXED
+**Files**: `ui.js`
+**Problem**: After a page refresh, the "Save Changes" button appeared with a dirty count even though no changes had been made. Two root causes:
+1. **`createEnvSelect` didn't add custom values**: If an instance had a `python_version` or `cuda_version` that wasn't in the dropdown options list, the select defaulted to `""` while `dataset.originalPythonVersion` held the actual value → comparison `"" !== "3.12"` = dirty.
+2. **Async `updateTorchOptions` timing**: The torch version select was populated asynchronously (fetched from PyTorch index). `checkRowForChanges()` ran at the end of `renderInstanceRow()` before the async fetch completed. If the instance had a `torch_version`, the select value was `""` while the original was the actual version → dirty. After the async load, `checkRowForChanges` was never re-called, so the row stayed dirty forever.
+**Fix**: 
+- `createEnvSelect` now adds `currentValue` as a custom `<option>` if it's not in the standard options list.
+- `updateTorchOptions` now calls `checkRowForChanges(row)` after the async load completes and the value is set.
+
+### 🟠 8.24 — View/Open Buttons Disabled for Started Satellite Instances ✅ FIXED
+**Files**: `main.js`
+**Problem**: The partial update mode in `fetchAndRenderInstances()` only queried `button.action-btn` when updating buttons on status change, completely missing the `<a class="action-btn">` Open link. When an instance transitioned to "started" during a polling cycle while dirty rows existed, the Open link retained its `disabled` class and `href="#"`. Additionally, Bug 8.23 caused all rows to be falsely dirty immediately on page load, forcing the partial update mode on every poll — so if an instance was already "started" at load time and the initial render set the Open link correctly, but a later status *change* on any row triggered the partial handler, the Open link update was missed.
+**Fix**: Partial update mode now also queries and updates `a[data-action="open"]`, calling `buildInstanceUrl(row)` and toggling the `disabled` class. Combined with Bug 8.23 fix, rows are no longer falsely dirty, so full re-render happens on each poll.
+
+### 🔴 8.25 — Split Pane Sizes Not Persisting After Page Refresh ✅ FIXED
+**File**: `main.js`
+**Problem**: Split pane sizes were never saved to `localStorage`. The code used `onEnd` as the drag-end callback, but Split.js uses `onDragEnd` — `onEnd` is not a valid option and was silently ignored.
+**Fix**: Changed both `Split()` calls to use `onDragEnd` instead of `onEnd`.
+
+### ✨ Feature: Double-Click Zoom Label to Reset to 100%
+**Files**: `main.js`, `base.css`
+**Description**: Double-clicking the zoom percentage label (e.g., "100%") in any pane header now resets that pane's zoom level to 100%. Added `cursor: pointer` to `.zoom-label` to indicate interactivity.
+
+### ✨ Feature: Blueprint Category Display in Custom Dropdown
+**Files**: `system.py` (backend), `ui.js` (frontend), `instances.css` (styling)
+**Description**: The native `<select>` for blueprints has been replaced with a custom dropdown that shows each blueprint's name on the left and its `aikore.category` metadata value (e.g., "Image Generation", "Training", "Audio / TTS") right-aligned in a darker color. The backend (`GET /api/system/blueprints`) now returns objects `{filename, category}` instead of plain strings, parsing the `### AIKORE-METADATA ###` block from each `.sh` file. The custom dropdown exposes the same `.value`, `.disabled`, and event interface (`change`, `input`, `focus`) as a native `<select>` so all existing dirty-detection and save/revert logic works without changes. The dropdown has Stock/Custom group headers, hover highlighting, and a selected state.
+
+---
+
+## 11. Pending Features (from features.md)
 
 - [ ] Improve global error handling and status reporting across the entire application
 - [ ] Write comprehensive user and system documentation

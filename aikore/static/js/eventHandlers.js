@@ -86,7 +86,7 @@ export function setupMainEventListeners() {
                 if (nameField.value !== row.dataset.originalName) {
                     changes.name = { old: row.dataset.originalName, new: nameField.value };
                 }
-                const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
+                const blueprintField = row.querySelector('[data-field="base_blueprint"]');
                 if (blueprintField && !blueprintField.disabled && blueprintField.value !== row.dataset.originalBlueprint) {
                     changes.base_blueprint = { old: row.dataset.originalBlueprint, new: blueprintField.value };
                 }
@@ -183,7 +183,7 @@ export function setupMainEventListeners() {
         for (const update of updates) {
             try {
                 const row = update.row;
-                const bpSelect = row.querySelector('select[data-field="base_blueprint"]');
+                const bpSelect = row.querySelector('[data-field="base_blueprint"]');
                 const outPathInput = row.querySelector('input[data-field="output_path"]');
                 
                 const pyField = row.querySelector('select[data-field="python_version"]');
@@ -256,7 +256,7 @@ export function setupMainEventListeners() {
                     const portValue = row.querySelector('select[data-field="port"]').value;
                     const data = {
                         name: row.querySelector('input[data-field="name"]').value,
-                        base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
+                        base_blueprint: row.querySelector('[data-field="base_blueprint"]').value,
                         output_path: row.querySelector('input[data-field="output_path"]').value || null,
                         gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
                         autostart: row.querySelector('input[data-field="autostart"]').checked,

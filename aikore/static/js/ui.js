@@ -38,44 +38,140 @@ export function showToast(message, type = 'success') {
 }
 
 function createBlueprintSelect(selectedValue = '') {
-    const select = document.createElement('select');
-    select.dataset.field = 'base_blueprint';
-    select.required = true;
+    // --- Custom dropdown that shows blueprint name + category (right-aligned, darker) ---
+    const wrapper = document.createElement('div');
+    wrapper.className = 'blueprint-select';
+    wrapper.dataset.field = 'base_blueprint';
+    wrapper.dataset.value = selectedValue;
 
-    const defaultOption = document.createElement('option');
-    defaultOption.value = '';
-    defaultOption.textContent = 'Select a blueprint';
-    defaultOption.disabled = true;
-    select.appendChild(defaultOption);
-    if (!selectedValue) defaultOption.selected = true;
+    // Header / trigger button
+    const header = document.createElement('div');
+    header.className = 'bp-select-header';
+    header.tabIndex = 0;
+    wrapper.appendChild(header);
 
-    if (state.availableBlueprints.stock && state.availableBlueprints.stock.length > 0) {
-        const stockGroup = document.createElement('optgroup');
-        stockGroup.label = 'Stock';
-        state.availableBlueprints.stock.forEach(bp => {
-            const option = document.createElement('option');
-            option.value = bp;
-            option.textContent = bp;
-            if (bp === selectedValue) option.selected = true;
-            stockGroup.appendChild(option);
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'bp-selected-name';
+    nameSpan.textContent = selectedValue || 'Select a blueprint';
+    header.appendChild(nameSpan);
+
+    const arrow = document.createElement('span');
+    arrow.className = 'bp-select-arrow';
+    arrow.textContent = '\u25BC';
+    header.appendChild(arrow);
+
+    // Dropdown panel
+    const dropdown = document.createElement('div');
+    dropdown.className = 'bp-select-dropdown';
+    wrapper.appendChild(dropdown);
+
+    function addOptions(groupLabel, bpList) {
+        if (!bpList || bpList.length === 0) return;
+        const groupEl = document.createElement('div');
+        groupEl.className = 'bp-option-group';
+        const label = document.createElement('div');
+        label.className = 'bp-group-label';
+        label.textContent = groupLabel;
+        groupEl.appendChild(label);
+        bpList.forEach(bp => {
+            const isObj = typeof bp === 'object' && bp !== null;
+            const filename = isObj ? bp.filename : bp;
+            const category = isObj ? (bp.category || '') : '';
+
+            const opt = document.createElement('div');
+            opt.className = 'bp-option';
+            opt.dataset.value = filename;
+            if (filename === selectedValue) opt.classList.add('selected');
+
+            const optName = document.createElement('span');
+            optName.className = 'bp-option-name';
+            optName.textContent = filename;
+            opt.appendChild(optName);
+
+            if (category) {
+                const optCat = document.createElement('span');
+                optCat.className = 'bp-option-category';
+                optCat.textContent = category;
+                opt.appendChild(optCat);
+            }
+
+            opt.addEventListener('mousedown', (e) => {
+                e.preventDefault(); // Prevent blur on header
+                setValue(filename);
+                closeDropdown();
+                wrapper.dispatchEvent(new Event('change', { bubbles: true }));
+                wrapper.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            opt.addEventListener('mouseenter', () => opt.classList.add('hover'));
+            opt.addEventListener('mouseleave', () => opt.classList.remove('hover'));
+
+            groupEl.appendChild(opt);
         });
-        select.appendChild(stockGroup);
+        dropdown.appendChild(groupEl);
     }
 
-    if (state.availableBlueprints.custom && state.availableBlueprints.custom.length > 0) {
-        const customGroup = document.createElement('optgroup');
-        customGroup.label = 'Custom';
-        state.availableBlueprints.custom.forEach(bp => {
-            const option = document.createElement('option');
-            option.value = bp;
-            option.textContent = bp;
-            if (bp === selectedValue) option.selected = true;
-            customGroup.appendChild(option);
+    addOptions('Stock', state.availableBlueprints.stock);
+    addOptions('Custom', state.availableBlueprints.custom);
+
+    function setValue(val) {
+        wrapper.dataset.value = val;
+        nameSpan.textContent = val || 'Select a blueprint';
+        // Highlight selected option
+        dropdown.querySelectorAll('.bp-option').forEach(o => {
+            o.classList.toggle('selected', o.dataset.value === val);
         });
-        select.appendChild(customGroup);
     }
 
-    return select;
+    function openDropdown() {
+        if (wrapper.classList.contains('disabled')) return;
+        dropdown.style.display = 'block';
+        wrapper.classList.add('open');
+    }
+    function closeDropdown() {
+        dropdown.style.display = 'none';
+        wrapper.classList.remove('open');
+    }
+
+    header.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        if (wrapper.classList.contains('disabled')) return;
+        if (wrapper.classList.contains('open')) {
+            closeDropdown();
+        } else {
+            openDropdown();
+        }
+    });
+    header.addEventListener('focus', () => {
+        wrapper.dispatchEvent(new Event('focus', { bubbles: true }));
+    });
+    header.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeDropdown();
+    });
+    document.addEventListener('mousedown', (e) => {
+        if (!wrapper.contains(e.target)) closeDropdown();
+    });
+
+    // Expose value/disabled properties like a native select
+    Object.defineProperty(wrapper, 'value', {
+        get: () => wrapper.dataset.value || '',
+        set: (v) => setValue(v),
+        configurable: true
+    });
+    Object.defineProperty(wrapper, 'disabled', {
+        get: () => wrapper.classList.contains('disabled'),
+        set: (v) => {
+            if (v) {
+                wrapper.classList.add('disabled');
+                header.tabIndex = -1;
+            } else {
+                wrapper.classList.remove('disabled');
+                header.tabIndex = 0;
+            }
+        },
+        configurable: true
+    });
+
+    return wrapper;
 }
 
 // --- HELPER: Normalize Data for Comparison ---
@@ -100,7 +196,7 @@ export function checkRowForChanges(row) {
     const nameField = row.querySelector('input[data-field="name"]');
     if (nameField && nameField.value !== row.dataset.originalName) changed = true;
 
-    const blueprintField = row.querySelector('select[data-field="base_blueprint"]');
+    const blueprintField = row.querySelector('[data-field="base_blueprint"]');
     // Only check if NOT disabled (Satellites are disabled)
     if (blueprintField && !blueprintField.disabled && blueprintField.value !== row.dataset.originalBlueprint) changed = true;
 
@@ -386,6 +482,15 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
             sel.appendChild(o);
         });
         
+        // FIX: If currentValue is set but not in the options list, add it as a custom option
+        // This prevents false dirty state when the DB value doesn't match any populated option
+        if (currentValue && !options.includes(currentValue)) {
+            const customOpt = document.createElement('option');
+            customOpt.value = currentValue;
+            customOpt.textContent = currentValue;
+            sel.appendChild(customOpt);
+        }
+        
         if (currentValue) sel.value = currentValue;
         if (isSatellite) sel.disabled = true;
         return sel;
@@ -429,6 +534,13 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
             torchSelect.value = initialTorchVal;
         }
         torchSelect.options[0].textContent = 'Torch Auto';
+
+        // FIX: Re-check for changes after async torch load completes.
+        // Without this, the row stays falsely dirty because checkRowForChanges
+        // ran before the torch options were populated.
+        if (!isNew) {
+            checkRowForChanges(row);
+        }
     };
 
     cudaSelect.addEventListener('change', () => {
@@ -579,12 +691,12 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
             <a href="${openHref}" class="action-btn ${openHref === '#' ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
     }
 
-    const allFields = row.querySelectorAll('input, select');
+    const allFields = row.querySelectorAll('input, select, .blueprint-select');
     if (isNew) {
         const saveButton = row.querySelector('button[data-action="save"]');
         allFields.forEach(field => field.addEventListener('input', () => {
             const name = row.querySelector('input[data-field="name"]').value;
-            const bp = row.querySelector('select[data-field="base_blueprint"]').value;
+            const bp = row.querySelector('[data-field="base_blueprint"]').value;
             saveButton.disabled = !name || !bp;
         }));
         let isOutputPathDirty = false;
@@ -597,7 +709,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         });
 
         // --- ADDED: Specific logic for Blueprint Changes ---
-        const bpSelect = row.querySelector('select[data-field="base_blueprint"]');
+        const bpSelect = row.querySelector('[data-field="base_blueprint"]');
         if (bpSelect && !bpSelect.disabled) {
             // Track previous value on focus
             bpSelect.addEventListener('focus', function() {

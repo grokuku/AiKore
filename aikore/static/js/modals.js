@@ -132,7 +132,7 @@ export function setupModalEventHandlers() {
                     const row = update.row;
                     if (!row) return;
                     row.querySelector('input[data-field="name"]').value = row.dataset.originalName;
-                    row.querySelector('select[data-field="base_blueprint"]').value = row.dataset.originalBlueprint;
+                    row.querySelector('[data-field="base_blueprint"]').value = row.dataset.originalBlueprint;
                     row.querySelector('input[data-field="output_path"]').value = row.dataset.originalOutputPath || '';
                     row.querySelector('input[data-field="persistent_mode"]').checked = row.dataset.originalPersistentMode === 'true';
                     row.querySelector('input[data-field="use_custom_hostname"]').checked = row.dataset.originalUseCustomHostname === 'true';
