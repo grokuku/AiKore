@@ -397,12 +397,18 @@ select.compact-env-select:disabled {
     box-sizing: border-box;
     white-space: nowrap;
     overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.bp-select-header:hover {
+    border-color: #6f42c1;
 }
 
 .blueprint-select.open .bp-select-header {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-    border-bottom-color: #1e1e3f;
+    border-color: #6f42c1;
+    box-shadow: 0 0 0 2px rgba(111, 66, 193, 0.3);
 }
 
 .blueprint-select.disabled .bp-select-header {
@@ -431,25 +437,32 @@ select.compact-env-select:disabled {
     transform: rotate(180deg);
 }
 
-.bp-select-dropdown {
+/* Backdrop overlay — transparent, catches outside clicks */
+.bp-select-backdrop {
     display: none;
-    position: absolute;
-    top: 100%;
+    position: fixed;
+    top: 0;
     left: 0;
     right: 0;
-    max-height: 300px;
+    bottom: 0;
+    z-index: 9998;
+}
+
+/* Dropdown panel — fixed position on body, overlays all panes */
+.bp-select-dropdown {
+    display: none;
+    position: fixed;
+    z-index: 9999;
     overflow-y: auto;
     background-color: #1e1e3f;
-    border: 1px solid #3b3b6b;
+    border: 1px solid #6f42c1;
     border-top: none;
-    border-bottom-left-radius: 6px;
-    border-bottom-right-radius: 6px;
-    z-index: 100;
-    box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+    border-radius: 0 0 6px 6px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
 }
 
 .bp-group-label {
-    padding: 6px 10px 3px;
+    padding: 8px 14px 4px;
     font-size: 11px;
     font-weight: bold;
     color: #888;
@@ -465,7 +478,7 @@ select.compact-env-select:disabled {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 4px 10px;
+    padding: 6px 14px;
     cursor: pointer;
     font-size: 13px;
     color: #e0e0e0;

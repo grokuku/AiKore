@@ -39,6 +39,7 @@ export function showToast(message, type = 'success') {
 
 function createBlueprintSelect(selectedValue = '') {
     // --- Custom dropdown that shows blueprint name + category (right-aligned, darker) ---
+    // Uses fixed positioning on body to escape overflow clipping and survive re-renders.
     const wrapper = document.createElement('div');
     wrapper.className = 'blueprint-select';
     wrapper.dataset.field = 'base_blueprint';
@@ -60,10 +61,13 @@ function createBlueprintSelect(selectedValue = '') {
     arrow.textContent = '\u25BC';
     header.appendChild(arrow);
 
-    // Dropdown panel
+    // Dropdown panel (will be moved to document.body when open)
     const dropdown = document.createElement('div');
     dropdown.className = 'bp-select-dropdown';
-    wrapper.appendChild(dropdown);
+
+    // Backdrop overlay (closes dropdown on outside click)
+    const backdrop = document.createElement('div');
+    backdrop.className = 'bp-select-backdrop';
 
     function addOptions(groupLabel, bpList) {
         if (!bpList || bpList.length === 0) return;
@@ -97,6 +101,9 @@ function createBlueprintSelect(selectedValue = '') {
 
             opt.addEventListener('mousedown', (e) => {
                 e.preventDefault(); // Prevent blur on header
+                e.stopPropagation();
+            });
+            opt.addEventListener('click', () => {
                 setValue(filename);
                 closeDropdown();
                 wrapper.dispatchEvent(new Event('change', { bubbles: true }));
@@ -122,14 +129,55 @@ function createBlueprintSelect(selectedValue = '') {
         });
     }
 
+    function positionDropdown() {
+        const rect = header.getBoundingClientRect();
+        const vh = window.innerHeight;
+        const spaceBelow = vh - rect.bottom;
+        const spaceAbove = rect.top;
+
+        const minH = 120;
+        const maxH = Math.min(400, vh * 0.4);
+        let dropdownH;
+
+        if (spaceBelow >= minH) {
+            // Open below
+            dropdown.style.top = rect.bottom + 'px';
+            dropdownH = Math.min(maxH, spaceBelow - 8);
+            dropdown.style.maxHeight = dropdownH + 'px';
+        } else if (spaceAbove >= minH) {
+            // Open above
+            dropdown.style.bottom = (vh - rect.top + 2) + 'px';
+            dropdown.style.top = 'auto';
+            dropdownH = Math.min(maxH, spaceAbove - 8);
+            dropdown.style.maxHeight = dropdownH + 'px';
+        } else {
+            // Not enough space either way — open below anyway with minimal height
+            dropdown.style.top = rect.bottom + 'px';
+            dropdown.style.maxHeight = Math.max(minH, spaceBelow - 8) + 'px';
+        }
+        dropdown.style.left = rect.left + 'px';
+        dropdown.style.width = rect.width + 'px';
+    }
+
     function openDropdown() {
         if (wrapper.classList.contains('disabled')) return;
+        // Move dropdown + backdrop to body for fixed positioning
+        // (avoids overflow clipping and survives table re-renders)
+        if (dropdown.parentNode !== document.body) document.body.appendChild(dropdown);
+        if (backdrop.parentNode !== document.body) document.body.appendChild(backdrop);
         dropdown.style.display = 'block';
+        backdrop.style.display = 'block';
         wrapper.classList.add('open');
+        positionDropdown();
     }
+
     function closeDropdown() {
         dropdown.style.display = 'none';
+        backdrop.style.display = 'none';
         wrapper.classList.remove('open');
+        // Cleanup: remove from body if present
+        if (dropdown.parentNode === document.body) document.body.removeChild(dropdown);
+        if (backdrop.parentNode === document.body) document.body.removeChild(backdrop);
     }
 
     header.addEventListener('mousedown', (e) => {
@@ -147,9 +195,40 @@ function createBlueprintSelect(selectedValue = '') {
     header.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeDropdown();
     });
-    document.addEventListener('mousedown', (e) => {
-        if (!wrapper.contains(e.target)) closeDropdown();
+
+    // Backdrop click closes dropdown
+    backdrop.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        closeDropdown();
     });
+
+    // Reposition on window resize while open
+    window.addEventListener('resize', () => {
+        if (wrapper.classList.contains('open')) positionDropdown();
+    });
+    // Close dropdown if the header scrolls out of view
+    // (since fixed-positioned dropdown won't follow the scroll)
+    const scrollCloseHandler = () => {
+        if (wrapper.classList.contains('open')) {
+            const rect = header.getBoundingClientRect();
+            if (rect.bottom < 0 || rect.top > window.innerHeight) {
+                closeDropdown();
+            }
+        }
+    };
+    // Attach to scrollable parents (the instance pane has overflow: auto)
+    const attachScrollListeners = () => {
+        let el = header.parentElement;
+        while (el) {
+            if (el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight) {
+                el.addEventListener('scroll', scrollCloseHandler, { passive: true });
+            }
+            el = el.parentElement;
+            if (el === document.body) break;
+        }
+    };
+    // We'll attach after the element is in the DOM (use requestAnimationFrame)
+    requestAnimationFrame(attachScrollListeners);
 
     // Expose value/disabled properties like a native select
     Object.defineProperty(wrapper, 'value', {
@@ -163,6 +242,7 @@ function createBlueprintSelect(selectedValue = '') {
             if (v) {
                 wrapper.classList.add('disabled');
                 header.tabIndex = -1;
+                closeDropdown(); // Close if open
             } else {
                 wrapper.classList.remove('disabled');
                 header.tabIndex = 0;
@@ -170,6 +250,22 @@ function createBlueprintSelect(selectedValue = '') {
         },
         configurable: true
     });
+
+    // Cleanup: close overlay if wrapper is removed from DOM (e.g. during table re-render)
+    let _checkTimer = null;
+    const _origClose = closeDropdown;
+    closeDropdown = function() {
+        if (_checkTimer) { clearInterval(_checkTimer); _checkTimer = null; }
+        _origClose();
+    };
+    const _origOpen = openDropdown;
+    openDropdown = function() {
+        _origOpen();
+        // Periodically check if wrapper is still in the DOM
+        _checkTimer = setInterval(() => {
+            if (!document.body.contains(wrapper)) closeDropdown();
+        }, 400);
+    };
 
     return wrapper;
 }

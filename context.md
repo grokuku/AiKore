@@ -427,6 +427,8 @@ Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_me
 **Files**: `system.py` (backend), `ui.js` (frontend), `instances.css` (styling)
 **Description**: The native `<select>` for blueprints has been replaced with a custom dropdown that shows each blueprint's name on the left and its `aikore.category` metadata value (e.g., "Image Generation", "Training", "Audio / TTS") right-aligned in a darker color. The backend (`GET /api/system/blueprints`) now returns objects `{filename, category}` instead of plain strings, parsing the `### AIKORE-METADATA ###` block from each `.sh` file. The custom dropdown exposes the same `.value`, `.disabled`, and event interface (`change`, `input`, `focus`) as a native `<select>` so all existing dirty-detection and save/revert logic works without changes. The dropdown has Stock/Custom group headers, hover highlighting, and a selected state.
 
+**Dropdown overlay behavior**: The dropdown panel is appended to `document.body` with `position: fixed` when opened, so it overlays all panes and is not clipped by parent `overflow`. Its width matches the trigger button's width, and its `max-height` is calculated dynamically based on available viewport space (capped at 40vh) — opening below the button, or above if there's not enough space below. A transparent `backdrop` div catches outside clicks. The dropdown closes automatically when: (1) an option is clicked, (2) the backdrop is clicked, (3) Escape is pressed, (4) the trigger scrolls out of view, or (5) the wrapper is removed from the DOM (table re-render).
+
 ---
 
 ## 11. Pending Features (from features.md)
