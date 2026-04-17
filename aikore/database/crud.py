@@ -7,6 +7,22 @@ from . import models
 from ..schemas import instance as schemas
 from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR
 from ..core.blueprint_parser import get_blueprint_venv_path
+from ..database.session import SessionLocal
+import stat
+
+def _on_rm_error(func, path, exc):
+    """
+    Error handler for shutil.rmtree (Python 3.12+ signature).
+    If the error is due to read-only access, change the file mode and retry.
+    """
+    try:
+        if not os.access(path, os.W_OK):
+            os.chmod(path, stat.S_IWUSR)
+            func(path)
+        else:
+            raise exc
+    except Exception as e:
+        print(f"[Deletion-Error] Failed to force delete '{path}': {e}")
 
 def get_instance_by_name(db: Session, name: str):
     """
@@ -124,78 +140,80 @@ def create_copy_placeholder(db: Session, source_instance_id: int, new_name: str)
     
     return db_instance
 
-def process_background_copy(db: Session, new_instance_id: int, source_instance_id: int):
+def process_background_copy(new_instance_id: int, source_instance_id: int):
     """
     STEP 2: Heavy lifting (Filesystem & Conda) running in background.
+    Creates its own DB session to avoid DetachedInstanceError.
     """
     print(f"[Background] Starting copy process for instance ID {new_instance_id}...")
     
-    new_instance = get_instance(db, new_instance_id)
-    source_instance = get_instance(db, source_instance_id)
-    
-    if not new_instance or not source_instance:
-        print("[Background] Error: Instance record missing.")
-        return
+    with SessionLocal() as db:
+        new_instance = get_instance(db, new_instance_id)
+        source_instance = get_instance(db, source_instance_id)
+        
+        if not new_instance or not source_instance:
+            print("[Background] Error: Instance record missing.")
+            return
 
-    source_dir = os.path.join(INSTANCES_DIR, source_instance.name)
-    clone_dir = os.path.join(INSTANCES_DIR, new_instance.name)
-    
-    try:
-        # 1. Get venv path info
-        venv_path_str = get_blueprint_venv_path(source_instance.base_blueprint)
-        venv_dir_name = os.path.normpath(venv_path_str).replace('.', '').strip(os.sep)
+        source_dir = os.path.join(INSTANCES_DIR, source_instance.name)
+        clone_dir = os.path.join(INSTANCES_DIR, new_instance.name)
+        
+        try:
+            # 1. Get venv path info
+            venv_path_str = get_blueprint_venv_path(source_instance.base_blueprint)
+            venv_dir_name = os.path.normpath(venv_path_str).replace('.', '').strip(os.sep)
 
-        # 2. Filesystem Copy (Symlinks preserved!)
-        print(f"[Background] Copying files from {source_dir} to {clone_dir}...")
-        if os.path.exists(clone_dir):
-             shutil.rmtree(clone_dir) # Safety cleanup if retrying
-             
-        shutil.copytree(
-            source_dir, 
-            clone_dir, 
-            ignore=shutil.ignore_patterns(venv_dir_name), 
-            symlinks=True
-        )
-
-        # 3. Clone Conda Environment
-        source_env_path = os.path.join(source_dir, venv_dir_name)
-        clone_env_path = os.path.join(clone_dir, venv_dir_name)
-
-        if os.path.isdir(source_env_path):
-            print(f"[Background] Cloning Conda environment...")
-            subprocess.run(["conda", "create", "--prefix", clone_env_path, "--clone", source_env_path, "-y"],
-                capture_output=True, text=True, check=True
+            # 2. Filesystem Copy (Symlinks preserved!)
+            print(f"[Background] Copying files from {source_dir} to {clone_dir}...")
+            if os.path.exists(clone_dir):
+                 shutil.rmtree(clone_dir, onexc=_on_rm_error) # Safety cleanup if retrying
+                 
+            shutil.copytree(
+                source_dir, 
+                clone_dir, 
+                ignore=shutil.ignore_patterns(venv_dir_name), 
+                symlinks=True
             )
 
-        # 4. Update launch.sh
-        launch_script_path = os.path.join(clone_dir, "launch.sh")
-        if os.path.exists(launch_script_path):
-            with open(launch_script_path, 'r') as f:
-                script_content = f.read()
-            
-            old_base_path = f"/config/instances/{source_instance.name}"
-            new_base_path = f"/config/instances/{new_instance.name}"
-            updated_content = script_content.replace(old_base_path, new_base_path)
-            
-            with open(launch_script_path, 'w') as f:
-                f.write(updated_content)
+            # 3. Clone Conda Environment
+            source_env_path = os.path.join(source_dir, venv_dir_name)
+            clone_env_path = os.path.join(clone_dir, venv_dir_name)
 
-        # SUCCESS: Update status to 'stopped'
-        new_instance.status = "stopped"
-        db.commit()
-        print(f"[Background] Clone successful for '{new_instance.name}'.")
+            if os.path.isdir(source_env_path):
+                print(f"[Background] Cloning Conda environment...")
+                subprocess.run(["conda", "create", "--prefix", clone_env_path, "--clone", source_env_path, "-y"],
+                    capture_output=True, text=True, check=True
+                )
 
-    except Exception as e:
-        print(f"[Background] CRITICAL ERROR cloning instance: {e}")
-        traceback.print_exc()
-        
-        # FAILURE: Update status to 'error'
-        new_instance.status = "error"
-        db.commit()
-        
-        # Cleanup partial files
-        if os.path.isdir(clone_dir):
-            shutil.rmtree(clone_dir, ignore_errors=True)
+            # 4. Update launch.sh
+            launch_script_path = os.path.join(clone_dir, "launch.sh")
+            if os.path.exists(launch_script_path):
+                with open(launch_script_path, 'r') as f:
+                    script_content = f.read()
+                
+                old_base_path = f"/config/instances/{source_instance.name}"
+                new_base_path = f"/config/instances/{new_instance.name}"
+                updated_content = script_content.replace(old_base_path, new_base_path)
+                
+                with open(launch_script_path, 'w') as f:
+                    f.write(updated_content)
+
+            # SUCCESS: Update status to 'stopped'
+            new_instance.status = "stopped"
+            db.commit()
+            print(f"[Background] Clone successful for '{new_instance.name}'.")
+
+        except Exception as e:
+            print(f"[Background] CRITICAL ERROR cloning instance: {e}")
+            traceback.print_exc()
+            
+            # FAILURE: Update status to 'error'
+            new_instance.status = "error"
+            db.commit()
+            
+            # Cleanup partial files
+            if os.path.isdir(clone_dir):
+                shutil.rmtree(clone_dir, onexc=_on_rm_error)
 
 def instantiate_instance(db: Session, source_instance_id: int, new_name: str):
     """

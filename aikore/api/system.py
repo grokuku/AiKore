@@ -15,7 +15,7 @@ import re
 
 from ..core.process_manager import BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR
 from ..database import crud
-from ..database.session import SessionLocal
+from ..database.session import SessionLocal, get_db
 
 router = APIRouter(
     prefix="/api/system",
@@ -94,6 +94,10 @@ def get_system_stats():
     """
     Retrieves system and GPU statistics.
     """
+    # cpu_percent(interval=None) returns 0 on first call.
+    # We call it once with a tiny interval to seed the internal counter.
+    psutil.cpu_percent(interval=0.1)
+    
     stats = {
         "cpu_percent": psutil.cpu_percent(interval=None),
         "ram": {
@@ -169,12 +173,6 @@ def debug_nginx():
         "locations_d": locations_content,
     }
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.get("/available-ports")
 def get_available_ports(db: Session = Depends(get_db)):
@@ -194,7 +192,12 @@ def get_available_ports(db: Session = Depends(get_db)):
         )
 
     instances = crud.get_instances(db, limit=1000) # Get all instances
-    used_ports = {instance.port for instance in instances if instance.port is not None}
+    used_ports = set()
+    for instance in instances:
+        if instance.port is not None:
+            used_ports.add(instance.port)
+        if instance.persistent_port is not None:
+            used_ports.add(instance.persistent_port)
     
     available_ports = sorted(list(all_possible_ports - used_ports))
     

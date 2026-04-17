@@ -199,14 +199,33 @@ async function initializeApp() {
 
     showWelcomeScreen();
 
-    // System stats polling (separate loop)
-    setInterval(async () => {
-        const stats = await getSystemStats();
-        updateSystemStats(stats);
+    // System stats polling (pauses when tab is hidden)
+    let statsIntervalId = null;
+    const startStatsPolling = () => {
+        if (statsIntervalId) return;
+        statsIntervalId = setInterval(async () => {
+            const stats = await getSystemStats();
+            updateSystemStats(stats);
 
-        // --- NEW: Polling builder status ---
-        renderBuilderStatus();
-    }, 2000);
+            // --- NEW: Polling builder status ---
+            renderBuilderStatus();
+        }, 2000);
+    };
+    const stopStatsPolling = () => {
+        if (statsIntervalId) {
+            clearInterval(statsIntervalId);
+            statsIntervalId = null;
+        }
+    };
+    startStatsPolling();
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopStatsPolling();
+        } else {
+            startStatsPolling();
+            getSystemStats().then(updateSystemStats); // Immediately refresh on return
+        }
+    });
 
     DOM.toolsCloseBtn.addEventListener('click', showWelcomeScreen);
 

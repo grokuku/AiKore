@@ -26,8 +26,9 @@ except ImportError:
 
 router = APIRouter(prefix="/api/builder", tags=["Builder"])
 
+from aikore.config import INSTANCES_DIR
+
 # --- CONFIGURATION ---
-INSTANCES_DIR = "/config/instances"
 WHEELS_DIR = os.path.join(INSTANCES_DIR, ".wheels")
 MANIFEST_FILE = os.path.join(WHEELS_DIR, "manifest.json")
 
@@ -41,6 +42,13 @@ os.makedirs(WHEELS_DIR, exist_ok=True)
 # --- VERSIONS MAPPING ---
 # Strict mapping to ensure successful builds. 
 TORCH_VISION_MAP = {
+    "2.11.0": "0.22.0",
+    "2.10.0": "0.21.0",
+    "2.9.1": "0.20.1",
+    "2.9.0": "0.20.0",
+    "2.8.0": "0.19.1",
+    "2.7.0": "0.19.0",
+    "2.6.0": "0.18.0",
     "2.5.1": "0.20.1",
     "2.4.1": "0.19.1",
     "2.4.0": "0.19.0",
@@ -481,6 +489,12 @@ async def build_websocket(websocket: WebSocket):
         # Environment name includes torch version now to distinguish them
         safe_torch_ver = requested_torch_ver.replace(".", "")
         env_name = f"builder_py{python_ver.replace('.','')}_{cuda_ver}_pt{safe_torch_ver}"
+        
+        # --- SECURITY: Validate env_name to prevent shell injection ---
+        if not re.match(r'^[a-zA-Z0-9_-]+$', env_name):
+            await websocket.send_text(f"\x1b[31m[ERROR] Invalid environment name '{env_name}'. Only alphanumeric characters, hyphens and underscores are allowed.\x1b[0m\r\n")
+            await websocket.close()
+            return
         
         # Log immediately to confirm connection
         await websocket.send_text(f"\x1b[34m[INFO] Initializing build process...\x1b[0m\r\n")

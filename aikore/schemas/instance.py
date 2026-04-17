@@ -37,6 +37,9 @@ class InstanceUpdate(BaseModel):
     python_version: str | None = None
     cuda_version: str | None = None
     torch_version: str | None = None
+    port: int | None = None
+    persistent_port: int | None = None
+    persistent_display: int | None = None
 
 # --- Read Schema ---
 # This schema is used when returning instance data from the API.

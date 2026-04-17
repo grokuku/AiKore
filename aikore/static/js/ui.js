@@ -484,7 +484,11 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     persistentModeCheckbox.dataset.field = 'persistent_mode';
     row.insertCell().appendChild(persistentModeCheckbox);
 
-    row.insertCell().innerHTML = `<span class="status status-${instance.status.toLowerCase()}">${instance.status}</span>`;
+    const statusCell = row.insertCell();
+    const statusSpan = document.createElement('span');
+    statusSpan.className = `status status-${instance.status.toLowerCase()}`;
+    statusSpan.textContent = instance.status;
+    statusCell.appendChild(statusSpan);
 
     // Hostname
     const hostnameCell = row.insertCell();

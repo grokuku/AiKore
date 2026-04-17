@@ -3,9 +3,7 @@ import sys
 import shutil
 import time
 from sqlalchemy import create_engine, inspect, Column, Integer, String, Boolean, text
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.ext.declarative import declarative_base
-
+from sqlalchemy.orm import sessionmaker, Session, DeclarativeBase
 from . import models
 from .session import SessionLocal, DATABASE_URL, connect_args
 
@@ -45,9 +43,12 @@ def _perform_v1_to_v2_migration():
     except Exception as e:
         print(f"[DB Migration] FATAL: Could not back up database. Aborting. Error: {e}", file=sys.stderr)
         sys.exit(1)
-        
-    Base_v1 = declarative_base()
-    class Instance_v1(Base_v1):
+
+    # --- Old Schema (V1) ---
+    class _BaseV1(DeclarativeBase):
+        pass
+
+    class Instance_v1(_BaseV1):
         __tablename__ = "instances"
         id = Column(Integer, primary_key=True, index=True)
         name = Column(String, unique=True, index=True, nullable=False)
@@ -69,9 +70,12 @@ def _perform_v1_to_v2_migration():
         os.remove(db_path)
     
     temp_new_engine = create_engine(DATABASE_URL, connect_args=connect_args)
-    # Create tables for a temporary V2 schema
-    Base_v2 = declarative_base()
-    class Instance_v2(Base_v2):
+
+    # --- New Schema (V2) ---
+    class _BaseV2(DeclarativeBase):
+        pass
+
+    class Instance_v2(_BaseV2):
         __tablename__ = "instances"
         id = Column(Integer, primary_key=True, index=True)
         name = Column(String, unique=True, index=True, nullable=False)
@@ -86,12 +90,12 @@ def _perform_v1_to_v2_migration():
         persistent_port = Column(Integer, nullable=True)
         persistent_display = Column(Integer, nullable=True)
     
-    class AikoreMeta_v2(Base_v2):
+    class AikoreMeta_v2(_BaseV2):
         __tablename__ = "aikore_meta"
         key = Column(String, primary_key=True, index=True)
         value = Column(String, nullable=False)
 
-    Base_v2.metadata.create_all(bind=temp_new_engine)
+    _BaseV2.metadata.create_all(bind=temp_new_engine)
     NewSession = sessionmaker(autocommit=False, autoflush=False, bind=temp_new_engine)
     
     try:
@@ -150,9 +154,12 @@ def _perform_v2_to_v3_migration():
     except Exception as e:
         print(f"[DB Migration] FATAL: Could not back up database. Aborting. Error: {e}", file=sys.stderr)
         sys.exit(1)
-        
-    Base_v2 = declarative_base()
-    class Instance_v2(Base_v2):
+
+    # --- Old Schema (V2) ---
+    class _BaseV2_Old(DeclarativeBase):
+        pass
+
+    class Instance_v2(_BaseV2_Old):
         __tablename__ = "instances"
         id = Column(Integer, primary_key=True, index=True)
         name = Column(String, unique=True, index=True, nullable=False)
@@ -174,12 +181,13 @@ def _perform_v2_to_v3_migration():
     if os.path.exists(db_path):
         os.remove(db_path)
     
-    # We use the main `models` module here because it represents the target schema (V3)
-    # at the time this migration was written.
     temp_new_engine = create_engine(DATABASE_URL, connect_args=connect_args)
-    
-    Base_v3 = declarative_base()
-    class Instance_v3(Base_v3):
+
+    # --- New Schema (V3) ---
+    class _BaseV3(DeclarativeBase):
+        pass
+
+    class Instance_v3(_BaseV3):
         __tablename__ = "instances"
         id = Column(Integer, primary_key=True, index=True)
         name = Column(String, unique=True, index=True, nullable=False)
@@ -195,12 +203,12 @@ def _perform_v2_to_v3_migration():
         persistent_port = Column(Integer, nullable=True)
         persistent_display = Column(Integer, nullable=True)
 
-    class AikoreMeta_v3(Base_v3):
+    class AikoreMeta_v3(_BaseV3):
         __tablename__ = "aikore_meta"
         key = Column(String, primary_key=True, index=True)
         value = Column(String, nullable=False)
 
-    Base_v3.metadata.create_all(bind=temp_new_engine)
+    _BaseV3.metadata.create_all(bind=temp_new_engine)
     NewSession = sessionmaker(autocommit=False, autoflush=False, bind=temp_new_engine)
     
     try:
@@ -260,9 +268,12 @@ def _perform_v3_to_v4_migration():
     except Exception as e:
         print(f"[DB Migration] FATAL: Could not back up database. Aborting. Error: {e}", file=sys.stderr)
         sys.exit(1)
-        
-    Base_v3 = declarative_base()
-    class Instance_v3(Base_v3):
+
+    # --- Old Schema (V3) ---
+    class _BaseV3_Old(DeclarativeBase):
+        pass
+
+    class Instance_v3(_BaseV3_Old):
         __tablename__ = "instances"
         id = Column(Integer, primary_key=True, index=True)
         name = Column(String, unique=True, index=True, nullable=False)

@@ -1,5 +1,6 @@
 import os
 import glob
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -13,24 +14,16 @@ from .core import process_manager
 # --- Run Database Migration Check ---
 migration.run_db_migration()
 
+from .config import INSTANCES_DIR
+
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-INSTANCES_DIR = "/config/instances" # Define instances dir for log cleanup
 
-app = FastAPI(
-    title="AiKore API",
-    description="Backend API for managing AI WebUI instances.",
-    version="0.1.0",
-)
-
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """
-    Actions to perform on application startup.
-    - Initializes NVML for GPU monitoring.
-    - Resets the status of all instances to 'stopped'.
-    - Clears all old log files.
-    - Autostarts instances marked for it.
+    Modern lifespan handler for startup/shutdown events (replaces deprecated on_event).
     """
+    # === STARTUP ===
     # 0. Initialize NVML
     try:
         nvmlInit()
@@ -76,17 +69,21 @@ def startup_event():
     finally:
         db.close()
 
-@app.on_event("shutdown")
-def shutdown_event():
-    """
-    Actions to perform on application shutdown.
-    - Shuts down NVML.
-    """
+    yield  # <-- Application runs here
+
+    # === SHUTDOWN ===
     try:
         nvmlShutdown()
         print("[Shutdown] NVML shut down successfully.")
     except NVMLError:
         pass # Ignore if it was never initialized or already shut down
+
+app = FastAPI(
+    title="AiKore API",
+    description="Backend API for managing AI WebUI instances.",
+    version="0.1.0",
+    lifespan=lifespan,
+)
 
 # Include the API routers
 app.include_router(instances.router)

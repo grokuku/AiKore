@@ -354,6 +354,22 @@ export function setupMainEventListeners() {
         hideToolsMenu();
     });
 
+    DOM.editorSaveCustomBtn.addEventListener('click', () => {
+        const { instanceId, instanceName, fileType, baseBlueprint } = state.editorState;
+        if (!instanceId) {
+            showToast('No file is currently being edited.', 'error');
+            return;
+        }
+
+        // Pre-fill the input with the base blueprint name as a suggestion
+        if (baseBlueprint) {
+            DOM.blueprintFilenameInput.value = baseBlueprint.replace('.sh', '_custom.sh');
+        } else {
+            DOM.blueprintFilenameInput.value = '';
+        }
+        DOM.saveBlueprintModal.classList.remove('hidden');
+    });
+
     DOM.editorUpdateBtn.addEventListener('click', () => {
         const { instanceId } = state.editorState;
         if (!instanceId) return;

@@ -1,6 +1,5 @@
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 # Define the path to the SQLite database file within the persistent /config volume.
 SQLALCHEMY_DATABASE_URL = "sqlite:////config/aikore.db"
@@ -17,5 +16,14 @@ engine = create_engine(
 # Each instance of the SessionLocal class will be a new database session.
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# This Base class will be used by our ORM models to inherit from.
-Base = declarative_base()
+# Modern SQLAlchemy 2.0+ base class
+class Base(DeclarativeBase):
+    pass
+
+# Dependency for FastAPI endpoints to get a DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

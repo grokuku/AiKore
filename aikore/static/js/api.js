@@ -176,7 +176,7 @@ export async function fetchTorchVersions(cudaVer) {
 export async function fetchAvailablePythonVersions() {
     try {
         const response = await fetch('/api/builder/versions/python');
-        if (row.ok) return await response.json();
+        if (response.ok) return await response.json();
     } catch (e) {
         console.error("Discovery failed", e);
     }

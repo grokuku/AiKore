@@ -23,11 +23,14 @@ from aikore.database import models
 from aikore.database.session import SessionLocal
 
 # --- CONSTANTS ---
-INSTANCES_DIR = "/config/instances"
-OUTPUTS_DIR = "/config/outputs"
-BLUEPRINTS_DIR = "/opt/sd-install/blueprints"
-CUSTOM_BLUEPRINTS_DIR = "/config/custom_blueprints" # NEW: Persistent location for user blueprints
-SCRIPTS_DIR = "/opt/sd-install/scripts"
+from aikore.config import INSTANCES_DIR, OUTPUTS_DIR, BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR, SCRIPTS_DIR
+
+# Keep local references for backward compatibility in this module
+INSTANCES_DIR = INSTANCES_DIR
+OUTPUTS_DIR = OUTPUTS_DIR
+BLUEPRINTS_DIR = BLUEPRINTS_DIR
+CUSTOM_BLUEPRINTS_DIR = CUSTOM_BLUEPRINTS_DIR
+SCRIPTS_DIR = SCRIPTS_DIR
 NGINX_SITES_AVAILABLE = "/etc/nginx/locations.d"
 NGINX_RELOAD_FLAG = Path("/run/aikore/nginx_reload.flag")
 

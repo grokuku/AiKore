@@ -145,21 +145,40 @@ async function renderWheelsTable() {
 
         wheels.forEach(w => {
             const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td title="${w.filename}">${w.filename}</td>
-                <td>${w.cuda_arch}</td>
-                <td>${w.cuda_ver || 'N/A'}</td>
-                <td>${w.torch_ver || 'N/A'}</td>
-                <td>${w.size_mb} MB</td>
-                <td>${w.created_at}</td>
-                <td class="wheel-actions">
-                    <button class="btn-icon btn-download" title="Download">⬇</button>
-                    <button class="btn-icon btn-delete" title="Delete">🗑</button>
-                </td>
-            `;
-            tr.querySelector('.btn-delete').onclick = () => deleteWheel(w.filename);
-            tr.querySelector('.btn-download').onclick = () => downloadWheel(w.filename);
-
+            const nameTd = document.createElement('td');
+            nameTd.textContent = w.filename;
+            nameTd.title = w.filename;
+            const archTd = document.createElement('td');
+            archTd.textContent = w.cuda_arch;
+            const cudaTd = document.createElement('td');
+            cudaTd.textContent = w.cuda_ver || 'N/A';
+            const torchTd = document.createElement('td');
+            torchTd.textContent = w.torch_ver || 'N/A';
+            const sizeTd = document.createElement('td');
+            sizeTd.textContent = `${w.size_mb} MB`;
+            const dateTd = document.createElement('td');
+            dateTd.textContent = w.created_at;
+            const actionsTd = document.createElement('td');
+            actionsTd.className = 'wheel-actions';
+            const dlBtn = document.createElement('button');
+            dlBtn.className = 'btn-icon btn-download';
+            dlBtn.title = 'Download';
+            dlBtn.textContent = '⬇';
+            dlBtn.addEventListener('click', () => downloadWheel(w.filename));
+            const delBtn = document.createElement('button');
+            delBtn.className = 'btn-icon btn-delete';
+            delBtn.title = 'Delete';
+            delBtn.textContent = '🗑';
+            delBtn.addEventListener('click', () => deleteWheel(w.filename));
+            actionsTd.appendChild(dlBtn);
+            actionsTd.appendChild(delBtn);
+            tr.appendChild(nameTd);
+            tr.appendChild(archTd);
+            tr.appendChild(cudaTd);
+            tr.appendChild(torchTd);
+            tr.appendChild(sizeTd);
+            tr.appendChild(dateTd);
+            tr.appendChild(actionsTd);
             tbody.appendChild(tr);
         });
     } catch (e) {
@@ -553,8 +572,8 @@ async function loadInstanceWheels(instanceId) {
         renderManagerTables();
 
     } catch (e) {
-        document.getElementById('wheels-available-body').innerHTML = `<tr><td colspan="3" style="color:red">Error: ${e.message}</td></tr>`;
-        document.getElementById('wheels-installed-body').innerHTML = `<tr><td colspan="3" style="color:red">Error: ${e.message}</td></tr>`;
+        document.getElementById('wheels-available-body').innerHTML = `<tr><td colspan="3" style="color:red">Error: ${e.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td></tr>`;
+        document.getElementById('wheels-installed-body').innerHTML = `<tr><td colspan="3" style="color:red">Error: ${e.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td></tr>`;
     }
 }
 
@@ -581,15 +600,25 @@ function renderManagerTables() {
         availableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888;">No global wheels available.</td></tr>';
     } else {
         availableWheels.forEach(w => {
-            availableBody.innerHTML += `
-                <tr>
-                    <td title="${w.filename}">${w.filename}</td>
-                    <td style="text-align:right;">${w.size_mb} MB</td>
-                    <td class="action-cell">
-                        <button class="btn-action install" onclick="window.toggleWheelState('${w.filename}', true)" title="Install">➕</button>
-                    </td>
-                </tr>
-            `;
+            const tr = document.createElement('tr');
+            const nameTd = document.createElement('td');
+            nameTd.textContent = w.filename;
+            nameTd.title = w.filename;
+            const sizeTd = document.createElement('td');
+            sizeTd.style.textAlign = 'right';
+            sizeTd.textContent = `${w.size_mb} MB`;
+            const actTd = document.createElement('td');
+            actTd.className = 'action-cell';
+            const installBtn = document.createElement('button');
+            installBtn.className = 'btn-action install';
+            installBtn.title = 'Install';
+            installBtn.textContent = '➕';
+            installBtn.addEventListener('click', () => window.toggleWheelState(w.filename, true));
+            actTd.appendChild(installBtn);
+            tr.appendChild(nameTd);
+            tr.appendChild(sizeTd);
+            tr.appendChild(actTd);
+            availableBody.appendChild(tr);
         });
     }
 
@@ -597,15 +626,25 @@ function renderManagerTables() {
         installedBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888;">No wheels currently installed.</td></tr>';
     } else {
         installedWheels.forEach(w => {
-            installedBody.innerHTML += `
-                <tr>
-                    <td title="${w.filename}">${w.filename}</td>
-                    <td style="text-align:right;">${w.size_mb} MB</td>
-                    <td class="action-cell">
-                        <button class="btn-action remove" onclick="window.toggleWheelState('${w.filename}', false)" title="Remove">❌</button>
-                    </td>
-                </tr>
-            `;
+            const tr = document.createElement('tr');
+            const nameTd = document.createElement('td');
+            nameTd.textContent = w.filename;
+            nameTd.title = w.filename;
+            const sizeTd = document.createElement('td');
+            sizeTd.style.textAlign = 'right';
+            sizeTd.textContent = `${w.size_mb} MB`;
+            const actTd = document.createElement('td');
+            actTd.className = 'action-cell';
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'btn-action remove';
+            removeBtn.title = 'Remove';
+            removeBtn.textContent = '❌';
+            removeBtn.addEventListener('click', () => window.toggleWheelState(w.filename, false));
+            actTd.appendChild(removeBtn);
+            tr.appendChild(nameTd);
+            tr.appendChild(sizeTd);
+            tr.appendChild(actTd);
+            installedBody.appendChild(tr);
         });
     }
 }

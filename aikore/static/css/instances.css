@@ -179,8 +179,9 @@ tbody.instance-group tr:last-child td {
 
 /* Bootstrap Success Green */
 .status-error {
-    background-color: #dc3545;
-    color: white;
+    background-color: #8b0000;
+    color: #ffcccc;
+    border: 1px solid #dc3545;
 }
 
 /* NEW STATUS FOR BACKGROUND CLONING */

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List
 import os
 import shutil
@@ -7,13 +8,12 @@ import stat  # NEW: Needed for permission handling
 import asyncio
 import psutil
 import json
-import subprocess
 import glob 
 import re # NEW: For regex
 from pydantic import BaseModel
 
 from ..database import crud, models
-from ..database.session import SessionLocal
+from ..database.session import SessionLocal, get_db
 from ..schemas import instance as schemas
 from ..core import process_manager
 from ..core.process_manager import INSTANCES_DIR, BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR, _find_free_port, _find_free_display
@@ -33,11 +33,6 @@ router = APIRouter(
 class FileContent(BaseModel):
     content: str
 
-# NEW: System Information Schema
-class SystemInfo(BaseModel):
-    gpu_count: int
-    gpus: List[dict] = [] # To provide more details if needed
-
 # NEW: Wheel Management Schemas
 class InstanceWheel(BaseModel):
     filename: str
@@ -46,13 +41,6 @@ class InstanceWheel(BaseModel):
     
 class WheelsSyncRequest(BaseModel):
     filenames: List[str] # List of filenames to KEEP/INSTALL
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 def get_instance_file_path(db: Session, db_instance: models.Instance):
     """
@@ -80,27 +68,6 @@ def get_instance_file_path(db: Session, db_instance: models.Instance):
     blueprint_file_path = custom_blueprint_path if os.path.exists(custom_blueprint_path) else stock_blueprint_path
         
     return instance_file_path, blueprint_file_path
-
-# NEW: Endpoint to provide system information like GPU count
-@router.get("/system/info", response_model=SystemInfo, tags=["System"])
-def get_system_info():
-    """
-    Provides general system information, such as the number and details of available GPUs.
-    """
-    gpus_info = []
-    try:
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=index,name", "--format=csv,noheader"],
-            capture_output=True, text=True, check=True
-        )
-        for line in result.stdout.strip().split('\n'):
-            if not line: continue
-            parts = line.split(', ')
-            gpus_info.append({"id": int(parts[0]), "name": parts[1]})
-    except (FileNotFoundError, subprocess.CalledProcessError, ValueError):
-        pass # Handles cases where nvidia-smi is not found or fails
-    
-    return {"gpu_count": len(gpus_info), "gpus": gpus_info}
 
 def _allocate_ports(db: Session, persistent_mode: bool, requested_port: int | None, instance_to_exclude_id: int | None = None) -> dict:
     """
@@ -212,8 +179,8 @@ def copy_instance(
         )
         
         # 2. Launch the heavy work in background
-        # We pass the ID, not the object, to avoid session detachment issues in threads
-        background_tasks.add_task(crud.process_background_copy, db, new_instance.id, instance_id)
+        # We pass IDs only, NOT the db session, to avoid DetachedInstanceError
+        background_tasks.add_task(crud.process_background_copy, new_instance.id, instance_id)
         
         return new_instance
         
@@ -317,7 +284,14 @@ def update_instance_details(
                 rebuild_trigger_path = os.path.join(new_dir, ".rebuild-env")
                 with open(rebuild_trigger_path, 'w') as f: f.write('')
         except OSError as e:
-            if 'new_dir' in locals() and not os.path.isdir(old_dir) and os.path.isdir(new_dir): os.rename(new_dir, old_dir)
+            # Rollback: only if rename succeeded but something else failed,
+            # or if the rename partially moved the directory.
+            try:
+                if os.path.isdir(new_dir) and not os.path.isdir(old_dir):
+                    os.rename(new_dir, old_dir)
+                    print(f"[API] Rolled back directory rename for '{original_name}'.")
+            except OSError as rollback_err:
+                print(f"[API-CRITICAL] Rollback failed for '{original_name}': {rollback_err}")
             raise HTTPException(status_code=500, detail=f"Failed to rename instance directory: {e}")
 
     # 2. Blueprint Change
@@ -371,7 +345,7 @@ def update_instance_details(
         if target_public_port is not None and start_port <= target_public_port <= end_port:
             conflict = db.query(models.Instance).filter(
                 models.Instance.id != db_instance.id,
-                ((models.Instance.port == target_public_port) | (models.Instance.persistent_port == target_public_port))
+                or_(models.Instance.port == target_public_port, models.Instance.persistent_port == target_public_port)
             ).first()
             if conflict:
                  raise HTTPException(status_code=400, detail=f"Port {target_public_port} is already in use by instance '{conflict.name}'.")
@@ -409,12 +383,9 @@ def update_instance_details(
     # --- Finalize ---
     final_instance_update = schemas.InstanceUpdate(**final_update_data)
     
-    # Force direct assignment to ensure fields like persistent_port are updated even if schema filters them
-    for field, value in final_update_data.items():
-        if hasattr(db_instance, field):
-            setattr(db_instance, field, value)
-    
-    # We still use the update function for standard behavior, but the important part was above
+    # Use crud.update_instance as the single source of truth for the commit
+    # It uses model_dump(exclude_unset=True), which now correctly includes
+    # port, persistent_port, and persistent_display since they were added to InstanceUpdate.
     updated_instance = crud.update_instance(db, instance_id=db_instance.id, instance_update=final_instance_update)
     db.refresh(updated_instance)
 
@@ -521,19 +492,19 @@ def version_check(instance_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to run version check: {str(e)}")
 
 # --- HELPER FUNCTION FOR BACKGROUND DELETION ---
-def _on_rm_error(func, path, exc_info):
+def _on_rm_error(func, path, exc):
     """
-    Error handler for shutil.rmtree.
+    Error handler for shutil.rmtree (Python 3.12+ signature).
     If the error is due to read-only access, change the file mode and retry.
     """
     try:
         # Check if the file is read-only
         if not os.access(path, os.W_OK):
-            os.chmod(path, stat.S_IWRITE)
+            os.chmod(path, stat.S_IWUSR)
             func(path)
         else:
             # Re-raise the original exception if it wasn't a permission issue
-            raise exc_info[1]
+            raise exc
     except Exception as e:
         print(f"[Deletion-Error] Failed to force delete '{path}': {e}")
 
@@ -550,13 +521,13 @@ def _background_file_deletion(instance_name: str, mode: str, overwrite: bool):
             if os.path.isdir(instance_dir):
                 print(f"[Background-Delete] Permanently deleting '{instance_name}'...")
                 # Use the new robust error handler
-                shutil.rmtree(instance_dir, onerror=_on_rm_error)
+                shutil.rmtree(instance_dir, onexc=_on_rm_error)
         elif mode == "trash":
             if os.path.isdir(instance_dir):
                 os.makedirs(TRASH_DIR, exist_ok=True)
                 if os.path.exists(trash_path) and overwrite:
                     print(f"[Background-Delete] Overwriting trashcan entry for '{instance_name}'...")
-                    shutil.rmtree(trash_path, onerror=_on_rm_error)
+                    shutil.rmtree(trash_path, onexc=_on_rm_error)
                 
                 # Check again if destination exists
                 if not os.path.exists(trash_path):
@@ -579,8 +550,8 @@ def delete_instance(
     db_instance = crud.get_instance(db, instance_id=instance_id)
     if not db_instance:
         raise HTTPException(status_code=404, detail="Instance not found")
-    if db_instance.status != "stopped":
-        raise HTTPException(status_code=400, detail="Cannot delete an active instance. Please stop it first.")
+    if db_instance.status not in ("stopped", "error", "installing"):
+        raise HTTPException(status_code=400, detail=f"Cannot delete an instance in '{db_instance.status}' status. Please stop it first.")
 
     # --- Orphaned Satellite Protection ---
     children_count = db.query(models.Instance).filter(models.Instance.parent_instance_id == db_instance.id).count()
@@ -712,6 +683,10 @@ async def instance_terminal_endpoint(instance_id: int, websocket: WebSocket, db:
     if not db_instance:
         await websocket.close(code=4004, reason="Instance not found")
         return
+    
+    # Close the DB session immediately — we don't need it for the WebSocket lifetime
+    # Holding it open would lock SQLite writes for the entire connection duration
+    db.close()
     
     await websocket.accept()
 

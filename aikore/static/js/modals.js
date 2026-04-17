@@ -123,58 +123,32 @@ export function setupModalEventHandlers() {
     });
 
     DOM.updateConfirmModal.addEventListener('click', async (e) => {
+        // Only handle the cancel action here to revert UI changes.
+        // The confirm action is handled in eventHandlers.js via the batched pendingUpdates flow.
         const action = e.target.id;
         if (action === 'update-confirm-btn-cancel') {
-            if (state.instanceToUpdate) {
-                const { row } = state.instanceToUpdate;
-                // Revert changes in the UI
-                row.querySelector('input[data-field="name"]').value = row.dataset.originalName;
-                row.querySelector('select[data-field="base_blueprint"]').value = row.dataset.originalBlueprint;
-                row.querySelector('input[data-field="output_path"]').value = row.dataset.originalOutputPath || '';
-                row.querySelector('input[data-field="persistent_mode"]').checked = row.dataset.originalPersistentMode === 'true';
-                row.querySelector('input[data-field="use_custom_hostname"]').checked = row.dataset.originalUseCustomHostname === 'true';
-                row.querySelector('input[data-field="hostname"]').value = row.dataset.originalHostname || '';
-                
-                const originalGpus = (row.dataset.originalGpuIds || '').split(',').filter(id => id);
-                row.querySelectorAll('input[name^="gpu_id_"]').forEach(cb => {
-                    cb.checked = originalGpus.includes(cb.value);
+            if (state.pendingUpdates) {
+                state.pendingUpdates.forEach(update => {
+                    const row = update.row;
+                    if (!row) return;
+                    row.querySelector('input[data-field="name"]').value = row.dataset.originalName;
+                    row.querySelector('select[data-field="base_blueprint"]').value = row.dataset.originalBlueprint;
+                    row.querySelector('input[data-field="output_path"]').value = row.dataset.originalOutputPath || '';
+                    row.querySelector('input[data-field="persistent_mode"]').checked = row.dataset.originalPersistentMode === 'true';
+                    row.querySelector('input[data-field="use_custom_hostname"]').checked = row.dataset.originalUseCustomHostname === 'true';
+                    row.querySelector('input[data-field="hostname"]').value = row.dataset.originalHostname || '';
+                    
+                    const originalGpus = (row.dataset.originalGpuIds || '').split(',').filter(id => id);
+                    row.querySelectorAll('input[name^="gpu_id_"]').forEach(cb => {
+                        cb.checked = originalGpus.includes(cb.value);
+                    });
+        
+                    checkRowForChanges(row);
                 });
-    
-                checkRowForChanges(row);
             }
             hideAllModals();
-        } else if (action === 'update-confirm-btn-confirm') {
-            if (state.instanceToUpdate) {
-                const { row } = state.instanceToUpdate;
-                const instanceId = row.dataset.id;
-                const data = {
-                    name: row.querySelector('input[data-field="name"]').value,
-                    base_blueprint: row.querySelector('select[data-field="base_blueprint"]').value,
-                    output_path: row.querySelector('input[data-field="output_path"]').value || null,
-                    gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
-                    persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
-                    hostname: row.querySelector('input[data-field="hostname"]').value || null,
-                    use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
-                };
-                
-                const button = e.target;
-                const originalButtonText = button.textContent;
-                button.textContent = 'Updating...';
-                button.disabled = true;
-
-                try {
-                    await api.performFullInstanceUpdate(instanceId, data);
-                    showToast(`Instance '${data.name}' is being updated.`, 'success');
-                    await fetchAndRenderInstances();
-                } catch (error) {
-                    showToast(error.message, 'error');
-                } finally {
-                    button.textContent = originalButtonText;
-                    button.disabled = false;
-                    hideAllModals();
-                }
-            }
         }
+        // update-confirm-btn-confirm is handled entirely by eventHandlers.js
     });
 
     DOM.saveBlueprintModal.addEventListener('click', async (e) => {
