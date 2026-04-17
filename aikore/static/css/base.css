@@ -130,6 +130,48 @@
         /* Pas de 'overflow' ici, les enfants gèrent leur propre contenu */
     }
     
+    .pane-header-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .zoom-controls {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 4px;
+        padding: 0 4px;
+        height: 24px;
+    }
+    
+    .zoom-btn {
+        background: none;
+        border: none;
+        color: #ccc;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+        line-height: 1;
+        padding: 0 4px;
+        user-select: none;
+    }
+    
+    .zoom-btn:hover {
+        color: #fff;
+        background: rgba(255,255,255,0.1);
+        border-radius: 2px;
+    }
+    
+    .zoom-label {
+        font-size: 11px;
+        color: #aaa;
+        min-width: 32px;
+        text-align: center;
+        user-select: none;
+    }
+    
     .hidden {
         display: none !important;
     }

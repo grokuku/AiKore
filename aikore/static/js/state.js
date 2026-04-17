@@ -67,5 +67,19 @@ export const state = {
     currentWheelsInstanceId: null,
     split: {
         savedSizes: { vertical:[60, 40], horizontal: [65, 35] }
-    }
+    },
+    zoom: {
+        instance: 100,
+        tools: {
+            welcome: 100,
+            logs: 100,
+            editor: 100,
+            terminal: 100,
+            versionCheck: 100,
+            builder: 100,
+            wheels: 100
+        },
+        monitoring: 100
+    },
+    activeToolView: 'welcome'
 };

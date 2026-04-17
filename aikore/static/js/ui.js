@@ -175,23 +175,19 @@ export function buildInstanceUrl(row, forView = false) {
     const isPersistent = row.dataset.persistentMode === 'true';
 
     const persistentPort = row.dataset.persistentPort;
-    const normalPort = row.dataset.port;
 
     if (isPersistent) {
+        // Persistent mode: direct access to VNC/Kasm interface on persistent_port
         const baseUrl = `${window.location.protocol}//${window.location.hostname}:${persistentPort}`;
         return forView ? `${baseUrl}/vnc.html?resize=remote` : baseUrl;
     }
 
     if (useCustomHostname && customHostname) {
+        // Custom hostname: user-provided URL (e.g., for reverse proxy setups)
         return customHostname.startsWith('http') ? customHostname : `http://${customHostname}`;
     }
 
-    if (!forView) {
-        if (normalPort) {
-            return `${window.location.protocol}//${window.location.hostname}:${normalPort}/`;
-        }
-    }
-
+    // Normal mode: always use the nginx proxy path
     const instanceSlug = row.dataset.name.toLowerCase().replace(/[^a-z0-9-]/g, '-');
     return `/instance/${instanceSlug}/`;
 }
@@ -224,29 +220,39 @@ export function updateInstanceRow(row, instance) {
 
     // Update Port Select logic...
     const portSelect = row.querySelector('select[data-field="port"]');
-    if (portSelect && currentPublicPort) {
-         let optionFound = false;
-         const autoOption = portSelect.querySelector('option[value=""]');
-         if (autoOption) autoOption.remove();
+    if (portSelect) {
+        // Ensure "Auto" option exists
+        let autoOption = portSelect.querySelector('option[value=""]');
+        if (!autoOption) {
+            autoOption = document.createElement('option');
+            autoOption.value = '';
+            autoOption.textContent = 'Auto';
+            portSelect.insertBefore(autoOption, portSelect.firstChild);
+        }
 
-         for (let i = 0; i < portSelect.options.length; i++) {
-             if (portSelect.options[i].value == currentPublicPort) {
-                 if (!row.classList.contains('row-dirty')) {
-                    portSelect.options[i].selected = true;
-                 }
-                 optionFound = true;
-                 break;
-             }
-         }
-         if (!optionFound) {
-             const option = document.createElement('option');
-             option.value = currentPublicPort;
-             option.textContent = currentPublicPort;
-             if (!row.classList.contains('row-dirty')) {
-                option.selected = true;
-             }
-             portSelect.insertBefore(option, portSelect.firstChild);
-         }
+        if (currentPublicPort) {
+            let optionFound = false;
+            for (let i = 0; i < portSelect.options.length; i++) {
+                if (portSelect.options[i].value == currentPublicPort) {
+                    if (!row.classList.contains('row-dirty')) {
+                        portSelect.options[i].selected = true;
+                    }
+                    optionFound = true;
+                    break;
+                }
+            }
+            if (!optionFound) {
+                const option = document.createElement('option');
+                option.value = currentPublicPort;
+                option.textContent = currentPublicPort;
+                if (!row.classList.contains('row-dirty')) {
+                    option.selected = true;
+                }
+                portSelect.insertBefore(option, portSelect.firstChild);
+            }
+        } else if (!row.classList.contains('row-dirty')) {
+            portSelect.value = '';
+        }
     }
 
     const allButtons = row.querySelectorAll('button.action-btn, a.action-btn');
@@ -517,20 +523,19 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     const portCell = row.insertCell();
     const portSelect = document.createElement('select');
     portSelect.dataset.field = 'port';
-    if (isNew) {
-        const autoOption = document.createElement('option');
-        autoOption.value = '';
-        autoOption.textContent = 'Auto';
-        autoOption.selected = true;
-        portSelect.appendChild(autoOption);
-    }
+    // Always add an "Auto" option so that instances with no explicit port match correctly
+    const autoOption = document.createElement('option');
+    autoOption.value = '';
+    autoOption.textContent = 'Auto';
+    portSelect.appendChild(autoOption);
     state.availablePorts.forEach(port => {
         const option = document.createElement('option');
         option.value = port;
         option.textContent = port;
         portSelect.appendChild(option);
     });
-    if (!isNew && currentPublicPort) {
+    // Set selected value
+    if (currentPublicPort) {
         let optionFound = false;
         for (let i = 0; i < portSelect.options.length; i++) {
             if (portSelect.options[i].value == currentPublicPort) {
@@ -546,6 +551,8 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
             option.selected = true;
             portSelect.insertBefore(option, portSelect.firstChild);
         }
+    } else {
+        autoOption.selected = true;
     }
     portCell.appendChild(portSelect);
 

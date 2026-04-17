@@ -231,10 +231,14 @@ def resize_terminal_process(master_fd: int, rows: int, cols: int):
 
 # --- CORE MONITORING LOGIC ---
 
-def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, internal_app_port: int, persistent_display: int | None, instance_slug: str):
+def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, internal_app_port: int, persistent_display: int | None, instance_slug: str, internal_web_port: int | None = None):
     """
     Runs in a background thread to monitor an instance's web server.
     Updates the instance status and launches Firefox when ready.
+    
+    port_to_monitor: the port to poll for readiness (public-facing port).
+    internal_app_port: same as port_to_monitor for normal mode; persistent_port for persistent mode.
+    internal_web_port: the actual internal web app port (instance.port). Used by Firefox in persistent mode.
     """
     start_time = time.time()
     
@@ -257,7 +261,7 @@ def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, in
                     ff_env = os.environ.copy()
                     ff_env["DISPLAY"] = f":{persistent_display}"
                     
-                    target_url = f'http://127.0.0.1:{internal_app_port}'
+                    target_url = f'http://127.0.0.1:{internal_web_port or internal_app_port}'
                     print(f"[Monitor-{instance_id}] Pointing internal Firefox to {target_url}")
                     
                     subprocess.Popen(['/usr/bin/firefox', '--profile', firefox_profile_dir, '--kiosk', '-url', target_url],
@@ -444,7 +448,11 @@ def start_instance_process(db: Session, instance: models.Instance):
     if instance.persistent_mode:
         kasm_launcher_path = os.path.join(SCRIPTS_DIR, "kasm_launcher.sh")
         main_cmd =['bash', kasm_launcher_path, instance.name, str(instance.persistent_port), dest_script_path]
+        # In persistent mode, the user-facing interface is on persistent_port.
+        # Monitor that port to ensure the VNC/Kasm interface is actually ready
+        # before marking the instance as "started".
         port_to_monitor = instance.persistent_port
+        internal_app_port = instance.persistent_port
         env["DISPLAY"] = f":{instance.persistent_display}"
         print(f"[Manager] Persistent mode: Bypassing NGINX proxy. Instance will be directly accessible on port {instance.persistent_port}.")
     else:
@@ -474,7 +482,7 @@ def start_instance_process(db: Session, instance: models.Instance):
 
     monitor = threading.Thread(
         target=monitor_instance_thread,
-        args=(instance.id, instance.pid, port_to_monitor, internal_app_port, instance.persistent_display, instance_slug),
+        args=(instance.id, instance.pid, port_to_monitor, internal_app_port, instance.persistent_display, instance_slug, instance.port),
         daemon=True
     )
     monitor.start()

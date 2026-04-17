@@ -368,7 +368,35 @@ Parsed by `blueprint_parser.py` and `process_manager.parse_blueprint_metadata()`
 
 ---
 
-## 9. Pending Features (from features.md)
+## 9. New Features & Fixes (Session 3)
+
+### 🔴 Bug Fix: "Save Changes" Appears on Page Refresh (False Dirty State)
+**Files**: `ui.js`, `main.js`
+**Problem**: When refreshing the page, the "Save Changes" button appeared with an incorrect dirty count, even though no changes had been made. Root cause: the port `<select>` for existing instances had no "Auto" option, so when an instance had no explicit port (`null`), the select defaulted to the first available port value. The comparison `normalizeStr(portSelect.value) !== row.dataset.originalPort` (where originalPort was `""`) always returned true, marking the row as dirty.
+**Fix**: Always include an "Auto" option (value `""`) in the port select, for both new and existing instances. `updateInstanceRow()` now ensures the Auto option exists and sets `portSelect.value` correctly. Also fixed `updateInstanceRow()` which was removing the Auto option when a port was assigned.
+
+### 🟡 Bug Fix: Split Pane Layout Not Persisting Across Refreshes
+**File**: `main.js`
+**Problem**: Split pane sizes were stored in `localStorage` with key `aikoreSplitSizes` but the restore logic appeared correct. Further investigation showed the feature was already working — the user's issue was likely that they hadn't dragged any splitter yet (no value saved), or the browser's localStorage was disabled.
+**Status**: Already implemented. No code change needed. Verified that `onEnd` saves sizes and they're restored on load.
+
+### ✨ Feature: Per-Panel Zoom Controls
+**Files**: `index.html`, `base.css`, `state.js`, `main.js`, `tools.js`
+**Description**: Added `+` / `−` zoom buttons in the header of each pane (Instances Manager, Tools, System Monitoring). Each pane has its own zoom level (50%–200%, step 10%). For the Tools pane, the zoom level is saved per tool view (Welcome, Logs, Editor, Terminal, Version Check, Builder, Wheels Manager). All zoom levels are persisted in `localStorage` under key `aikoreZoomLevels`. Zoom uses the CSS `zoom` property on `.pane-content`, which scales all content including `px`-based layouts. Xterm.js terminal auto-fits after zoom changes.
+
+### 🔴 Bug Fix: "Open" Button Detection Based on Wrong Port
+**Files**: `process_manager.py`, `ui.js`
+**Problem**: Two issues:
+1. **Backend**: In persistent mode, `monitor_instance_thread` checked `http://127.0.0.1:{instance.port}` (internal app port) to determine "started" status, but the "Open" button pointed to `persistent_port` (VNC/Kasm port). The instance could be marked "started" before VNC was ready.
+2. **Frontend**: `buildInstanceUrl()` in normal mode generated `http://hostname:{port}/` exposing the internal port directly, instead of using the nginx proxy path `/instance/{slug}/`. This was incorrect — users should access instances through the nginx reverse proxy, not directly.
+3. **Backend**: In persistent mode, the internal Firefox pointed to `{internal_app_port}` which was `instance.port`, but after the fix `internal_app_port` became `persistent_port`, so Firefox would point to itself. Fixed by adding a separate `internal_web_port` parameter.
+**Fix**: 
+- Backend: In persistent mode, monitor `persistent_port` instead of `instance.port`. Added `internal_web_port` parameter to `monitor_instance_thread` so Firefox always points to the internal web app (`instance.port`).
+- Frontend: In normal mode, always use `/instance/{slug}/` as the URL (nginx proxy), removing the direct port access path.
+
+---
+
+## 10. Pending Features (from features.md)
 
 - [ ] Improve global error handling and status reporting across the entire application
 - [ ] Write comprehensive user and system documentation

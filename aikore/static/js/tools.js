@@ -4,6 +4,10 @@ import { showToast } from './ui.js';
 
 const ansi_up = new AnsiUp();
 
+function setToolZoom(viewName) {
+    if (window.__aikoreSetToolsZoom) window.__aikoreSetToolsZoom(viewName);
+}
+
 function hideAllToolViews() {
     [
         DOM.welcomeScreenContainer,
@@ -459,6 +463,7 @@ export async function showBuilderView() {
     container.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
     DOM.toolsPaneTitle.textContent = "Tools / Module Builder";
+    setToolZoom('builder');
 
     const info = await fetchBuilderInfo();
 
@@ -556,6 +561,7 @@ export async function showInstanceWheelsManager(instanceId, instanceName) {
     container.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
     DOM.toolsPaneTitle.textContent = `Manage Wheels: ${instanceName}`;
+    setToolZoom('wheels');
 
     await loadInstanceWheels(instanceId);
 }
@@ -685,6 +691,7 @@ export async function showVersionCheckView(instanceId, instanceName) {
     DOM.versionCheckContainer.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
     DOM.toolsPaneTitle.textContent = `Versions Check: ${instanceName}`;
+    setToolZoom('versionCheck');
 
     DOM.versionCheckVersionsArea.textContent = 'Running version checks...';
     DOM.versionCheckConflictsArea.textContent = 'Running dependency checks...';
@@ -699,6 +706,7 @@ export function showWelcomeScreen() {
     DOM.welcomeScreenContainer.classList.remove('hidden');
     DOM.welcomeIframe.src = '/static/welcome/index.html';
     DOM.toolsPaneTitle.textContent = 'Tools / Welcome';
+    setToolZoom('welcome');
 }
 
 export function exitEditor() {
@@ -715,6 +723,7 @@ export async function openEditor(instanceId, instanceName, fileType) {
     DOM.toolsCloseBtn.classList.remove('hidden');
     const fileTypeName = fileType.charAt(0).toUpperCase() + fileType.slice(1);
     DOM.toolsPaneTitle.textContent = `Editing ${fileTypeName} for: ${instanceName}`;
+    setToolZoom('editor');
 
     if (!state.codeEditor) {
         const textarea = document.getElementById('file-editor-textarea');
@@ -744,6 +753,7 @@ export function openInstanceView(instanceName, url) {
     DOM.instanceViewContainer.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
     DOM.toolsPaneTitle.textContent = `View: ${instanceName}`;
+    setToolZoom('welcome'); // View uses same zoom as welcome
     if (!url || url === '#') {
         DOM.instanceIframe.src = 'about:blank';
         return;
@@ -771,6 +781,7 @@ export function openTerminal(instanceId, instanceName) {
     DOM.terminalViewContainer.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
     DOM.toolsPaneTitle.textContent = `Terminal: ${instanceName}`;
+    setToolZoom('terminal');
     state.currentTerminal = new Terminal({
         cursorBlink: true, fontSize: 14, fontFamily: 'Courier New, Courier, monospace',
         theme: { background: '#111111', foreground: '#e0e0e0', cursor: '#e0e0e0' }
@@ -807,6 +818,7 @@ export async function showLogViewer(instanceId, instanceName) {
     DOM.logViewerContainer.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
     DOM.toolsPaneTitle.textContent = `Logs: ${instanceName}`;
+    setToolZoom('logs');
     DOM.logContentArea.textContent = 'Loading logs...';
     state.activeLogInstanceId = instanceId;
     state.logSize = 0;

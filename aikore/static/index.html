@@ -88,7 +88,12 @@
             <div id="instance-pane" class="pane">
                 <div class="pane-header">
                     <h2>Instances Manager</h2>
-                    <div>
+                    <div class="pane-header-controls">
+                        <div class="zoom-controls">
+                            <button class="zoom-btn zoom-out" data-pane="instance" title="Zoom out">−</button>
+                            <span class="zoom-label" data-pane="instance">100%</span>
+                            <button class="zoom-btn zoom-in" data-pane="instance" title="Zoom in">+</button>
+                        </div>
                         <button class="add-new-btn">Add New Instance</button>
                         <button id="global-save-btn" class="action-btn">Save Changes (<span id="dirty-count">0</span>)</button>
                     </div>
@@ -122,7 +127,14 @@
                 <div id="tools-pane" class="pane">
                     <div class="pane-header">
                         <h2 id="tools-pane-title">Tools / Welcome</h2>
-                        <button id="tools-close-btn" class="close-btn hidden">&times;</button>
+                        <div class="pane-header-controls">
+                            <div class="zoom-controls">
+                                <button class="zoom-btn zoom-out" data-pane="tools" title="Zoom out">−</button>
+                                <span class="zoom-label" data-pane="tools">100%</span>
+                                <button class="zoom-btn zoom-in" data-pane="tools" title="Zoom in">+</button>
+                            </div>
+                            <button id="tools-close-btn" class="close-btn hidden">&times;</button>
+                        </div>
                     </div>
                     <div class="pane-content">
                         <!-- Container for the Welcome Screen (visible by default) -->
@@ -171,6 +183,13 @@
                 <div id="monitoring-pane" class="pane">
                     <div class="pane-header">
                         <h2>System Monitoring</h2>
+                        <div class="pane-header-controls">
+                            <div class="zoom-controls">
+                                <button class="zoom-btn zoom-out" data-pane="monitoring" title="Zoom out">−</button>
+                                <span class="zoom-label" data-pane="monitoring">100%</span>
+                                <button class="zoom-btn zoom-in" data-pane="monitoring" title="Zoom in">+</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="pane-content" id="system-stats-container">
                         <!-- System Stats will be dynamically inserted here -->

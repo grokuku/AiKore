@@ -284,6 +284,106 @@ async function initializeApp() {
         }
     });
 
+    // --- ZOOM CONTROLS ---
+    const ZOOM_STORAGE_KEY = 'aikoreZoomLevels';
+    const ZOOM_STEP = 10;
+    const ZOOM_MIN = 50;
+    const ZOOM_MAX = 200;
+
+    // Load saved zoom levels
+    try {
+        const storedZoom = localStorage.getItem(ZOOM_STORAGE_KEY);
+        if (storedZoom) {
+            const parsed = JSON.parse(storedZoom);
+            if (parsed.instance !== undefined) state.zoom.instance = parsed.instance;
+            if (parsed.monitoring !== undefined) state.zoom.monitoring = parsed.monitoring;
+            if (parsed.tools) Object.assign(state.zoom.tools, parsed.tools);
+        }
+    } catch (e) {
+        console.error('Failed to load zoom levels:', e);
+    }
+
+    function saveZoomLevels() {
+        localStorage.setItem(ZOOM_STORAGE_KEY, JSON.stringify(state.zoom));
+    }
+
+    function applyZoom(paneId, zoomLevel) {
+        const pane = document.getElementById(paneId);
+        if (!pane) return;
+        const content = pane.querySelector('.pane-content');
+        if (content) {
+            content.style.zoom = (zoomLevel / 100);
+        }
+    }
+
+    function getCurrentToolsZoomKey() {
+        // Map the active tool view name to the zoom key
+        return state.activeToolView || 'welcome';
+    }
+
+    function updateZoomLabels() {
+        document.querySelectorAll('.zoom-label').forEach(label => {
+            const pane = label.dataset.pane;
+            if (pane === 'tools') {
+                const key = getCurrentToolsZoomKey();
+                label.textContent = state.zoom.tools[key] + '%';
+            } else {
+                label.textContent = state.zoom[pane] + '%';
+            }
+        });
+    }
+
+    function changeZoom(paneName, delta) {
+        if (paneName === 'tools') {
+            const key = getCurrentToolsZoomKey();
+            state.zoom.tools[key] = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, state.zoom.tools[key] + delta));
+        } else {
+            state.zoom[paneName] = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, state.zoom[paneName] + delta));
+        }
+
+        if (paneName === 'tools') {
+            // Apply to the tools-pane-content directly
+            const toolsContent = document.querySelector('#tools-pane .pane-content');
+            const key = getCurrentToolsZoomKey();
+            if (toolsContent) toolsContent.style.zoom = (state.zoom.tools[key] / 100);
+        } else {
+            applyZoom(paneName === 'instance' ? 'instance-pane' : 'monitoring-pane', state.zoom[paneName]);
+        }
+
+        updateZoomLabels();
+        saveZoomLevels();
+
+        // Refit terminal if zooming tools pane
+        if (paneName === 'tools' && state.fitAddon) {
+            try { state.fitAddon.fit(); } catch (e) { }
+        }
+    }
+
+    // Apply initial zoom levels
+    applyZoom('instance-pane', state.zoom.instance);
+    applyZoom('monitoring-pane', state.zoom.monitoring);
+    // Tools pane gets its zoom from the active tool view (set in showWelcomeScreen, etc.)
+    applyZoom('tools-pane', state.zoom.tools.welcome);
+    updateZoomLabels();
+
+    // Attach zoom button listeners
+    document.querySelectorAll('.zoom-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const pane = btn.dataset.pane;
+            const delta = btn.classList.contains('zoom-in') ? ZOOM_STEP : -ZOOM_STEP;
+            changeZoom(pane, delta);
+        });
+    });
+
+    // Expose zoom switching for tools.js
+    window.__aikoreSetToolsZoom = function(viewName) {
+        state.activeToolView = viewName;
+        const zoomLevel = state.zoom.tools[viewName] || 100;
+        const toolsContent = document.querySelector('#tools-pane .pane-content');
+        if (toolsContent) toolsContent.style.zoom = (zoomLevel / 100);
+        updateZoomLabels();
+    };
+
     state.viewResizeObserver = new ResizeObserver(() => {
         if (DOM.instanceIframe && DOM.instanceIframe.contentWindow) {
             DOM.instanceIframe.contentWindow.dispatchEvent(new Event('resize'));
