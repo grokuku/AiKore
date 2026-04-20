@@ -1,8 +1,11 @@
-body {
+html, body {
     background-color: #111111;
     margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
-    /* Effet scanline CSS pour renforcer le look CRT */
+    /* CRT scanline effect */
     background-image: repeating-linear-gradient(
         0deg,
         rgba(0, 0, 0, 0.2),
@@ -14,6 +17,6 @@ body {
 
 #welcome-canvas {
     display: block;
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
 }

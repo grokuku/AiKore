@@ -502,22 +502,16 @@ async def build_websocket(websocket: WebSocket):
         await websocket.send_text(f"\x1b[34m[INFO] Requested Config: Torch {requested_torch_ver} | {cuda_ver}\x1b[0m\r\n")
 
         # 2. Environment Setup
+        # Use full path to the env for reliable activation in non-interactive shells
+        env_path = f"{CONDA_BASE_DIR}/envs/{env_name}"
+        activate_prefix = f"source {CONDA_BASE_DIR}/bin/activate {env_path}"
+        
         await websocket.send_text(f"\x1b[30;1m[CHECK] Verifying Conda environment...\x1b[0m\r\n")
         
-        # Use full path for conda and grep
-        env_exists_cmd = f"{CONDA_EXE} info --envs | /usr/bin/grep {env_name}"
+        # Check if environment directory actually exists (more reliable than conda info | grep)
+        env_exists = os.path.isdir(env_path)
         
-        proc = await asyncio.create_subprocess_shell(
-            env_exists_cmd, 
-            stdout=asyncio.subprocess.PIPE, 
-            stderr=asyncio.subprocess.PIPE,
-            executable='/bin/bash'
-        )
-        await proc.wait()
-        
-        env_needs_creation = proc.returncode != 0
-        
-        if env_needs_creation:
+        if not env_exists:
             await websocket.send_text(f"\x1b[33m[INFO] Environment not found. Creating {env_name}...\x1b[0m\r\n")
             await websocket.send_text(f"\x1b[33m[WARN] This involves downloading Python and PyTorch (~2GB). Please wait.\x1b[0m\r\n")
             
@@ -525,7 +519,21 @@ async def build_websocket(websocket: WebSocket):
             create_cmd = f"{CONDA_EXE} create -n {env_name} python={python_ver} pip wheel setuptools packaging ninja -y"
             if await stream_subprocess(create_cmd, WHEELS_DIR, websocket) != 0:
                 raise Exception("Failed to create Conda environment.")
-            
+        
+        # ALWAYS verify that torch is actually installed in the environment.
+        # A previous build may have created the env but failed during torch installation.
+        torch_check_cmd = f"{activate_prefix} && python -c 'import torch; print(torch.__version__)'"
+        proc = await asyncio.create_subprocess_shell(
+            torch_check_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            executable='/bin/bash'
+        )
+        torch_check_output, torch_check_stderr = await proc.communicate()
+        torch_is_installed = proc.returncode == 0 and bool(torch_check_output.strip())
+        
+        if not torch_is_installed:
+            await websocket.send_text(f"\x1b[33m[INFO] PyTorch not found in environment. Installing...\x1b[0m\r\n")
             # Install PyTorch Command
             # Determine Torchvision version based on Torch version
             vision_ver = TORCH_VISION_MAP.get(requested_torch_ver)
@@ -539,7 +547,7 @@ async def build_websocket(websocket: WebSocket):
 
             await websocket.send_text(f"\x1b[34m[INFO] Installing {torch_pkg}...\x1b[0m\r\n")
             index_url = f"https://download.pytorch.org/whl/{cuda_ver}"
-            install_cmd = f"source {CONDA_BASE_DIR}/bin/activate {env_name} && pip install {torch_pkg} --index-url {index_url} --no-cache-dir"
+            install_cmd = f"{activate_prefix} && pip install {torch_pkg} --index-url {index_url} --no-cache-dir"
             
             if await stream_subprocess(install_cmd, WHEELS_DIR, websocket) != 0:
                 raise Exception("Failed to install PyTorch in builder environment.")
@@ -547,13 +555,13 @@ async def build_websocket(websocket: WebSocket):
         # --- NEW: Ensure modern build tools are present (fixes bitsandbytes and others) ---
         # Exécuté systématiquement, même si l'environnement existait déjà.
         await websocket.send_text(f"\x1b[34m[INFO] Verifying modern build tools (cmake, scikit-build-core)...\x1b[0m\r\n")
-        build_tools_cmd = f"source {CONDA_BASE_DIR}/bin/activate {env_name} && pip install cmake scikit-build-core"
+        build_tools_cmd = f"{activate_prefix} && pip install cmake scikit-build-core"
         if await stream_subprocess(build_tools_cmd, WHEELS_DIR, websocket) != 0:
             await websocket.send_text(f"\x1b[33m[WARN] Failed to update build tools. Build might fail.\x1b[0m\r\n")
 
         # 2.5 DETECT TORCH VERSION (NEW)
         # We query the environment to find out exactly what version was installed
-        detect_cmd = f"source {CONDA_BASE_DIR}/bin/activate {env_name} && python -c 'import torch; print(torch.__version__)'"
+        detect_cmd = f"{activate_prefix} && python -c 'import torch; print(torch.__version__)'"
         proc = await asyncio.create_subprocess_shell(
             detect_cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -582,7 +590,7 @@ async def build_websocket(websocket: WebSocket):
             python="python -u" 
         )
 
-        final_cmd = f"source {CONDA_BASE_DIR}/bin/activate {env_name} && {raw_cmd}"
+        final_cmd = f"{activate_prefix} && {raw_cmd}"
 
         await websocket.send_text(f"\x1b[34m[INFO] Starting compilation for {preset['label']}...\x1b[0m\r\n")
         await websocket.send_text(f"\x1b[30;1m[CMD] {final_cmd}\x1b[0m\r\n\r\n")

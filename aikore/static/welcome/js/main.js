@@ -21,22 +21,30 @@ document.addEventListener('DOMContentLoaded', () => {
             this.canvas = canvas;
             this.logoPath = logoPath;
             this.renderer = null;
-            this.state = 'loading'; // loading, transitioning, idle
+            this.effect = null;
+            this.state = 'loading';
 
             this.colors = ['#00ff9d', '#ff00ff', '#00ffff', '#ffff00', '#ff9900', '#ff4d4d', '#4d4dff'];
             
-            this.currentEffect = null;
             this.currentColor = this.colors[0];
             this.previousColor = this.colors[0];
 
-            // FIX: Utilisation d'un timestamp réel au lieu d'un compteur
             this.startTime = performance.now();
             this.transitionStartTime = 0;
             this.transitionDuration = 1200;
             this.idleDuration = 3800;
             
-            // Buffer pour éviter les allocations à chaque frame
-            this.particlesBuffer = [];
+            this._animFrameId = null;
+            this._colorTransitionInterval = null;
+
+            // Listen for resize messages from parent (for iframe context)
+            this._onParentResize = () => {
+                if (this.renderer) this.renderer.resize();
+                this._recreateEffect();
+            };
+            window.addEventListener('message', (e) => {
+                if (e.data?.type === 'aikore-resize') this._onParentResize();
+            });
         }
 
         async load() {
@@ -53,46 +61,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         async start() {
-            // Attendre l'initialisation du renderer
             if (!this.renderer) return;
-            
-            window.addEventListener('resize', () => {
-                this.renderer.resize();
-                this.recreateEffects();
-            });
-            
+
+            // Use ResizeObserver for reliable resize detection (works in iframes)
+            this.renderer.observeResize(() => this._recreateEffect());
+
             this.renderer.init();
-            
-            // FIX: Création de l'effet avec des valeurs par défaut, recalculé dynamiquement
-            this.recreateEffects();
+            this._recreateEffect();
 
-            setInterval(() => this.startTransition(), this.idleDuration + this.transitionDuration);
+            // Color transition timer
+            this._colorTransitionInterval = setInterval(
+                () => this.startTransition(),
+                this.idleDuration + this.transitionDuration
+            );
 
-            this.animate();
+            this._animate();
         }
 
-        recreateEffects() {
-            // L'effet est maintenant créé avec des paramètres qui seront ajustés dynamiquement
-            this.currentEffect = new WaveEffect(3, 0.02, 8.0);
+        _recreateEffect() {
+            this.effect = new WaveEffect(3, 8.0);
         }
 
         startTransition() {
             this.previousColor = this.currentColor;
             this.currentColor = this.colors[Math.floor(Math.random() * this.colors.length)];
-            
             this.state = 'transitioning';
             this.transitionStartTime = performance.now();
         }
 
-        animate() {
-            if (!this.renderer) {
-                requestAnimationFrame((timestamp) => this.animate(timestamp));
-                return;
-            }
-
-            // FIX: Utilisation du timestamp réel pour une animation indépendante du framerate
+        _animate() {
             const timestamp = performance.now();
-            const elapsedTime = (timestamp - this.startTime) / 1000; // en secondes
+            const elapsedTime = (timestamp - this.startTime) / 1000;
 
             let activeColor = this.currentColor;
 
@@ -106,26 +105,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            // OPTIMISATION: Réutilisation du buffer pour éviter les allocations
-            if (this.particlesBuffer.length !== this.renderer.particles.length) {
-                this.particlesBuffer = new Array(this.renderer.particles.length);
-            }
+            this.renderer.draw(elapsedTime, activeColor, this.effect);
+            this._animFrameId = requestAnimationFrame((t) => this._animate(t));
+        }
 
-            // Application de l'effet sans créer de nouveau tableau
-            for (let i = 0; i < this.renderer.particles.length; i++) {
-                const p = this.renderer.particles[i];
-                const effectState = this.currentEffect.apply(p, elapsedTime, this.renderer.logoWidth);
-                
-                // IMMUABLE: Crée un nouvel objet sans modifier l'original
-                this.particlesBuffer[i] = {
-                    char: p.char,
-                    ...effectState,
-                    cellWidth: p.cellWidth // Assure que cellWidth est passé
-                };
-            }
-
-            this.renderer.draw(this.particlesBuffer, activeColor);
-            requestAnimationFrame((t) => this.animate(t));
+        destroy() {
+            if (this._animFrameId) cancelAnimationFrame(this._animFrameId);
+            if (this._colorTransitionInterval) clearInterval(this._colorTransitionInterval);
+            if (this.renderer) this.renderer.destroy();
         }
     }
 

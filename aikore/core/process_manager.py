@@ -129,13 +129,29 @@ def _cleanup_instance_files(instance_slug: str):
 
 # --- TERMINAL MANAGEMENT ---
 
+def _find_blueprint_path(blueprint_filename: str) -> str | None:
+    """
+    Finds the actual path to a blueprint file.
+    Checks custom blueprints first, then stock blueprints.
+    Returns None if neither is found.
+    """
+    custom_path = os.path.join(CUSTOM_BLUEPRINTS_DIR, blueprint_filename)
+    if os.path.exists(custom_path):
+        return custom_path
+    stock_path = os.path.join(BLUEPRINTS_DIR, blueprint_filename)
+    if os.path.exists(stock_path):
+        return stock_path
+    return None
+
+
 def parse_blueprint_metadata(blueprint_filename: str) -> dict:
     """
     Parses the metadata block from a blueprint shell script.
+    Checks custom blueprints first, then stock blueprints.
     """
     metadata = {}
-    blueprint_path = os.path.join(BLUEPRINTS_DIR, blueprint_filename)
-    if not os.path.exists(blueprint_path):
+    blueprint_path = _find_blueprint_path(blueprint_filename)
+    if not blueprint_path:
         return metadata
 
     with open(blueprint_path, 'r') as f:
@@ -150,6 +166,35 @@ def parse_blueprint_metadata(blueprint_filename: str) -> dict:
                 line = line.strip()
                 if line.startswith('#') and '=' in line:
                     # Format is '# aikore.key = value'
+                    parts = line[1:].strip().split('=', 1)
+                    if len(parts) == 2 and parts[0].strip().startswith('aikore.'):
+                        key = parts[0].strip().replace('aikore.', '', 1)
+                        value = parts[1].strip()
+                        metadata[key] = value
+    return metadata
+
+
+def _parse_venv_from_launch_sh(launch_sh_path: str) -> dict:
+    """
+    Reads the AIKORE-METADATA block from an instance's launch.sh file.
+    This is the most reliable source because it's the actual file the instance uses at runtime.
+    Falls back to blueprint metadata if launch.sh doesn't exist or has no metadata.
+    """
+    metadata = {}
+    if not os.path.exists(launch_sh_path):
+        return metadata
+
+    with open(launch_sh_path, 'r') as f:
+        in_metadata_block = False
+        for line in f:
+            if "### AIKORE-METADATA-START ###" in line:
+                in_metadata_block = True
+                continue
+            if "### AIKORE-METADATA-END ###" in line:
+                break
+            if in_metadata_block:
+                line = line.strip()
+                if line.startswith('#') and '=' in line:
                     parts = line[1:].strip().split('=', 1)
                     if len(parts) == 2 and parts[0].strip().startswith('aikore.'):
                         key = parts[0].strip().replace('aikore.', '', 1)
@@ -180,7 +225,19 @@ def start_terminal_process(instance: models.Instance):
         # A normal instance uses its own directory.
         effective_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
 
-    metadata = parse_blueprint_metadata(instance.base_blueprint)
+    # --- Read venv metadata from the instance's launch.sh (most reliable source) ---
+    # The launch.sh is the actual file used at runtime. If it has metadata, it's definitive.
+    # If not (e.g. no metadata block), fall back to the original blueprint.
+    launch_sh_path = os.path.join(effective_conf_dir, "launch.sh")
+    metadata = _parse_venv_from_launch_sh(launch_sh_path)
+    
+    # If launch.sh doesn't have metadata, fall back to the blueprint
+    if not metadata.get('venv_type') or not metadata.get('venv_path'):
+        fallback_metadata = parse_blueprint_metadata(instance.base_blueprint)
+        # Merge: launch.sh takes priority, blueprint fills gaps
+        for key in ('venv_type', 'venv_path'):
+            if key not in metadata and key in fallback_metadata:
+                metadata[key] = fallback_metadata[key]
     
     venv_type = metadata.get('venv_type')
     venv_path = metadata.get('venv_path')

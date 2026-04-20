@@ -57,9 +57,8 @@ export const state = {
         baseBlueprint: null,
     },
     codeEditor: null,
-    currentTerminal: null,
-    currentTerminalSocket: null,
-    fitAddon: null,
+    // --- Persistent terminals: keyed by instance ID ---
+    terminals: {},  // { instanceId: { terminal: Terminal, fitAddon: FitAddon, socket: WebSocket, instanceName: string } }
     instancesPollInterval: null,
     pollTimeoutId: null,
     viewResizeObserver: null,

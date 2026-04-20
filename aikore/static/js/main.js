@@ -363,9 +363,13 @@ async function initializeApp() {
         updateZoomLabels();
         saveZoomLevels();
 
-        // Refit terminal if zooming tools pane
-        if (paneName === 'tools' && state.fitAddon) {
-            try { state.fitAddon.fit(); } catch (e) { }
+        // Refit all visible terminal instances when zooming tools pane
+        if (paneName === 'tools') {
+            Object.values(state.terminals).forEach(t => {
+                if (t.fitAddon && !DOM.terminalViewContainer.classList.contains('hidden')) {
+                    try { t.fitAddon.fit(); } catch (e) { }
+                }
+            });
         }
     }
 
@@ -407,9 +411,11 @@ async function initializeApp() {
             updateZoomLabels();
             saveZoomLevels();
 
-            // Refit terminal if zooming tools pane
-            if (pane === 'tools' && state.fitAddon) {
-                try { state.fitAddon.fit(); } catch (e) { }
+            // Refit terminal instances when zooming tools pane
+            if (pane === 'tools') {
+                Object.values(state.terminals).forEach(t => {
+                    if (t.fitAddon) { try { t.fitAddon.fit(); } catch (e) { } }
+                });
             }
         });
     });
@@ -431,9 +437,11 @@ async function initializeApp() {
 
     const toolsPane = document.getElementById('tools-pane');
     const resizeObserver = new ResizeObserver(() => {
-        if (state.fitAddon) {
-            try { state.fitAddon.fit(); } catch (e) { }
-        }
+        Object.values(state.terminals).forEach(t => {
+            if (t.fitAddon && !DOM.terminalViewContainer.classList.contains('hidden')) {
+                try { t.fitAddon.fit(); } catch (e) { }
+            }
+        });
     });
     resizeObserver.observe(toolsPane);
 }

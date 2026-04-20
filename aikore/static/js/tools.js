@@ -8,16 +8,17 @@ function setToolZoom(viewName) {
     if (window.__aikoreSetToolsZoom) window.__aikoreSetToolsZoom(viewName);
 }
 
-function hideAllToolViews() {
+function hideAllToolViews({ keepBuilder = false } = {}) {
     [
         DOM.welcomeScreenContainer,
         DOM.logViewerContainer,
         DOM.editorContainer,
         DOM.instanceViewContainer,
-        DOM.terminalViewContainer,
         DOM.versionCheckContainer
     ].forEach(el => el.classList.add('hidden'));
 
+    // Always hide the builder container visually. If a build is in progress,
+    // we keep the WebSocket and terminal alive but hide the UI.
     const builderContainer = document.getElementById('builder-container');
     if (builderContainer) builderContainer.classList.add('hidden');
 
@@ -32,12 +33,134 @@ function hideAllToolViews() {
     clearInterval(state.activeLogInterval);
     state.activeLogInstanceId = null;
 
-    closeTerminal();
-    closeBuilderTerminal();
+    // Always hide the terminal container. Terminals stay alive in state.terminals
+    // and are re-shown when switching back.
+    DOM.terminalViewContainer.classList.add('hidden');
+
+    // Only destroy the builder terminal if no build is in progress
+    if (!keepBuilder) {
+        closeBuilderTerminal();
+    }
 
     if (state.viewResizeObserver) {
         state.viewResizeObserver.disconnect();
     }
+}
+
+// --- PERSISTENT TERMINAL POOL ---
+
+function _createTerminalForInstance(instanceId, instanceName) {
+    const termState = {
+        terminal: new Terminal({
+            cursorBlink: true, fontSize: 14, fontFamily: 'Courier New, Courier, monospace',
+            theme: { background: '#111111', foreground: '#e0e0e0', cursor: '#e0e0e0' }
+        }),
+        fitAddon: new FitAddon.FitAddon(),
+        socket: null,
+        instanceName: instanceName,
+        resizeObserver: null
+    };
+
+    const container = document.createElement('div');
+    container.id = `terminal-host-${instanceId}`;
+    container.style.width = '100%';
+    container.style.height = '100%';
+    DOM.terminalContent.appendChild(container);
+
+    termState.terminal.loadAddon(termState.fitAddon);
+    termState.terminal.open(container);
+    termState.fitAddon.fit();
+
+    // WebSocket
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/instances/${instanceId}/terminal`;
+    const socket = new WebSocket(wsUrl);
+    socket.binaryType = 'arraybuffer';
+    termState.socket = socket;
+
+    socket.onopen = () => {
+        const initialSize = { type: 'resize', cols: termState.terminal.cols, rows: termState.terminal.rows };
+        socket.send(JSON.stringify(initialSize));
+        termState.terminal.onData(data => {
+            if (socket && socket.readyState === WebSocket.OPEN) socket.send(data);
+        });
+        termState.terminal.onResize(size => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
+            }
+        });
+    };
+
+    socket.onmessage = (event) => {
+        termState.terminal.write(new Uint8Array(event.data));
+    };
+
+    socket.onclose = (event) => {
+        termState.terminal.write(`\r\n\x1b[31m[CLOSED]\x1b[0m ${event.reason || ''}\r\n`);
+    };
+
+    socket.onerror = () => {
+        termState.terminal.write('\r\n\x1b[31m[ERROR]\x1b[0m\r\n');
+    };
+
+    // ResizeObserver for auto-fit
+    termState.resizeObserver = new ResizeObserver(() => {
+        if (termState.fitAddon && !DOM.terminalViewContainer.classList.contains('hidden')) {
+            try { termState.fitAddon.fit(); } catch (e) { }
+        }
+    });
+    termState.resizeObserver.observe(container);
+
+    state.terminals[instanceId] = termState;
+    return termState;
+}
+
+function _showTerminalInstance(instanceId) {
+    // Hide all terminal hosts
+    DOM.terminalContent.querySelectorAll('[id^="terminal-host-"]').forEach(el => {
+        el.style.display = 'none';
+    });
+
+    let termState = state.terminals[instanceId];
+    if (!termState) return;
+
+    const hostEl = document.getElementById(`terminal-host-${instanceId}`);
+    if (hostEl) {
+        hostEl.style.display = '';
+        // Refit after making visible
+        requestAnimationFrame(() => {
+            try { termState.fitAddon.fit(); } catch (e) { }
+            termState.terminal.focus();
+        });
+    }
+}
+
+function closeTerminal(instanceId) {
+    const termState = state.terminals[instanceId];
+    if (!termState) return;
+
+    if (termState.socket) {
+        termState.socket.close();
+        termState.socket = null;
+    }
+    if (termState.resizeObserver) {
+        termState.resizeObserver.disconnect();
+        termState.resizeObserver = null;
+    }
+    termState.terminal.dispose();
+
+    const hostEl = document.getElementById(`terminal-host-${instanceId}`);
+    if (hostEl) hostEl.remove();
+
+    delete state.terminals[instanceId];
+}
+
+function closeAllTerminals() {
+    Object.keys(state.terminals).forEach(id => closeTerminal(id));
+}
+
+function _disposeTerminalRef() {
+    // Legacy: no longer needed, kept for compatibility
 }
 
 // --- BUILDER LOGIC ---
@@ -234,6 +357,7 @@ function initBuilderTerminal() {
     builderTerminal.open(container);
     builderFitAddon.fit();
 
+    if (builderResizeObserver) builderResizeObserver.disconnect();
     builderResizeObserver = new ResizeObserver(() => {
         if (builderFitAddon) {
             try { builderFitAddon.fit(); } catch (e) { }
@@ -342,7 +466,9 @@ async function startBuild() {
 }
 
 export async function showBuilderView() {
-    hideAllToolViews();
+    // Don't destroy builder terminal if a build is in progress
+    const isBuilding = builderSocket && builderSocket.readyState === WebSocket.OPEN;
+    hideAllToolViews({ keepBuilder: isBuilding });
 
     let container = document.getElementById('builder-container');
     if (!container) {
@@ -354,7 +480,7 @@ export async function showBuilderView() {
         ).join('');
 
         // CUDA Options
-        // We expect state.versions.cuda to be like["13.0", "12.8", "12.6", ...]
+        // We expect state.versions.cuda to be like ["13.0", "12.8", "12.6", ...]
         // But builder expects "cu130"
         const cudaOptionsHtml = state.versions.cuda.map((v, i) => {
             const cuFormat = 'cu' + v.replace('.', '');
@@ -488,7 +614,23 @@ export async function showBuilderView() {
     await populateTorchVersions();
 
     renderWheelsTable();
-    initBuilderTerminal();
+    // Only init terminal if not already existing (builder keeps its state)
+    if (!builderTerminal) {
+        initBuilderTerminal();
+    } else {
+        // Re-attach ResizeObserver since the container might have been detached
+        const container = document.getElementById('builder-terminal');
+        if (builderResizeObserver) builderResizeObserver.disconnect();
+        builderResizeObserver = new ResizeObserver(() => {
+            if (builderFitAddon) {
+                try { builderFitAddon.fit(); } catch (e) { }
+            }
+        });
+        builderResizeObserver.observe(container);
+        requestAnimationFrame(() => {
+            try { builderFitAddon.fit(); } catch (e) { }
+        });
+    }
 }
 
 // --- INSTANCE WHEELS MANAGER ---
@@ -701,12 +843,23 @@ export async function showVersionCheckView(instanceId, instanceName) {
     DOM.versionCheckConflictsArea.textContent = data.conflicts;
 }
 
+let welcomeResizeObserver = null;
+
 export function showWelcomeScreen() {
     hideAllToolViews();
     DOM.welcomeScreenContainer.classList.remove('hidden');
     DOM.welcomeIframe.src = '/static/welcome/index.html';
     DOM.toolsPaneTitle.textContent = 'Tools / Welcome';
     setToolZoom('welcome');
+
+    // Observe container resize and notify the iframe (fallback for iframe resize events)
+    if (welcomeResizeObserver) welcomeResizeObserver.disconnect();
+    welcomeResizeObserver = new ResizeObserver(() => {
+        try {
+            DOM.welcomeIframe.contentWindow?.postMessage({ type: 'aikore-resize' }, '*');
+        } catch (e) { /* cross-origin, ignore */ }
+    });
+    welcomeResizeObserver.observe(DOM.welcomeScreenContainer);
 }
 
 export function exitEditor() {
@@ -764,53 +917,39 @@ export function openInstanceView(instanceName, url) {
     }
 }
 
-function closeTerminal() {
-    if (state.currentTerminalSocket) {
-        state.currentTerminalSocket.close();
-        state.currentTerminalSocket = null;
-    }
-    if (state.currentTerminal) {
-        state.currentTerminal.dispose();
-        state.currentTerminal = null;
-        state.fitAddon = null;
-    }
-}
-
+/**
+ * Opens a terminal for the given instance.
+ * If a terminal already exists for this instance, it is shown (not recreated).
+ * If an active build is in progress, the builder is kept alive in the background.
+ */
 export function openTerminal(instanceId, instanceName) {
-    hideAllToolViews();
+    const isBuilding = builderSocket && builderSocket.readyState === WebSocket.OPEN;
+
+    hideAllToolViews({ keepBuilder: isBuilding });
+
     DOM.terminalViewContainer.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
     DOM.toolsPaneTitle.textContent = `Terminal: ${instanceName}`;
     setToolZoom('terminal');
-    state.currentTerminal = new Terminal({
-        cursorBlink: true, fontSize: 14, fontFamily: 'Courier New, Courier, monospace',
-        theme: { background: '#111111', foreground: '#e0e0e0', cursor: '#e0e0e0' }
-    });
-    state.fitAddon = new FitAddon.FitAddon();
-    state.currentTerminal.loadAddon(state.fitAddon);
+
+    // Reuse existing terminal if available
+    if (state.terminals[instanceId]) {
+        _showTerminalInstance(instanceId);
+        return;
+    }
+
+    // Create new terminal
     DOM.terminalContent.innerHTML = '';
-    state.currentTerminal.open(DOM.terminalContent);
-    state.fitAddon.fit();
-    state.currentTerminal.focus();
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/instances/${instanceId}/terminal`;
-    state.currentTerminalSocket = new WebSocket(wsUrl);
-    state.currentTerminalSocket.binaryType = 'arraybuffer';
-    state.currentTerminalSocket.onopen = () => {
-        const initialSize = { type: 'resize', cols: state.currentTerminal.cols, rows: state.currentTerminal.rows };
-        state.currentTerminalSocket.send(JSON.stringify(initialSize));
-        state.currentTerminal.onData(data => {
-            if (state.currentTerminalSocket && state.currentTerminalSocket.readyState === WebSocket.OPEN) state.currentTerminalSocket.send(data);
-        });
-        state.currentTerminal.onResize(size => {
-            if (state.currentTerminalSocket && state.currentTerminalSocket.readyState === WebSocket.OPEN) {
-                state.currentTerminalSocket.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
-            }
-        });
-    };
-    state.currentTerminalSocket.onmessage = (event) => { state.currentTerminal.write(new Uint8Array(event.data)); };
-    state.currentTerminalSocket.onclose = (event) => { state.currentTerminal.write(`\r\n\x1b[31m[CLOSED]\x1b[0m ${event.reason || ''}\r\n`); };
-    state.currentTerminalSocket.onerror = (error) => { state.currentTerminal.write('\r\n\x1b[31m[ERROR]\x1b[0m\r\n'); };
+    const termState = _createTerminalForInstance(instanceId, instanceName);
+    _showTerminalInstance(instanceId);
+}
+
+/**
+ * Closes the terminal for a specific instance.
+ * Called when the user explicitly wants to close a terminal.
+ */
+export function closeTerminalById(instanceId) {
+    closeTerminal(instanceId);
 }
 
 export async function showLogViewer(instanceId, instanceName) {

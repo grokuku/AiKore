@@ -431,7 +431,56 @@ Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_me
 
 ---
 
-## 11. Pending Features (from features.md)
+## 11. Bugs Found and Fixed in Session 5
+
+### 🔴 8.26 — Builder: `ModuleNotFoundError: No module named 'torch'` on rebuild ✅ FIXED
+**File**: `builder.py`
+**Problem**: When a Conda environment already existed from a previous (failed) build, the builder skipped both environment creation AND PyTorch installation. If the previous build failed during `pip install torch`, the env existed but had no torch inside. Additionally, the activation command used the env name (`source activate env_name`) rather than the full path, which is less reliable in non-interactive shells.
+**Fix**: 
+- Check env existence via `os.path.isdir(env_path)` instead of `conda info | grep` (more reliable).
+- ALWAYS verify that torch is actually importable in the env (run `python -c 'import torch'`). If not, install PyTorch regardless of env age.
+- Use full path to conda env (`/home/abc/miniconda3/envs/{env_name}`) for all `source activate` commands via shared `activate_prefix` variable.
+
+### 🟠 8.27 — Welcome Animation: Scale Not Responsive + Stuttering ✅ FIXED
+**Files**: `welcome/js/renderer.js`, `welcome/js/effects.js`, `welcome/js/main.js`, `welcome/style.css`, `tools.js`, `tools.css`
+**Problem**:
+1. **Scale**: The canvas used `window.resize` which doesn't reliably fire inside iframes when the parent split pane changes via CSS flexbox. When the user drags the split pane, the logo didn't adapt its size.
+2. **Stuttering**: Every animation frame drew each character individually with `fillText` (hundreds of calls) + a real-time `ctx.filter = 'blur(6px)'` on the halo canvas — both extremely expensive operations causing consistent frame drops.
+**Fix**:
+- **Resize detection**: Added `ResizeObserver` on the canvas element (reliable in iframes) + `postMessage`-based communication from parent page (fallback for split pane drags).
+- **Performance**: Replaced per-character `fillText` rendering with pre-rendered offscreen canvases. The static logo is rendered ONCE to an offscreen canvas. A pre-blurred glow version is also rendered once. During animation, only `drawImage` calls per row strip are used (with Y wave offset) — typically 15-20 `drawImage` calls instead of 500+ `fillText` calls. The blur filter is applied only during pre-render (not per frame). Color changes re-render the offscreen canvas only when the color actually changes.
+- **CSS**: Changed canvas from `100vw/100vh` to `100%/100%` for proper iframe containment.
+
+## 12. Known Issue (Not Fixed — Report Only)
+
+### 🟠 8.28 — `parse_blueprint_metadata()` Ignores Custom Blueprints ✅ FIXED
+**Files**: `process_manager.py`
+**Problem**: `parse_blueprint_metadata()` only looked in `BLUEPRINTS_DIR` (stock). Custom blueprints in `CUSTOM_BLUEPRINTS_DIR` were never found, so terminals for custom blueprint instances had no venv activation. This also affected `run_version_check()` and `run_command_in_instance_venv()`.
+**Fix**: Added `_find_blueprint_path()` helper that checks custom dir first, then stock dir. `parse_blueprint_metadata()` now uses this helper.
+
+### 🟠 8.29 — Terminal venv activation reads blueprint instead of launch.sh ✅ FIXED
+**Files**: `process_manager.py`
+**Problem**: The terminal activated the venv based on metadata parsed from the **original blueprint** file in `BLUEPRINTS_DIR`. If the instance's `launch.sh` had been modified (e.g., Save as Custom Blueprint), the terminal would not reflect the actual runtime venv.
+**Fix**: Added `_parse_venv_from_launch_sh()` which reads the AIKORE-METADATA block directly from the instance's `launch.sh` (the definitive source). If `launch.sh` has no metadata, falls back to the blueprint metadata. This is more reliable because `launch.sh` is the actual file used by the instance at runtime.
+
+### 🟠 8.30 — Terminal Destroyed When Switching Tools ✅ FIXED
+**Files**: `tools.js`, `state.js`, `tools.css`
+**Problem**: Every time the user switched to another tool (Logs, Editor, Welcome, etc.), `hideAllToolViews()` called `closeTerminal()` which destroyed the xterm.js Terminal object and closed the WebSocket. When switching back, the user got a fresh terminal with no history.
+**Fix**: Implemented a **persistent terminal pool** (`state.terminals = {}`) keyed by instance ID. Each terminal's xterm.js Terminal, FitAddon, and WebSocket are kept alive in memory. When switching tools, only the container is hidden (CSS `display: none`). When reopening a terminal for the same instance, the existing terminal is re-shown with full history preserved. Each terminal gets its own DOM container (`terminal-host-{id}`), and only the active one is displayed. A ResizeObserver per terminal ensures auto-fitting when shown.
+
+### 🟠 8.31 — Builder State Lost When Switching Tools ✅ FIXED
+**Files**: `tools.js`
+**Problem**: Switching away from the builder view while a build was in progress caused the WebSocket to close and the terminal to be destroyed, effectively killing the visible build output. When returning, the user saw a blank terminal even though the build might have completed in the background.
+**Fix**: `hideAllToolViews({keepBuilder: true})` is now called when a build is in progress (detected by `builderSocket.readyState === WebSocket.OPEN`). The builder xterm.js terminal and WebSocket are preserved. The builder container is hidden visually but the build continues in the background. When returning to the builder view via `showBuilderView()`, the existing terminal is re-shown and re-fitted. The build output stream continues without interruption.
+
+### 🟡 8.32 — Terminal Container Not Auto-Fitting on Split Pane Resize ✅ FIXED
+**Files**: `tools.css`
+**Problem**: `#terminal-content` had `width: 100%; height: 100%` but was not a flex child. When the split pane was dragged, the terminal didn't resize automatically because xterm.js FitAddon needs a ResizeObserver.
+**Fix**: Changed `#terminal-content` to use `flex: 1; min-height: 0` and `#terminal-view-container` to `display: flex; flex-direction: column`. Each persistent terminal now has its own ResizeObserver that calls `fitAddon.fit()` on container resize.
+
+---
+
+## 13. Pending Features (from features.md)
 
 - [ ] Improve global error handling and status reporting across the entire application
 - [ ] Write comprehensive user and system documentation

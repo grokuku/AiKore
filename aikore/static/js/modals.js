@@ -2,7 +2,7 @@ import { state, DOM } from './state.js';
 import * as api from './api.js';
 import { checkRowForChanges, showToast } from './ui.js';
 import { fetchAndRenderInstances } from './main.js';
-import { exitEditor } from './tools.js';
+import { exitEditor, closeTerminalById } from './tools.js';
 
 export function showToolsMenu(buttonEl) {
     const row = buttonEl.closest('tr');
@@ -50,6 +50,8 @@ async function handleDelete(options) {
             DOM.overwriteModal.classList.remove('hidden');
             return;
         }
+        // Clean up any persistent terminal for this instance
+        closeTerminalById(state.instanceToDeleteId);
         showToast("Instance moved to trashcan.");
         hideAllModals();
         await fetchAndRenderInstances();
