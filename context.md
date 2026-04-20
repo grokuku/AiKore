@@ -478,6 +478,11 @@ Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_me
 **Problem**: `#terminal-content` had `width: 100%; height: 100%` but was not a flex child. When the split pane was dragged, the terminal didn't resize automatically because xterm.js FitAddon needs a ResizeObserver.
 **Fix**: Changed `#terminal-content` to use `flex: 1; min-height: 0` and `#terminal-view-container` to `display: flex; flex-direction: column`. Each persistent terminal now has its own ResizeObserver that calls `fitAddon.fit()` on container resize.
 
+### 🔴 8.33 — 8-Minute Startup Delay Caused by `import torch` at Module Level ✅ FIXED
+**File**: `builder.py`
+**Problem**: `import torch` was executed at module level (line 22), which runs during application startup. PyTorch is a ~2-4 GB library that takes several minutes to load on slow disks (overlay2, HDD, NFS). This caused an 8-minute delay between "Waiting for application startup" and "Application startup complete". Torch was only used for GPU capability detection in `get_builder_info()` — something `pynvml` does in milliseconds.
+**Fix**: Removed `import torch` from module level. Replaced GPU detection in `get_builder_info()` with `pynvml.nvmlDeviceGetCudaCapability()`, which is already a project dependency and loads almost instantly. Added detailed comments explaining why torch must not be imported at module level.
+
 ---
 
 ## 13. Pending Features (from features.md)

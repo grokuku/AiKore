@@ -1,15 +1,32 @@
 import os
 import glob
+import time as _time
+_t_import_start = _time.time()
+print("[Import] Starting AiKore module imports...")
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pynvml import nvmlInit, nvmlShutdown, NVMLError
+print(f"[Import] FastAPI loaded. ({_time.time() - _t_import_start:.2f}s)")
 
+_t_nvml = _time.time()
+from pynvml import nvmlInit, nvmlShutdown, NVMLError
+print(f"[Import] pynvml loaded. ({_time.time() - _t_nvml:.2f}s)")
+
+_t_db = _time.time()
 from .database import models, crud, migration
 from .database.session import SessionLocal
+print(f"[Import] Database modules loaded. ({_time.time() - _t_db:.2f}s)")
+
+_t_api = _time.time()
 from .api import instances, system, builder
+print(f"[Import] API routers loaded. ({_time.time() - _t_api:.2f}s)")
+
+_t_pm = _time.time()
 from .core import process_manager
+print(f"[Import] Process manager loaded. ({_time.time() - _t_pm:.2f}s)")
+
+print(f"[Import] Total import time: {_time.time() - _t_import_start:.2f}s")
 
 # --- Run Database Migration Check ---
 migration.run_db_migration()
@@ -25,20 +42,23 @@ async def lifespan(app: FastAPI):
     """
     # === STARTUP ===
     # 0. Initialize NVML
+    _t0 = __import__('time').time()
     try:
         nvmlInit()
-        print("[Startup] NVML initialized successfully.")
+        print(f"[Startup] NVML initialized successfully. ({__import__('time').time() - _t0:.2f}s)")
     except NVMLError as error:
-        print(f"[Startup] [Warning] NVML could not be initialized: {error}. GPU features will be disabled.")
+        print(f"[Startup] [Warning] NVML could not be initialized: {error}. GPU features will be disabled. ({__import__('time').time() - _t0:.2f}s)")
 
+    _t1 = __import__('time').time()
     db = SessionLocal()
     try:
         # 1. Reset all instance statuses
         num_rows_updated = db.query(models.Instance).update({"status": "stopped", "pid": None})
         db.commit()
-        print(f"[Startup] Reset status for {num_rows_updated} instances.")
+        print(f"[Startup] Reset status for {num_rows_updated} instances. ({__import__('time').time() - _t1:.2f}s)")
 
         # 2. Clear old log files
+        _t2 = __import__('time').time()
         log_files = glob.glob(os.path.join(INSTANCES_DIR, "**", "output.log"), recursive=True)
         cleared_count = 0
         for log_file in log_files:
@@ -48,26 +68,33 @@ async def lifespan(app: FastAPI):
             except OSError as e:
                 print(f"[Startup] Error removing log file {log_file}: {e}")
         if cleared_count > 0:
-            print(f"[Startup] Cleared {cleared_count} old log files.")
+            print(f"[Startup] Cleared {cleared_count} old log files. ({__import__('time').time() - _t2:.2f}s)")
+        else:
+            print(f"[Startup] No log files to clear. ({__import__('time').time() - _t2:.2f}s)")
 
         # 3. Autostart instances
+        _t3 = __import__('time').time()
         print("[Startup] Checking for instances to autostart...")
         autostart_instances = crud.get_autostart_instances(db)
         if not autostart_instances:
-            print("[Startup] No instances marked for autostart.")
+            print(f"[Startup] No instances marked for autostart. ({__import__('time').time() - _t3:.2f}s)")
         else:
             print(f"[Startup] Found {len(autostart_instances)} instance(s) to start.")
             for instance in autostart_instances:
+                _ti = __import__('time').time()
                 print(f"[Startup] Autostarting instance '{instance.name}' (ID: {instance.id})...")
                 try:
                     process_manager.start_instance_process(db, instance)
+                    print(f"[Startup] Instance '{instance.name}' autostarted. ({__import__('time').time() - _ti:.2f}s)")
                 except Exception as e:
-                    print(f"[Startup] [ERROR] Failed to autostart instance '{instance.name}': {e}")
-                    # Mark instance as 'error' so the UI can reflect the failure
+                    print(f"[Startup] [ERROR] Failed to autostart instance '{instance.name}': {e} ({__import__('time').time() - _ti:.2f}s)")
                     instance.status = "error"
                     db.commit()
+            print(f"[Startup] All autostarts complete. ({__import__('time').time() - _t3:.2f}s)")
     finally:
         db.close()
+
+    print(f"[Startup] Total startup time: {__import__('time').time() - _t0:.2f}s")
 
     yield  # <-- Application runs here
 

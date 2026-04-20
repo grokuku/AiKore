@@ -16,13 +16,17 @@ import re
 
 print("[DEBUG] Loading builder.py module...")
 
-# Try to import torch for CUDA detection, handle if missing
+# Do NOT import torch at module level — it takes several minutes to load on slow disks.
+# Instead, we use pynvml (already a project dependency) for GPU detection, and
+# lazy-import torch only when actually needed (inside endpoint functions).
 try:
-    import torch
-    print("[DEBUG] torch imported successfully.")
+    import pynvml
+    print("[DEBUG] pynvml imported successfully.")
 except ImportError:
-    torch = None
-    print("[DEBUG] torch not found.")
+    pynvml = None
+    print("[DEBUG] pynvml not found.")
+
+torch = None  # Will be lazy-loaded if needed
 
 router = APIRouter(prefix="/api/builder", tags=["Builder"])
 
@@ -300,13 +304,21 @@ def get_builder_info():
     detected_arch = "8.9" # Default fallback
     gpu_name = "Unknown"
     
-    if torch and torch.cuda.is_available():
+    # Use pynvml for GPU detection (lightweight, loads in milliseconds)
+    # torch import is intentionally avoided at module level due to multi-minute load times
+    if pynvml:
         try:
-            cap = torch.cuda.get_device_capability()
+            pynvml.nvmlInit()
+            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+            cap = pynvml.nvmlDeviceGetCudaCapability(handle)
             detected_arch = f"{cap[0]}.{cap[1]}"
-            gpu_name = torch.cuda.get_device_name()
-        except Exception:
-            pass
+            gpu_name = pynvml.nvmlDeviceGetName(handle)
+            # Decode bytes if needed (older pynvml versions return bytes)
+            if isinstance(gpu_name, bytes):
+                gpu_name = gpu_name.decode('utf-8')
+            pynvml.nvmlShutdown()
+        except Exception as e:
+            print(f"[DEBUG] pynvml GPU detection failed: {e}")
 
     return {
         "presets": PRESETS,
