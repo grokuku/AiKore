@@ -514,14 +514,23 @@ async def build_websocket(websocket: WebSocket):
         await websocket.send_text(f"\x1b[34m[INFO] Requested Config: Torch {requested_torch_ver} | {cuda_ver}\x1b[0m\r\n")
 
         # 2. Environment Setup
-        # Use full path to the env for reliable activation in non-interactive shells
+        # Use env NAME for activation — conda activate expects a name, not a full path.
+        # Passing a full path silently fails because the legacy activate script
+        # resolves envs by name, not by directory.
         env_path = f"{CONDA_BASE_DIR}/envs/{env_name}"
-        activate_prefix = f"source {CONDA_BASE_DIR}/bin/activate {env_path}"
+        activate_prefix = f"source {CONDA_BASE_DIR}/bin/activate {env_name}"
         
         await websocket.send_text(f"\x1b[30;1m[CHECK] Verifying Conda environment...\x1b[0m\r\n")
         
-        # Check if environment directory actually exists (more reliable than conda info | grep)
-        env_exists = os.path.isdir(env_path)
+        # Check if environment exists using conda CLI (more reliable for conda-named envs)
+        # os.path.isdir can report True for leftover directories from failed creates
+        conda_check_proc = await asyncio.create_subprocess_shell(
+            f"{CONDA_EXE} env list 2>/dev/null | grep -qw '{env_name}'",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        await conda_check_proc.wait()
+        env_exists = conda_check_proc.returncode == 0
         
         if not env_exists:
             await websocket.send_text(f"\x1b[33m[INFO] Environment not found. Creating {env_name}...\x1b[0m\r\n")

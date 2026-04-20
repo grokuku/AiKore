@@ -433,23 +433,12 @@ Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_me
 
 ## 11. Bugs Found and Fixed in Session 5
 
-### 🔴 8.26 — Builder: `ModuleNotFoundError: No module named 'torch'` on rebuild ✅ FIXED
-**File**: `builder.py`
-**Problem**: When a Conda environment already existed from a previous (failed) build, the builder skipped both environment creation AND PyTorch installation. If the previous build failed during `pip install torch`, the env existed but had no torch inside. Additionally, the activation command used the env name (`source activate env_name`) rather than the full path, which is less reliable in non-interactive shells.
-**Fix**: 
-- Check env existence via `os.path.isdir(env_path)` instead of `conda info | grep` (more reliable).
-- ALWAYS verify that torch is actually importable in the env (run `python -c 'import torch'`). If not, install PyTorch regardless of env age.
-- Use full path to conda env (`/home/abc/miniconda3/envs/{env_name}`) for all `source activate` commands via shared `activate_prefix` variable.
 
-### 🟠 8.27 — Welcome Animation: Scale Not Responsive + Stuttering ✅ FIXED
-**Files**: `welcome/js/renderer.js`, `welcome/js/effects.js`, `welcome/js/main.js`, `welcome/style.css`, `tools.js`, `tools.css`
-**Problem**:
-1. **Scale**: The canvas used `window.resize` which doesn't reliably fire inside iframes when the parent split pane changes via CSS flexbox. When the user drags the split pane, the logo didn't adapt its size.
-2. **Stuttering**: Every animation frame drew each character individually with `fillText` (hundreds of calls) + a real-time `ctx.filter = 'blur(6px)'` on the halo canvas — both extremely expensive operations causing consistent frame drops.
-**Fix**:
-- **Resize detection**: Added `ResizeObserver` on the canvas element (reliable in iframes) + `postMessage`-based communication from parent page (fallback for split pane drags).
-- **Performance**: Replaced per-character `fillText` rendering with pre-rendered offscreen canvases. The static logo is rendered ONCE to an offscreen canvas. A pre-blurred glow version is also rendered once. During animation, only `drawImage` calls per row strip are used (with Y wave offset) — typically 15-20 `drawImage` calls instead of 500+ `fillText` calls. The blur filter is applied only during pre-render (not per frame). Color changes re-render the offscreen canvas only when the color actually changes.
-- **CSS**: Changed canvas from `100vw/100vh` to `100%/100%` for proper iframe containment.
+## 11. Bugs Found and Fixed in Session 5 (SUPERSEDED — see Session 6 for corrected status)
+
+Sections 8.26, 8.27, 8.32, 8.33 were marked as fixed in Session 5 but are still present after user testing. See Section 13 for corrected status.
+
+---
 
 ## 12. Known Issue (Not Fixed — Report Only)
 
@@ -460,32 +449,69 @@ Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_me
 
 ### 🟠 8.29 — Terminal venv activation reads blueprint instead of launch.sh ✅ FIXED
 **Files**: `process_manager.py`
-**Problem**: The terminal activated the venv based on metadata parsed from the **original blueprint** file in `BLUEPRINTS_DIR`. If the instance's `launch.sh` had been modified (e.g., Save as Custom Blueprint), the terminal would not reflect the actual runtime venv.
-**Fix**: Added `_parse_venv_from_launch_sh()` which reads the AIKORE-METADATA block directly from the instance's `launch.sh` (the definitive source). If `launch.sh` has no metadata, falls back to the blueprint metadata. This is more reliable because `launch.sh` is the actual file used by the instance at runtime.
+**Problem**: The terminal activated the venv based on metadata parsed from the **original blueprint** file. If the instance's `launch.sh` had been modified (e.g., Save as Custom Blueprint), the terminal would not reflect the actual runtime venv.
+**Fix**: Added `_parse_venv_from_launch_sh()` which reads the AIKORE-METADATA block directly from the instance's `launch.sh`. If `launch.sh` has no metadata, falls back to the blueprint metadata.
 
 ### 🟠 8.30 — Terminal Destroyed When Switching Tools ✅ FIXED
 **Files**: `tools.js`, `state.js`, `tools.css`
-**Problem**: Every time the user switched to another tool (Logs, Editor, Welcome, etc.), `hideAllToolViews()` called `closeTerminal()` which destroyed the xterm.js Terminal object and closed the WebSocket. When switching back, the user got a fresh terminal with no history.
-**Fix**: Implemented a **persistent terminal pool** (`state.terminals = {}`) keyed by instance ID. Each terminal's xterm.js Terminal, FitAddon, and WebSocket are kept alive in memory. When switching tools, only the container is hidden (CSS `display: none`). When reopening a terminal for the same instance, the existing terminal is re-shown with full history preserved. Each terminal gets its own DOM container (`terminal-host-{id}`), and only the active one is displayed. A ResizeObserver per terminal ensures auto-fitting when shown.
+**Problem**: Every time the user switched tools, `closeTerminal()` destroyed the xterm.js Terminal object and closed the WebSocket. When switching back, the user got a fresh terminal with no history.
+**Fix**: Implemented a **persistent terminal pool** (`state.terminals = {}`) keyed by instance ID. Each terminal's xterm.js Terminal, FitAddon, and WebSocket are kept alive in memory. When switching tools, only the container is hidden. When reopening a terminal for the same instance, the existing terminal is re-shown with full history preserved.
 
 ### 🟠 8.31 — Builder State Lost When Switching Tools ✅ FIXED
 **Files**: `tools.js`
-**Problem**: Switching away from the builder view while a build was in progress caused the WebSocket to close and the terminal to be destroyed, effectively killing the visible build output. When returning, the user saw a blank terminal even though the build might have completed in the background.
-**Fix**: `hideAllToolViews({keepBuilder: true})` is now called when a build is in progress (detected by `builderSocket.readyState === WebSocket.OPEN`). The builder xterm.js terminal and WebSocket are preserved. The builder container is hidden visually but the build continues in the background. When returning to the builder view via `showBuilderView()`, the existing terminal is re-shown and re-fitted. The build output stream continues without interruption.
-
-### 🟡 8.32 — Terminal Container Not Auto-Fitting on Split Pane Resize ✅ FIXED
-**Files**: `tools.css`
-**Problem**: `#terminal-content` had `width: 100%; height: 100%` but was not a flex child. When the split pane was dragged, the terminal didn't resize automatically because xterm.js FitAddon needs a ResizeObserver.
-**Fix**: Changed `#terminal-content` to use `flex: 1; min-height: 0` and `#terminal-view-container` to `display: flex; flex-direction: column`. Each persistent terminal now has its own ResizeObserver that calls `fitAddon.fit()` on container resize.
-
-### 🔴 8.33 — 8-Minute Startup Delay Caused by `import torch` at Module Level ✅ FIXED
-**File**: `builder.py`
-**Problem**: `import torch` was executed at module level (line 22), which runs during application startup. PyTorch is a ~2-4 GB library that takes several minutes to load on slow disks (overlay2, HDD, NFS). This caused an 8-minute delay between "Waiting for application startup" and "Application startup complete". Torch was only used for GPU capability detection in `get_builder_info()` — something `pynvml` does in milliseconds.
-**Fix**: Removed `import torch` from module level. Replaced GPU detection in `get_builder_info()` with `pynvml.nvmlDeviceGetCudaCapability()`, which is already a project dependency and loads almost instantly. Added detailed comments explaining why torch must not be imported at module level.
+**Problem**: Switching away from the builder view while a build was in progress destroyed the WebSocket and terminal. When returning, the user saw a blank terminal even though the build continued in the background.
+**Fix**: `hideAllToolViews({keepBuilder: true})` is called when a build is in progress. The builder terminal and WebSocket are preserved. The builder container is hidden visually but the build continues.
 
 ---
 
-## 13. Pending Features (from features.md)
+## 13. Session 6 — Open Items & Corrected Status
+
+### 🔴 8.26 — Builder: `ModuleNotFoundError: No module named 'torch'` ⚠️ STILL PRESENT
+**File**: `builder.py`
+**Problem**: When building a module (e.g., SageAttention), `setup.py` fails with `import torch: No module named 'torch'`. The build command prefixes everything with `source {CONDA_BASE_DIR}/bin/activate {env_path}` where `env_path` is the **full path** (e.g., `/home/abc/miniconda3/envs/builder_py312_cu130_pt251`). However, the legacy conda `activate` script at `/home/abc/miniconda3/bin/activate` expects an **environment name**, not a full path. Passing a full path silently fails or does nothing, so `python -u` resolves to the system Python which has no torch.
+**Root cause**: `source activate` with a full path doesn't work. The script expects a name like `builder_py312_cu130_pt251`.
+**Note**: `process_manager.py` uses `source activate {full_venv_path}` for INSTANCE environments at paths like `/config/instances/{name}/env` — these work because they're not conda-named envs. The builder creates conda-named envs under `/home/abc/miniconda3/envs/`.
+**Required fix**: Revert `activate_prefix` to use env NAME: `source {CONDA_BASE_DIR}/bin/activate {env_name}`. Revert env existence check to use conda CLI instead of `os.path.isdir`.
+
+### 🔴 8.27 — Welcome Animation: Glow/BG Fill Overflow on Zoom-Out ⚠️ STILL PRESENT
+**Files**: `welcome/js/renderer.js`, `welcome/js/effects.js`, `welcome/js/main.js`, `welcome/style.css`
+**User clarification**: The ASCII characters render correctly. The bug is the **colored background glow/fill** that bleeds out and creates a solid colored block when zooming out. This is the semi-transparent layer behind the characters (`globalAlpha: 0.4` rectangles + blurred glow with `globalCompositeOperation: 'screen'`).
+**Root cause**: The glow blur radius is fixed at 6px regardless of font size. When the canvas is small (zoom-out, font ~4-6px), a 6px blur creates a massive colored wash that overwhelms the tiny characters and merges into a solid block. Per-row clip-based wave draws the ENTIRE glow canvas per row — overlapping clipped glows accumulate.
+**What works**: Pre-rendered offscreen canvas architecture (no per-frame fillText). ResizeObserver + postMessage for iframe resize. Stuttering is resolved.
+**What needs fixing**:
+1. Glow blur radius must scale with font size (e.g., `blur = max(1, fontSize * 0.4)`)
+2. Glow alpha must decrease at small sizes to prevent overwhelming the text
+3. Consider disabling glow entirely below a threshold font size (e.g., < 10px)
+4. Per-row clip wave may need glow accumulation prevention
+
+### 🟡 8.32b — Terminal Slightly Smaller Than Its Frame
+**Files**: `tools.css`
+**Problem**: Terminal xterm.js instance fills most of the container but leaves a small gap at edges due to container `padding: 0 1rem 1rem 1rem`. Terminal already resized correctly before the CSS changes. The small gap is a minor cosmetic issue from intentional padding.
+**Note**: Can be removed specifically for terminal view if desired.
+
+### 🔴 8.33 — 8-Minute Startup Delay ⚠️ STILL PRESENT, ROOT CAUSE UNKNOWN
+**Files**: `builder.py`, `main.py`, `entry.sh`, `docker/`
+**Problem**: 8-minute delay between "Waiting for application startup" and "Application startup complete". `import torch` was removed from module level (valid optimization, but not the cause on NVMe/ZFS). User reports **zero timing messages appear in logs** despite timing logging being added to `main.py`, suggesting the delay is not in the Python process.
+**Key insight**: The bottleneck is almost certainly **outside the Python process** — likely in s6-overlay service orchestration, `entry.sh`, or a blocking service dependency (waiting for NVIDIA driver, KasmVNC daemon, X11 socket). Alternatively, the modified code was not rebuilt into the Docker image.
+**Actions taken**:
+- Removed `import torch` from `builder.py` module level (valid optimization regardless)
+- Added timing logging to `main.py` (may not execute if delay is before Python starts)
+**Next steps**:
+- Check `entry.sh` and s6-overlay service scripts for `sleep`, `until`, or blocking waits
+- Add `PYTHONUNBUFFERED=1` to container environment
+- Examine s6-overlay service definitions for sequential blocking services
+- Confirm the Docker image is actually rebuilt with the modified code
+
+### ✅ Confirmed working (user-tested this session)
+- 8.28/8.29: `parse_blueprint_metadata()` finds custom blueprints + terminal reads `launch.sh`
+- 8.30: Persistent terminals — switching tools no longer destroys terminal state
+- 8.31: Builder state persists during build when switching tools
+- Animation stuttering resolved (pre-rendered offscreen canvas)
+- Terminal auto-resizes on split pane drag (was already working before changes)
+
+---
+
+## 14. Pending Features (from features.md)
 
 - [ ] Improve global error handling and status reporting across the entire application
 - [ ] Write comprehensive user and system documentation

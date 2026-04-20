@@ -128,7 +128,7 @@
     width: 100%;
     min-height: 0;
     background-color: #111;
-    padding: 0 1rem 1rem 1rem;
+    padding: 0;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;

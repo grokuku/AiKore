@@ -136,12 +136,17 @@ class Renderer {
             lCtx.fillText(p.char, p.x, p.y);
         }
 
+        // Calculate adaptive glow parameters based on font size
+        const fontSize = this.particles.length > 0 ? this.particles[0].size : 14;
+        this._glowBlur = Math.max(1, fontSize * 0.4);
+        this._glowAlpha = fontSize < 10 ? 0.15 : (fontSize < 14 ? 0.25 : 0.4);
+
         // Pre-render glow
         this._glowCanvas = document.createElement('canvas');
         this._glowCanvas.width = this._logoCanvas.width;
         this._glowCanvas.height = this._logoCanvas.height;
         const gCtx = this._glowCanvas.getContext('2d');
-        gCtx.filter = 'blur(6px)';
+        gCtx.filter = `blur(${this._glowBlur}px)`;
         gCtx.drawImage(this._logoCanvas, 0, 0);
     }
 
@@ -185,15 +190,16 @@ class Renderer {
             // Re-render glow
             const gCtx = this._glowCanvas.getContext('2d');
             gCtx.clearRect(0, 0, this._glowCanvas.width, this._glowCanvas.height);
-            gCtx.filter = 'blur(6px)';
+            gCtx.filter = `blur(${this._glowBlur}px)`;
             gCtx.drawImage(this._logoCanvas, 0, 0);
         }
 
         if (!effect) {
             // --- Static: draw entire image at once ---
             // 5-arg drawImage: entire source → (dx, dy, dw, dh) in CSS coords
+            // Glow alpha scales down at small font sizes to prevent colored wash
             this.ctx.save();
-            this.ctx.globalAlpha = 0.4;
+            this.ctx.globalAlpha = this._glowAlpha;
             this.ctx.globalCompositeOperation = 'screen';
             this.ctx.drawImage(this._glowCanvas, 0, 0, cssW, cssH);
             this.ctx.restore();
@@ -208,7 +214,7 @@ class Renderer {
 
             // --- Glow layer ---
             this.ctx.save();
-            this.ctx.globalAlpha = 0.4;
+            this.ctx.globalAlpha = this._glowAlpha;
             this.ctx.globalCompositeOperation = 'screen';
             for (const row of this.rows) {
                 const waveOffset = effect.getYOffset(row.originalY, time, this.logoWidth);
