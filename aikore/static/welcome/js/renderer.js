@@ -12,9 +12,8 @@ class Renderer {
         this.logoWidth = 0;
         this.logoHeight = 0;
 
-        // Pre-rendered offscreen canvases
+        // Pre-rendered offscreen canvas
         this._logoCanvas = null;
-        this._glowCanvas = null;
 
         // ResizeObserver for reliable iframe resize detection
         this._resizeObserver = null;
@@ -136,18 +135,7 @@ class Renderer {
             lCtx.fillText(p.char, p.x, p.y);
         }
 
-        // Calculate adaptive glow parameters based on font size
-        const fontSize = this.particles.length > 0 ? this.particles[0].size : 14;
-        this._glowBlur = Math.max(1, fontSize * 0.4);
-        this._glowAlpha = fontSize < 10 ? 0.15 : (fontSize < 14 ? 0.25 : 0.4);
 
-        // Pre-render glow
-        this._glowCanvas = document.createElement('canvas');
-        this._glowCanvas.width = this._logoCanvas.width;
-        this._glowCanvas.height = this._logoCanvas.height;
-        const gCtx = this._glowCanvas.getContext('2d');
-        gCtx.filter = `blur(${this._glowBlur}px)`;
-        gCtx.drawImage(this._logoCanvas, 0, 0);
     }
 
     draw(time, color, effect) {
@@ -187,23 +175,11 @@ class Renderer {
                 lCtx.fillText(p.char, p.x, p.y);
             }
 
-            // Re-render glow
-            const gCtx = this._glowCanvas.getContext('2d');
-            gCtx.clearRect(0, 0, this._glowCanvas.width, this._glowCanvas.height);
-            gCtx.filter = `blur(${this._glowBlur}px)`;
-            gCtx.drawImage(this._logoCanvas, 0, 0);
+
         }
 
         if (!effect) {
             // --- Static: draw entire image at once ---
-            // 5-arg drawImage: entire source → (dx, dy, dw, dh) in CSS coords
-            // Glow alpha scales down at small font sizes to prevent colored wash
-            this.ctx.save();
-            this.ctx.globalAlpha = this._glowAlpha;
-            this.ctx.globalCompositeOperation = 'screen';
-            this.ctx.drawImage(this._glowCanvas, 0, 0, cssW, cssH);
-            this.ctx.restore();
-
             this.ctx.drawImage(this._logoCanvas, 0, 0, cssW, cssH);
         } else {
             // --- Wave: clip per row, draw entire image with vertical offset ---
@@ -211,24 +187,6 @@ class Renderer {
             // NOT 9-arg drawImage (which uses source-rect in PHYSICAL pixels
             // and would only copy 1/DPR of the image on HiDPI screens).
             // The clip rect restricts what's visible for each row.
-
-            // --- Glow layer ---
-            this.ctx.save();
-            this.ctx.globalAlpha = this._glowAlpha;
-            this.ctx.globalCompositeOperation = 'screen';
-            for (const row of this.rows) {
-                const waveOffset = effect.getYOffset(row.originalY, time, this.logoWidth);
-                const clipY = row.y - row.height / 2 + waveOffset;
-                this.ctx.save();
-                this.ctx.beginPath();
-                this.ctx.rect(0, clipY, cssW, row.height);
-                this.ctx.clip();
-                this.ctx.drawImage(this._glowCanvas, 0, waveOffset, cssW, cssH);
-                this.ctx.restore();
-            }
-            this.ctx.restore();
-
-            // --- Main layer ---
             for (const row of this.rows) {
                 const waveOffset = effect.getYOffset(row.originalY, time, this.logoWidth);
                 const clipY = row.y - row.height / 2 + waveOffset;

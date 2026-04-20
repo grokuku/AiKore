@@ -466,28 +466,20 @@ Sections 8.26, 8.27, 8.32, 8.33 were marked as fixed in Session 5 but are still 
 
 ## 13. Session 6 — Open Items & Corrected Status
 
-### 🔴 8.26 — Builder: `ModuleNotFoundError: No module named 'torch'` ⚠️ STILL PRESENT
+### 🔴 8.26 — Builder: `ModuleNotFoundError: No module named 'torch'` ✅ FIXED
 **File**: `builder.py`
-**Problem**: When building a module (e.g., SageAttention), `setup.py` fails with `import torch: No module named 'torch'`. The build command prefixes everything with `source {CONDA_BASE_DIR}/bin/activate {env_path}` where `env_path` is the **full path** (e.g., `/home/abc/miniconda3/envs/builder_py312_cu130_pt251`). However, the legacy conda `activate` script at `/home/abc/miniconda3/bin/activate` expects an **environment name**, not a full path. Passing a full path silently fails or does nothing, so `python -u` resolves to the system Python which has no torch.
-**Root cause**: `source activate` with a full path doesn't work. The script expects a name like `builder_py312_cu130_pt251`.
-**Note**: `process_manager.py` uses `source activate {full_venv_path}` for INSTANCE environments at paths like `/config/instances/{name}/env` — these work because they're not conda-named envs. The builder creates conda-named envs under `/home/abc/miniconda3/envs/`.
-**Required fix**: Revert `activate_prefix` to use env NAME: `source {CONDA_BASE_DIR}/bin/activate {env_name}`. Revert env existence check to use conda CLI instead of `os.path.isdir`.
+**Problem**: When building a module (e.g., SageAttention), `setup.py` fails with `import torch: No module named 'torch'`. The build command used `source {CONDA_BASE_DIR}/bin/activate {env_name}` to activate the conda environment, but in the non-interactive shell created by `asyncio.create_subprocess_shell`, `.bashrc` is never sourced so conda shell functions (`conda activate`) aren't initialized. The legacy `source activate` script silently fails without these functions, leaving `python` resolving to the system Python which has no torch.
+**Fix**: Replaced all `source activate` / `activate_prefix && command` patterns with `conda run -n {env_name} --no-capture-output`. `conda run` handles environment setup (PATH, CONDA_PREFIX, LD_LIBRARY_PATH) internally regardless of shell context. For simple commands (torch check, pip install, build tools), the command is passed directly to `conda run`. For the complex build command (which contains `&&` chains, `cd`, `export`, and nested quotes), the raw command is written to a temporary shell script `_aikore_build.sh` and executed via `conda run -n {env_name} bash {build_script}`, avoiding shell quoting issues.
 
-### 🔴 8.27 — Welcome Animation: Glow/BG Fill Overflow on Zoom-Out ⚠️ STILL PRESENT
-**Files**: `welcome/js/renderer.js`, `welcome/js/effects.js`, `welcome/js/main.js`, `welcome/style.css`
-**User clarification**: The ASCII characters render correctly. The bug is the **colored background glow/fill** that bleeds out and creates a solid colored block when zooming out. This is the semi-transparent layer behind the characters (`globalAlpha: 0.4` rectangles + blurred glow with `globalCompositeOperation: 'screen'`).
-**Root cause**: The glow blur radius is fixed at 6px regardless of font size. When the canvas is small (zoom-out, font ~4-6px), a 6px blur creates a massive colored wash that overwhelms the tiny characters and merges into a solid block. Per-row clip-based wave draws the ENTIRE glow canvas per row — overlapping clipped glows accumulate.
-**What works**: Pre-rendered offscreen canvas architecture (no per-frame fillText). ResizeObserver + postMessage for iframe resize. Stuttering is resolved.
-**What needs fixing**:
-1. Glow blur radius must scale with font size (e.g., `blur = max(1, fontSize * 0.4)`)
-2. Glow alpha must decrease at small sizes to prevent overwhelming the text
-3. Consider disabling glow entirely below a threshold font size (e.g., < 10px)
-4. Per-row clip wave may need glow accumulation prevention
+### 🔴 8.27 — Welcome Animation: Glow/BG Fill Overflow on Zoom-Out ✅ FIXED
+**Files**: `welcome/js/renderer.js`
+**Problem**: The animated ASCII welcome screen had a blurred glow layer behind the characters (`_glowCanvas` with `filter: blur(6px)` drawn with `globalCompositeOperation: 'screen'`). At small zoom levels (font size ~4-6px), the fixed 6px blur was proportionally enormous, creating a solid colored wash that overwhelmed the characters and merged into an opaque block. Per-row clip-based wave drawing caused overlapping glow segments to accumulate further.
+**Fix**: Removed the glow layer entirely. The `_glowCanvas`, blur computation (`_glowBlur`, `_glowAlpha`), and all glow rendering code (`globalCompositeOperation: 'screen'`, `drawImage` of glow canvas) have been deleted from `renderer.js`. The welcome animation now renders only the pre-rendered logo canvas (colored rectangles at alpha 0.4 + white characters at alpha 1.0), which matches the clean, sharp appearance of the non-buggy left portion of the image. The wave effect (per-row vertical offset with clip) is preserved on the main logo layer only.
 
-### 🟡 8.32b — Terminal Slightly Smaller Than Its Frame
-**Files**: `tools.css`
-**Problem**: Terminal xterm.js instance fills most of the container but leaves a small gap at edges due to container `padding: 0 1rem 1rem 1rem`. Terminal already resized correctly before the CSS changes. The small gap is a minor cosmetic issue from intentional padding.
-**Note**: Can be removed specifically for terminal view if desired.
+### 🟡 8.32b — Terminal Slightly Smaller Than Its Frame ✅ FIXED
+**File**: `tools.css`
+**Problem**: Terminal xterm.js instance fills most of the container but leaves a small gap at edges due to container `padding: 0 1rem 1rem 1rem`.
+**Fix**: Changed `#terminal-view-container` padding from `0 1rem 1rem 1rem` to `0`. The terminal now fills its container edge-to-edge.
 
 ### 🔴 8.33 — 8-Minute Startup Delay ⚠️ STILL PRESENT, ROOT CAUSE UNKNOWN
 **Files**: `builder.py`, `main.py`, `entry.sh`, `docker/`
