@@ -355,6 +355,63 @@ async def get_available_python_versions():
     # Fallback if conda fails
     return["3.15", "3.14", "3.13", "3.12", "3.11", "3.10"]
 
+@router.get("/versions/cuda")
+def get_available_cuda_versions():
+    """
+    Dynamically discovers available CUDA versions from the PyTorch wheel index.
+    Scrapes the top-level directory listing at download.pytorch.org/whl/
+    to find all cuXXX folders. Returns both the raw cu-string and a
+    human-readable "X.Y" version string.
+    Falls back to a hardcoded list if the index is unreachable.
+    """
+    fallback = [
+        {"cu": "cu131", "version": "13.1"},
+        {"cu": "cu130", "version": "13.0"},
+        {"cu": "cu128", "version": "12.8"},
+        {"cu": "cu126", "version": "12.6"},
+        {"cu": "cu124", "version": "12.4"},
+        {"cu": "cu121", "version": "12.1"},
+        {"cu": "cu118", "version": "11.8"},
+    ]
+    try:
+        index_url = "https://download.pytorch.org/whl/"
+        req = urllib.request.Request(
+            index_url,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            html = response.read().decode('utf-8')
+        # Find all cuXXX or cuXXXX links in the directory listing
+        matches = re.findall(r'href="(cu\d+)"', html)
+        if not matches:
+            # Alternative pattern: some listings use /cuXXX/
+            matches = re.findall(r'href="(cu\d+)/?"', html)
+        if not matches:
+            print("[DEBUG] No CUDA versions found via regex, using fallback.")
+            return fallback
+        # Deduplicate and build result
+        seen = set()
+        result = []
+        for cu in sorted(set(matches), reverse=True):
+            if cu in seen:
+                continue
+            seen.add(cu)
+            # Convert cuXXX to X.Y format: cu118 -> 11.8, cu130 -> 13.0, cu131 -> 13.1
+            num = cu[2:]  # strip "cu"
+            if len(num) == 3:
+                version = f"{num[0]}.{num[1:]}"
+            elif len(num) == 4:
+                version = f"{num[:2]}.{num[2:]}"
+            else:
+                version = num
+            result.append({"cu": cu, "version": version})
+        if not result:
+            return fallback
+        return result
+    except Exception as e:
+        print(f"[DEBUG] Failed to fetch CUDA versions: {e}")
+        return fallback
+
 @router.get("/versions/torch/{cuda_ver}")
 def get_torch_versions_for_cuda(cuda_ver: str):
     """

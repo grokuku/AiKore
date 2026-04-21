@@ -158,27 +158,37 @@ export async function performVersionCheck(instanceId) {
     return handleResponse(response);
 }
 // --- NEW: Fetch available PyTorch versions for a specific CUDA version ---
+export async function fetchCudaVersions() {
+    try {
+        const response = await fetch('/api/builder/versions/cuda');
+        if (response.ok) return await response.json();
+        throw new Error(`HTTP ${response.status}`);
+    } catch (error) {
+        console.error('Failed to fetch CUDA versions:', error);
+        throw error;
+    }
+}
+
 export async function fetchTorchVersions(cudaVer) {
-    // Si cudaVer est vide ("CUDA Auto"), on utilise 12.8 par défaut pour peupler la liste
-    const targetCuda = cudaVer || '12.8'; 
-    const cuString = 'cu' + targetCuda.replace('.', '');
+    if (!cudaVer) return [];
+    const cuString = cudaVer.startsWith('cu') ? cudaVer : 'cu' + cudaVer.replace('.', '');
     try {
         const response = await fetch(`/api/builder/versions/torch/${cuString}`);
-        if (response.ok) {
-            return await response.json();
-        }
+        if (response.ok) return await response.json();
+        throw new Error(`HTTP ${response.status}`);
     } catch (error) {
-        console.error(`Failed to fetch torch versions for ${targetCuda}:`, error);
+        console.error(`Failed to fetch torch versions for ${cudaVer}:`, error);
+        throw error;
     }
-    // Updated fallback list
-    return['2.11.0', '2.10.0', '2.9.1', '2.8.0', '2.7.0', '2.6.0', '2.5.1'];
 }
+
 export async function fetchAvailablePythonVersions() {
     try {
         const response = await fetch('/api/builder/versions/python');
         if (response.ok) return await response.json();
+        throw new Error(`HTTP ${response.status}`);
     } catch (e) {
-        console.error("Discovery failed", e);
+        console.error('Failed to fetch Python versions:', e);
+        throw e;
     }
-    return ['3.15', '3.14', '3.13', '3.12', '3.11', '3.10']; // Fallback
 }

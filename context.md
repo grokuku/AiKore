@@ -89,7 +89,11 @@ It uses a **"Neutral Image Architecture"**: the base Docker image is lightweight
 │   │   │   ├── state.js                # Centralized State Store + DOM references (`DOM` and `state` exports)
 │   │   │   ├── tools.js                # All tool views: Builder (dynamic torch population, WebSocket build, terminal), Wheels Manager (dual-pane, toggle, sync API), Log Viewer (polling, ansi_up), Terminal (xterm.js + WebSocket), Editor (CodeMirror), Version Check, Welcome Screen
 │   │   │   └── ui.js                   # DOM manipulation: renderInstanceRow (full row creation with all fields, GPU checkboxes, env selects, port select, drag handle, tree connector), updateInstanceRow (status/button sync), checkRowForChanges (dirty detection), buildInstanceUrl (proxy vs VNC vs custom hostname), showToast, updateSystemStats
-│   │   ├── welcome/                    # CRT-style Welcome Screen (static HTML)
+│   │   ├── welcome/                    # Welcome animation (single-file canvas renderer with wave effect + color cycling)
+│   │   │   ├── index.html              # Loads only main.js (no separate renderer/effects files)
+│   │   │   ├── style.css               # CRT scanlines, dark background
+│   │   │   ├── js/main.js              # Self-contained animation: fetches ASCII logo, auto-fits, wave effect, color cycling
+│   │   │   └── logos/aikore-smooth.txt  # ASCII art logo file
 │   │   └── index.html                  # Main HTML: Split panes, all modal overlays, CDN scripts (Split.js, xterm.js, CodeMirror, SortableJS, AnsiUp), GPU stat template
 │   │
 │   ├── main.py                         # FastAPI entry: `lifespan` async context manager (NVML init, status reset, log cleanup, autostart), router registration, static mount
@@ -151,11 +155,12 @@ Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_me
 
 ### Module Builder Workflow
 1. User selects Preset + Python + CUDA + Torch + GPU Arch
-2. Backend creates isolated Conda env `builder_py{ver}_{cu}{ver}_pt{ver}`
-3. Installs exact PyTorch version from `download.pytorch.org`
-4. Compiles wheel using `nvcc` (System CUDA 13.0)
-5. Renames wheel with `+arch{X.Y}` suffix (e.g., `sageattention-1.0+arch8.9.whl`)
-6. Stores in `/config/instances/.wheels/` with metadata in `manifest.json`
+2. **Version data is fetched dynamically**: Python from Conda (`/api/builder/versions/python`), CUDA from PyTorch index (`/api/builder/versions/cuda`), Torch from PyTorch index (`/api/builder/versions/torch/{cu}`). All have hardcoded fallbacks.
+3. Backend creates isolated Conda env `builder_py{ver}_{cu}{ver}_pt{ver}` via `source activate` (not `conda run`)
+4. Installs `torch=={ver} torchvision torchaudio` from PyTorch wheel index (no version pin on torchvision/torchaudio — pip resolves compatibility)
+5. Compiles wheel using `nvcc` (System CUDA 13.0)
+6. Renames wheel with `+arch{X.Y}` suffix (e.g., `sageattention-1.0+arch8.9.whl`)
+7. Stores in `/config/instances/.wheels/` with metadata in `manifest.json`
 
 ### Wheel Sync System
 - **Global wheels** (`.wheels/`): Stored WITH `+arch` suffix (metadata)
@@ -200,6 +205,7 @@ Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_me
 | GET | `/api/system/debug-nginx` | `debug_nginx` | NGINX config debug dump |
 | GET | `/api/builder/info` | `get_builder_info` | Presets, detected GPU arch, python path |
 | GET | `/api/builder/versions/python` | `get_available_python_versions` | Conda search results (cached) |
+| GET | `/api/builder/versions/cuda` | `get_available_cuda_versions` | Scrapes PyTorch wheel index, returns `{cu, version}` objects |
 | GET | `/api/builder/versions/torch/{cu}` | `get_torch_versions_for_cuda` | Scrape PyTorch index, fallback list |
 | GET | `/api/builder/wheels` | `list_wheels` | List built wheels with metadata |
 | GET | `/api/builder/wheels/{name}/download` | `download_wheel` | Download .whl file |
@@ -472,40 +478,48 @@ Sections 8.26, 8.27, 8.32, 8.33 were marked as fixed in Session 5 but are still 
 
 ## 13. Session 6 — Open Items & Corrected Status
 
-### 🔴 8.26 — Builder: `ModuleNotFoundError: No module named 'torch'` ✅ FIXED
+### 🔴 8.26 — Builder: `ModuleNotFoundError: No module named 'torch'` ✅ FIXED (again, correctly this time)
 **File**: `builder.py`
-**Problem**: When building a module (e.g., SageAttention), `setup.py` fails with `import torch: No module named 'torch'`. The build command used `source {CONDA_BASE_DIR}/bin/activate {env_name}` to activate the conda environment, but in the non-interactive shell created by `asyncio.create_subprocess_shell`, `.bashrc` is never sourced so conda shell functions (`conda activate`) aren't initialized. The legacy `source activate` script silently fails without these functions, leaving `python` resolving to the system Python which has no torch.
-**Fix**: Replaced all `source activate` / `activate_prefix && command` patterns with `conda run -n {env_name} --no-capture-output`. `conda run` handles environment setup (PATH, CONDA_PREFIX, LD_LIBRARY_PATH) internally regardless of shell context. For simple commands (torch check, pip install, build tools), the command is passed directly to `conda run`. For the complex build command (which contains `&&` chains, `cd`, `export`, and nested quotes), the raw command is written to a temporary shell script `_aikore_build.sh` and executed via `conda run -n {env_name} bash {build_script}`, avoiding shell quoting issues.
+**Problem**: The previous fix (Session 6) replaced `source activate` with `conda run`, but `conda run` doesn't propagate CUDA environment variables correctly in subprocess contexts, causing the same `No module named 'torch'` error during builds.
+**Fix**: Reverted to the original `source {CONDA_BASE_DIR}/bin/activate {env_name}` pattern which works correctly in `asyncio.create_subprocess_shell(executable='/bin/bash')` because bash sources the conda activate script directly. Kept the security improvements (env name validation, torch_is_installed check) from the previous fix.
 
-### 🔴 8.27 — Welcome Animation: Glow/BG Fill Overflow on Zoom-Out ✅ FIXED
-**Files**: `welcome/js/renderer.js`
-**Problem**: The animated ASCII welcome screen had a blurred glow layer behind the characters (`_glowCanvas` with `filter: blur(6px)` drawn with `globalCompositeOperation: 'screen'`). At small zoom levels (font size ~4-6px), the fixed 6px blur was proportionally enormous, creating a solid colored wash that overwhelmed the characters and merged into an opaque block. Per-row clip-based wave drawing caused overlapping glow segments to accumulate further.
-**Fix**: Removed the glow layer entirely. The `_glowCanvas`, blur computation (`_glowBlur`, `_glowAlpha`), and all glow rendering code (`globalCompositeOperation: 'screen'`, `drawImage` of glow canvas) have been deleted from `renderer.js`. The welcome animation now renders only the pre-rendered logo canvas (colored rectangles at alpha 0.4 + white characters at alpha 1.0), which matches the clean, sharp appearance of the non-buggy left portion of the image. The wave effect (per-row vertical offset with clip) is preserved on the main logo layer only.
+### 🔴 8.27 — Welcome Animation ✅ REWRITTEN FROM SCRATCH
+**Files**: `welcome/js/main.js`, `welcome/js/effects.js` (deleted), `welcome/js/renderer.js` (deleted), `welcome/index.html`
+**Problem**: Original animation had multiple issues (glow overflow, stuttering, complex class hierarchy). Previous fixes were incremental and fragile.
+**Fix**: Complete rewrite as a single-file animation in `main.js`. Removed glow layer entirely. Logo is pre-rendered on an offscreen canvas (accent-colored rectangles at alpha 0.35 + white characters at alpha 1.0). Wave effect via per-row clipping. Color cycling with smooth hex blending (7 accent colors, 1.2s transitions, 3.8s idle). Auto-fits viewport (85% of available space). No zoom controls — always scales to window. `rebuildOffscreen()` called only on color change (optimized, not per-frame). ResizeObserver + postMessage for iframe resize detection. Old `effects.js` and `renderer.js` deleted, `index.html` loads only `main.js`.
 
 ### 🟡 8.32b — Terminal Slightly Smaller Than Its Frame ✅ FIXED
 **File**: `tools.css`
-**Problem**: Terminal xterm.js instance fills most of the container but leaves a small gap at edges due to container `padding: 0 1rem 1rem 1rem`.
-**Fix**: Changed `#terminal-view-container` padding from `0 1rem 1rem 1rem` to `0`. The terminal now fills its container edge-to-edge.
+**Fix**: Changed `#terminal-content` padding from `0 1rem 1rem 1rem` to `0`. Added `position: relative` to `#terminal-content`.
+
+### 🔴 8.34 — Terminal: Previous Terminals Show Black Screen ✅ FIXED
+**Files**: `tools.js`, `tools.css`
+**Problem**: Opening multiple terminals caused all but the last to show a black screen. Root cause: `openTerminal()` called `DOM.terminalContent.innerHTML = ''` which destroyed all existing terminal host DOM elements. The `state.terminals` objects (xterm.js Terminal, FitAddon, WebSocket) remained in memory but referenced destroyed DOM nodes. Additionally, `_showTerminalInstance()` used `display: none/''` toggling which caused xterm.js canvases to lose their dimensions.
+**Fix**:
+- Removed `DOM.terminalContent.innerHTML = ''` — terminal-content hosts all terminal pool elements
+- Terminal hosts use `position: absolute` with `visibility: hidden/visible` (instead of `display: none/''`) so xterm.js canvases retain their dimensions
+- `#terminal-content` CSS: added `position: relative` for absolute-positioned children
+- `_showTerminalInstance()`: `terminal.refresh(0)` + `setTimeout(50ms)` to force re-render after visibility change
+- `_createTerminalForInstance()`: initial fit deferred to `socket.onopen` with `requestAnimationFrame`
+
+### 🔴 8.35 — Builder: Wrong Torchvision Version Mapping ✅ FIXED
+**File**: `builder.py`
+**Problem**: `TORCH_VISION_MAP` hardcoded torchvision versions were wrong (e.g., torch 2.11.0 → 0.22.0 instead of 0.26.0). Hardcoded maps are always stale on new releases.
+**Fix**: Removed `TORCH_VISION_MAP` entirely. Install command is now `pip install torch=={ver} torchvision torchaudio --index-url {url}` — pip resolves compatible versions directly from the PyTorch wheel index. No version pin on torchvision/torchaudio.
+
+### ✨ Feature: Builder Version Selects Are Now Dynamic & Independent
+**Files**: `builder.py`, `api.js`, `state.js`, `tools.js`
+**Description**:
+- **Python versions**: Were hardcoded in `state.js`, now fetched dynamically from `/api/builder/versions/python` (conda search)
+- **CUDA versions**: Were hardcoded in `state.js`, now fetched dynamically from new endpoint `/api/builder/versions/cuda` (scrapes PyTorch wheel index). Returns objects `{cu: "cu130", version: "13.0"}`
+- **PyTorch versions**: Already dynamic, now preserves selection when changing CUDA (if version exists in new list, keeps it; otherwise defaults to latest)
+- **Error reporting**: All fetch errors are displayed in the builder terminal with ANSI-colored messages (`[ERROR]`, `[WARN]`)
+- **Fallbacks**: Each endpoint has a hardcoded fallback list in both backend and frontend if network is unavailable
+- `state.versions.python` and `state.versions.cuda` now start empty, filled on builder view open
+- Labels: Selects show "(Latest)" suffix on first option, "(offline)" on fallback versions
 
 ### 🔴 8.33 — 8-Minute Startup Delay ⚠️ STILL PRESENT, ROOT CAUSE UNKNOWN
-**Files**: `builder.py`, `main.py`, `entry.sh`, `docker/`
-**Problem**: 8-minute delay between "Waiting for application startup" and "Application startup complete". `import torch` was removed from module level (valid optimization, but not the cause on NVMe/ZFS). User reports **zero timing messages appear in logs** despite timing logging being added to `main.py`, suggesting the delay is not in the Python process.
-**Key insight**: The bottleneck is almost certainly **outside the Python process** — likely in s6-overlay service orchestration, `entry.sh`, or a blocking service dependency (waiting for NVIDIA driver, KasmVNC daemon, X11 socket). Alternatively, the modified code was not rebuilt into the Docker image.
-**Actions taken**:
-- Removed `import torch` from `builder.py` module level (valid optimization regardless)
-- Added timing logging to `main.py` (may not execute if delay is before Python starts)
-**Next steps**:
-- Check `entry.sh` and s6-overlay service scripts for `sleep`, `until`, or blocking waits
-- Add `PYTHONUNBUFFERED=1` to container environment
-- Examine s6-overlay service definitions for sequential blocking services
-- Confirm the Docker image is actually rebuilt with the modified code
-
-### ✅ Confirmed working (user-tested this session)
-- 8.28/8.29: `parse_blueprint_metadata()` finds custom blueprints + terminal reads `launch.sh`
-- 8.30: Persistent terminals — switching tools no longer destroys terminal state
-- 8.31: Builder state persists during build when switching tools
-- Animation stuttering resolved (pre-rendered offscreen canvas)
-- Terminal auto-resizes on split pane drag (was already working before changes)
+**Status**: Unchanged from previous session.
 
 ---
 

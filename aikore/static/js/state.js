@@ -39,9 +39,9 @@ export const state = {
     systemInfo: { gpu_count: 0, gpus:[] },
     // --- Custom Versions Configuration ---
     versions: {
-        python:['3.10', '3.11', '3.12', '3.13', '3.14', '3.15'],
-        cuda:['11.8', '12.1', '12.4', '12.6', '12.8', '13.0', '13.1'],
-        torchCache: {} // Will store torch versions fetched dynamically per cuda version
+        python: [],        // Filled dynamically from /api/builder/versions/python
+        cuda: [],          // Filled dynamically from /api/builder/versions/cuda (objects: {cu, version})
+        torchCache: {}     // Filled dynamically per CUDA version from /api/builder/versions/torch/{cu}
     },
     currentMenuInstance: null,
     instanceToDeleteId: null,

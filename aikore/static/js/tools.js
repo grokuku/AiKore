@@ -1,8 +1,15 @@
 import { state, DOM } from './state.js';
-import { fetchLogs, performVersionCheck, fetchFileContent, fetchTorchVersions } from './api.js';
+import { fetchLogs, performVersionCheck, fetchFileContent, fetchTorchVersions, fetchCudaVersions, fetchAvailablePythonVersions } from './api.js';
 import { showToast } from './ui.js';
 
 const ansi_up = new AnsiUp();
+
+/** Write a colored message to the builder terminal (if it exists). */
+function logBuilderMessage(msg) {
+    if (builderTerminal) {
+        builderTerminal.write(msg + '\r\n');
+    }
+}
 
 function setToolZoom(viewName) {
     if (window.__aikoreSetToolsZoom) window.__aikoreSetToolsZoom(viewName);
@@ -191,7 +198,8 @@ async function populateTorchVersions() {
     if (!cudaSelect || !torchSelect) return;
 
     const cudaVer = cudaSelect.value;
-    torchSelect.innerHTML = '<option>Loading...</option>';
+    const previousValue = torchSelect.value;
+    torchSelect.innerHTML = '<option value="">Loading...</option>';
     torchSelect.disabled = true;
 
     try {
@@ -206,8 +214,10 @@ async function populateTorchVersions() {
 
         if (!versions || versions.length === 0) {
             const opt = document.createElement('option');
-            opt.textContent = "Error: No versions found";
+            opt.value = '';
+            opt.textContent = 'Error: No versions found';
             torchSelect.appendChild(opt);
+            logBuilderMessage('\x1b[33m[WARN] No PyTorch versions found for CUDA ' + cudaVer + '. Check network connectivity.\x1b[0m');
         } else {
             versions.forEach((v, index) => {
                 const opt = document.createElement('option');
@@ -215,11 +225,25 @@ async function populateTorchVersions() {
                 opt.textContent = index === 0 ? `${v} (Latest)` : v;
                 torchSelect.appendChild(opt);
             });
-            torchSelect.selectedIndex = 0; // Default to newest
+            // Preserve previous selection if still available, otherwise default to latest
+            const availableValues = versions.map(v => v);
+            if (previousValue && availableValues.includes(previousValue)) {
+                torchSelect.value = previousValue;
+            } else {
+                torchSelect.selectedIndex = 0;
+            }
         }
     } catch (e) {
         console.error(e);
-        torchSelect.innerHTML = '<option value="2.5.1">2.5.1 (Fallback)</option>';
+        torchSelect.innerHTML = '';
+        const fallbackVersions = ['2.11.0', '2.10.0', '2.9.1', '2.8.0', '2.7.0', '2.6.0', '2.5.1'];
+        fallbackVersions.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = v + ' (offline)';
+            torchSelect.appendChild(opt);
+        });
+        logBuilderMessage('\x1b[31m[ERROR] Failed to fetch PyTorch versions for ' + cudaVer + ': ' + e.message + '. Using offline fallback.\x1b[0m');
     } finally {
         torchSelect.disabled = false;
     }
@@ -479,57 +503,30 @@ export async function showBuilderView() {
 
     let container = document.getElementById('builder-container');
     if (!container) {
-
-        // --- NEW: Dynamic Options Generation ---
-        // Python Options
-        const pyOptionsHtml = state.versions.python.map((v, i) =>
-            `<option value="${v}">${v}${i === 0 ? ' (Latest)' : ''}</option>`
-        ).join('');
-
-        // CUDA Options
-        // We expect state.versions.cuda to be like ["13.0", "12.8", "12.6", ...]
-        // But builder expects "cu130"
-        const cudaOptionsHtml = state.versions.cuda.map((v, i) => {
-            const cuFormat = 'cu' + v.replace('.', '');
-            return `<option value="${cuFormat}">CUDA ${v}${i === 0 ? ' (Latest)' : ''}</option>`;
-        }).join('');
-
         const html = `
         <div id="builder-container">
             <div id="builder-top-pane">
                 <div id="builder-options">
-                    
                     <div class="builder-field">
                         <label>Module Preset</label>
                         <select id="builder-preset"></select>
                     </div>
-                    
                     <div class="builder-field">
                         <label>Python Version</label>
-                        <select id="builder-python">
-                            ${pyOptionsHtml}
-                        </select>
+                        <select id="builder-python"><option value="">Loading...</option></select>
                     </div>
-
                     <div class="builder-field" id="builder-field-custom" style="display:none;">
                         <label>Git URL / Package Name</label>
                         <input type="text" id="builder-custom-url" placeholder="https://github.com/user/repo.git">
                     </div>
-
                     <div class="builder-field">
-                        <label>PyTorch Version (Dynamically Fetched)</label>
-                        <select id="builder-torch">
-                            <option>Loading...</option>
-                        </select>
+                        <label>PyTorch Version</label>
+                        <select id="builder-torch"><option value="">Loading...</option></select>
                     </div>
-
                     <div class="builder-field">
                         <label>PyTorch CUDA Version</label>
-                        <select id="builder-cuda">
-                            ${cudaOptionsHtml}
-                        </select>
+                        <select id="builder-cuda"><option value="">Loading...</option></select>
                     </div>
-                    
                     <div class="builder-field">
                         <label>
                             Target GPU Architecture 
@@ -546,11 +543,9 @@ export async function showBuilderView() {
                             <option value="6.1">6.1 (Pascal - GTX 1080, Tesla P4)</option>
                         </select>
                     </div>
-
                     <div class="builder-field build-btn-container">
                         <button id="btn-start-build">BUILD MODULE</button>
                     </div>
-
                 </div>
                 <div id="builder-wheels">
                     <div style="padding:0.5rem; background:#252545; color:#fff; font-weight:bold; border-bottom:1px solid #444;">Available Wheels</div>
@@ -598,27 +593,89 @@ export async function showBuilderView() {
     DOM.toolsPaneTitle.textContent = "Tools / Module Builder";
     setToolZoom('builder');
 
-    const info = await fetchBuilderInfo();
+    // --- Fetch all version data in parallel ---
+    const [info, pyVersions, cudaVersions] = await Promise.all([
+        fetchBuilderInfo().catch(e => {
+            logBuilderMessage('\x1b[31m[ERROR] Failed to fetch builder info: ' + e.message + '\x1b[0m');
+            return null;
+        }),
+        fetchAvailablePythonVersions().catch(e => {
+            logBuilderMessage('\x1b[31m[ERROR] Failed to fetch Python versions: ' + e.message + '. Using fallback.\x1b[0m');
+            return ['3.15', '3.14', '3.13', '3.12', '3.11', '3.10'];
+        }),
+        fetchCudaVersions().catch(e => {
+            logBuilderMessage('\x1b[31m[ERROR] Failed to fetch CUDA versions: ' + e.message + '. Using fallback.\x1b[0m');
+            return [
+                {cu: 'cu131', version: '13.1'},
+                {cu: 'cu130', version: '13.0'},
+                {cu: 'cu128', version: '12.8'},
+                {cu: 'cu126', version: '12.6'},
+                {cu: 'cu124', version: '12.4'},
+                {cu: 'cu121', version: '12.1'},
+                {cu: 'cu118', version: '11.8'},
+            ];
+        })
+    ]);
 
+    // --- Error if critical data is missing ---
+    if (!info) {
+        logBuilderMessage('\x1b[31m[ERROR] Could not load builder info. Presets and GPU detection unavailable.\x1b[0m');
+    }
+
+    // --- Populate presets ---
     const presetSelect = document.getElementById('builder-preset');
-    presetSelect.innerHTML = '';
-    for (const [key, val] of Object.entries(info.presets)) {
-        const opt = document.createElement('option');
-        opt.value = key;
-        opt.textContent = val.label;
-        presetSelect.appendChild(opt);
+    if (info && presetSelect) {
+        presetSelect.innerHTML = '';
+        for (const [key, val] of Object.entries(info.presets)) {
+            const opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = val.label;
+            presetSelect.appendChild(opt);
+        }
     }
 
-    const archSelect = document.getElementById('builder-arch');
-    if (!archSelect.querySelector('option[value="auto"]')) {
-        const autoOpt = document.createElement('option');
-        autoOpt.value = info.detected_arch;
-        autoOpt.textContent = `Auto-Detect (${info.detected_arch}) - Recommended`;
-        autoOpt.selected = true;
-        archSelect.prepend(autoOpt);
+    // --- Populate Python versions ---
+    const pythonSelect = document.getElementById('builder-python');
+    if (pythonSelect && pyVersions && pyVersions.length > 0) {
+        pythonSelect.innerHTML = '';
+        pyVersions.forEach((v, i) => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = i === 0 ? `${v} (Latest)` : v;
+            pythonSelect.appendChild(opt);
+        });
     }
 
+    // --- Populate CUDA versions ---
+    const cudaSelect = document.getElementById('builder-cuda');
+    if (cudaSelect && cudaVersions && cudaVersions.length > 0) {
+        cudaSelect.innerHTML = '';
+        cudaVersions.forEach((v, i) => {
+            const opt = document.createElement('option');
+            opt.value = v.cu;
+            opt.textContent = `CUDA ${v.version}${i === 0 ? ' (Latest)' : ''}`;
+            cudaSelect.appendChild(opt);
+        });
+    }
+
+    // --- Populate arch (auto-detect) ---
+    if (info) {
+        const archSelect = document.getElementById('builder-arch');
+        if (archSelect && !archSelect.querySelector('option[value="auto"]')) {
+            const autoOpt = document.createElement('option');
+            autoOpt.value = info.detected_arch;
+            autoOpt.textContent = `Auto-Detect (${info.detected_arch}) - Recommended`;
+            autoOpt.selected = true;
+            archSelect.prepend(autoOpt);
+        }
+    }
+
+    // --- Fetch PyTorch versions for selected CUDA ---
     await populateTorchVersions();
+
+    // --- Update state cache for reuse ---
+    if (pyVersions) state.versions.python = pyVersions;
+    if (cudaVersions) state.versions.cuda = cudaVersions;
 
     renderWheelsTable();
     // Only init terminal if not already existing (builder keeps its state)
@@ -626,19 +683,20 @@ export async function showBuilderView() {
         initBuilderTerminal();
     } else {
         // Re-attach ResizeObserver since the container might have been detached
-        const container = document.getElementById('builder-terminal');
+        const btermEl = document.getElementById('builder-terminal');
         if (builderResizeObserver) builderResizeObserver.disconnect();
         builderResizeObserver = new ResizeObserver(() => {
             if (builderFitAddon) {
                 try { builderFitAddon.fit(); } catch (e) { }
             }
         });
-        builderResizeObserver.observe(container);
+        builderResizeObserver.observe(btermEl);
         requestAnimationFrame(() => {
             try { builderFitAddon.fit(); } catch (e) { }
         });
     }
 }
+
 
 // --- INSTANCE WHEELS MANAGER ---
 
