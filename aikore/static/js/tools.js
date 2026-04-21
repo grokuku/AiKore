@@ -938,8 +938,8 @@ export function openTerminal(instanceId, instanceName) {
         return;
     }
 
-    // Create new terminal
-    DOM.terminalContent.innerHTML = '';
+    // Create new terminal (do NOT clear terminalContent — it hosts ALL terminal
+    // hosts in the persistent pool. Clearing it would destroy previous terminals' DOM)
     const termState = _createTerminalForInstance(instanceId, instanceName);
     _showTerminalInstance(instanceId);
 }
