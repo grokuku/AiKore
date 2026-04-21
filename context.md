@@ -98,7 +98,13 @@ It uses a **"Neutral Image Architecture"**: the base Docker image is lightweight
 ├── blueprints/                         # Stock installation scripts (each has AIKORE-METADATA block, sources versions.env)
 ├── docker/                             # Container overlay (s6 services, NGINX config)
 ├── entry.sh                            # Container entrypoint
-├── Dockerfile                          # Neutral Image definition
+├── functions.sh                        # Shell helper functions
+├── Dockerfile                          # Neutral Image definition (standalone, no intermediate builds)
+├── .dockerignore                       # Excludes non-essential files from Docker build context
+├── .versions/torch                     # PyTorch release tag for build args (e.g., torch-v2.9.0)
+├── .github/workflows/
+│   ├── docker-build.yml                # Release build + push to GHCR (on published release, or manual with no-cache option)
+│   └── docker-build-test.yml           # Manual test build, tags :test (workflow_dispatch only)
 └── versions.env                        # Centralized version defaults (TORCH_VERSION, PYTORCH_INDEX_URL, etc.)
 ```
 
@@ -503,7 +509,55 @@ Sections 8.26, 8.27, 8.32, 8.33 were marked as fixed in Session 5 but are still 
 
 ---
 
-## 14. Pending Features (from features.md)
+## 14. CI/CD — GitHub Actions
+
+### Architecture
+
+Two workflows compose the CI pipeline, both targeting **self-hosted runners** and pushing to **GHCR** (`ghcr.io`):
+
+| Workflow | Trigger | Tags Pushed | Cache | Purpose |
+|---|---|---|---|---|
+| `docker-build.yml` | Release `published` + manual `workflow_dispatch` | `:latest`, `:semver`, `:major.minor`, `:sha-xxx` | Local Buildx (`actions/cache@v4`) | Production build |
+| `docker-build-test.yml` | Manual `workflow_dispatch` only | `:test` | Local Buildx (shared cache) | Pre-release validation |
+
+### Cache Strategy
+
+- **Type**: `type=local` on self-hosted runner disk (`/tmp/.buildx-cache`), managed by `actions/cache@v4`
+- **Mode**: `mode=max` — caches all intermediate layers (including heavy `apt-get` and CUDA installs)
+- **Rotation**: Write to `buildx-cache-new`, then swap after successful build (prevents cache corruption on failed builds)
+- **Sharing**: Both workflows share the same cache via `restore-keys: buildx-` prefix
+- **No-cache override**: `docker-build.yml` accepts a `no_cache` boolean input to force a full rebuild without cache
+
+### Tag Strategy (docker-build.yml)
+
+| Tag Pattern | Example | Purpose |
+|---|---|---|
+| `:latest` | `ghcr.io/grokuku/aikore:latest` | Always points to the most recent release |
+| `:{{version}}` | `ghcr.io/grokuku/aikore:1.2.3` | Full semver — enables precise rollback |
+| `:{{major}}.{{minor}}` | `ghcr.io/grokuku/aikore:1.2` | Minor track — latest patch of that branch |
+| `:sha-xxx` | `ghcr.io/grokuku/aikore:sha-32b7c3b` | Commit SHA — absolute traceability |
+
+### Removed Components (Cleanup Session 7)
+
+The following intermediate build infrastructure was removed because the final `Dockerfile` is now fully standalone (wheels are compiled at runtime by the Module Builder):
+- `build-flash-sage-wheels.yml` — workflow for compiling Flash/Sage wheels during CI
+- `build-base-image.yml` — workflow for the intermediate `aikore-buildbase` image
+- `flash-sage.Dockerfile` — Dockerfile for Flash/Sage wheel compilation
+- `wheel-container.Dockerfile` — minimal scratch image for wheel distribution
+- `Dockerfile.buildbase` — intermediate base image Dockerfile
+
+### Key Design Decisions
+
+1. **Local cache over registry cache**: Registry cache (`cache-to: type=registry`) caused upload timeouts on large CUDA layers (~5 GB) due to simultaneous image + cache uploads. Local cache eliminates network overhead entirely on self-hosted runners.
+2. **Lowercase image name**: `${{ github.repository }}` preserves original case (e.g., `grokuku/AiKore`), but Docker registry refs must be lowercase. Both workflows compute `IMAGE_NAME_LOWER` at runtime.
+3. **`.dockerignore`**: Excludes `.git`, `.github`, docs, screenshots, and other non-essential files from the build context, ensuring `COPY` instructions properly detect source changes and invalidate cache.
+4. **Miniforge `latest` URL**: Uses `/releases/latest/download/` instead of a pinned version. Tradeoff: cache might serve an older Miniforge version, but a pinned version would never update without manual intervention. The `no_cache` workflow input provides an escape hatch for full rebuilds.
+5. **Concurrency control**: `docker-build.yml` uses `cancel-in-progress: false` (don't kill a running production build), while `docker-build-test.yml` uses `cancel-in-progress: true` (test builds are disposable).
+6. **Smoke test**: `docker-build.yml` runs `python3 -c "import sys; print(sys.version)"` in the built image to verify it starts correctly.
+
+---
+
+## 15. Pending Features (from features.md)
 
 - [ ] Improve global error handling and status reporting across the entire application
 - [ ] Write comprehensive user and system documentation

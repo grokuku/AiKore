@@ -14,3 +14,6 @@
 .env
 data/
 *.tech
+__pycache__/
+*.pyc
+*.pyo

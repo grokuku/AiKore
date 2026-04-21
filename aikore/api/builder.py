@@ -310,7 +310,7 @@ def get_builder_info():
         try:
             pynvml.nvmlInit()
             handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            cap = pynvml.nvmlDeviceGetCudaCapability(handle)
+            cap = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
             detected_arch = f"{cap[0]}.{cap[1]}"
             gpu_name = pynvml.nvmlDeviceGetName(handle)
             # Decode bytes if needed (older pynvml versions return bytes)
