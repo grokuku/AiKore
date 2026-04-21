@@ -1,0 +1,29 @@
+# Version control
+.git
+.gitignore
+
+# CI/CD
+.github
+
+# Documentation and planning (not needed in the image)
+*.md
+context.md
+GEMINI.md
+plan.md
+features.md
+
+# Screenshots and assets (not needed in the image)
+*.png
+*.jpg
+*.gif
+
+# Docker files themselves (prevent recursion)
+Dockerfile*
+docker-compose*.yml
+Makefile
+
+# Miscellaneous project files not needed in the build
+flash-sage*
+wheel-container*
+*.tech
+.env
