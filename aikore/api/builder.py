@@ -44,23 +44,10 @@ CONDA_BASE_DIR = "/home/abc/miniconda3"
 os.makedirs(WHEELS_DIR, exist_ok=True)
 
 # --- VERSIONS MAPPING ---
-# Strict mapping to ensure successful builds. 
-TORCH_VISION_MAP = {
-    "2.11.0": "0.22.0",
-    "2.10.0": "0.21.0",
-    "2.9.1": "0.20.1",
-    "2.9.0": "0.20.0",
-    "2.8.0": "0.19.1",
-    "2.7.0": "0.19.0",
-    "2.6.0": "0.18.0",
-    "2.5.1": "0.20.1",
-    "2.4.1": "0.19.1",
-    "2.4.0": "0.19.0",
-    "2.3.1": "0.18.1",
-    "2.2.2": "0.17.2",
-    "2.1.2": "0.16.2", 
-    "2.0.1": "0.15.2"
-}
+# We no longer hardcode a torch<->torchvision version map.
+# Instead, we install torch==X torchvision (no version pin) from the PyTorch
+# wheel index (--index-url). Pip resolves the compatible torchvision version
+# automatically from that index. Hardcoded maps were always stale on new releases.
 
 # --- PRESETS DEFINITION ---
 PRESETS = {
@@ -551,16 +538,10 @@ async def build_websocket(websocket: WebSocket):
         
         if not torch_is_installed:
             await websocket.send_text(f"\x1b[33m[INFO] PyTorch not found in environment. Installing...\x1b[0m\r\n")
-            # Install PyTorch Command
-            # Determine Torchvision version based on Torch version
-            vision_ver = TORCH_VISION_MAP.get(requested_torch_ver)
-            
-            if not vision_ver:
-                    await websocket.send_text(f"\x1b[33m[WARN] Unknown Torch version {requested_torch_ver}. Installing latest compatible torchvision (might break).\x1b[0m\r\n")
-                    # If unknown, we do NOT pin torchvision and let pip resolve it
-                    torch_pkg = f"torch=={requested_torch_ver} torchvision"
-            else:
-                    torch_pkg = f"torch=={requested_torch_ver} torchvision=={vision_ver}"
+            # Install torch (pinned version) + torchvision + torchaudio (no version pin).
+            # Using --index-url ensures pip resolves compatible versions
+            # directly from the PyTorch wheel index.
+            torch_pkg = f"torch=={requested_torch_ver} torchvision torchaudio"
 
             await websocket.send_text(f"\x1b[34m[INFO] Installing {torch_pkg}...\x1b[0m\r\n")
             index_url = f"https://download.pytorch.org/whl/{cuda_ver}"

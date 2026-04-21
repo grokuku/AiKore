@@ -61,15 +61,15 @@ function _createTerminalForInstance(instanceId, instanceName) {
         resizeObserver: null
     };
 
+    // Each terminal host is absolutely positioned so they stack on top of each
+    // other inside the flex container. Only one is visible at a time.
     const container = document.createElement('div');
     container.id = `terminal-host-${instanceId}`;
-    container.style.width = '100%';
-    container.style.height = '100%';
+    container.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;';
     DOM.terminalContent.appendChild(container);
 
     termState.terminal.loadAddon(termState.fitAddon);
     termState.terminal.open(container);
-    termState.fitAddon.fit();
 
     // WebSocket
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -79,8 +79,12 @@ function _createTerminalForInstance(instanceId, instanceName) {
     termState.socket = socket;
 
     socket.onopen = () => {
-        const initialSize = { type: 'resize', cols: termState.terminal.cols, rows: termState.terminal.rows };
-        socket.send(JSON.stringify(initialSize));
+        // Defer initial fit + resize until socket is open and container has layout
+        requestAnimationFrame(() => {
+            try { termState.fitAddon.fit(); } catch (e) { /* ignore */ }
+            const initialSize = { type: 'resize', cols: termState.terminal.cols, rows: termState.terminal.rows };
+            socket.send(JSON.stringify(initialSize));
+        });
         termState.terminal.onData(data => {
             if (socket && socket.readyState === WebSocket.OPEN) socket.send(data);
         });
@@ -103,10 +107,10 @@ function _createTerminalForInstance(instanceId, instanceName) {
         termState.terminal.write('\r\n\x1b[31m[ERROR]\x1b[0m\r\n');
     };
 
-    // ResizeObserver for auto-fit
+    // ResizeObserver for auto-fit (only when visible)
     termState.resizeObserver = new ResizeObserver(() => {
         if (termState.fitAddon && !DOM.terminalViewContainer.classList.contains('hidden')) {
-            try { termState.fitAddon.fit(); } catch (e) { }
+            try { termState.fitAddon.fit(); } catch (e) { /* ignore */ }
         }
     });
     termState.resizeObserver.observe(container);
@@ -116,22 +120,25 @@ function _createTerminalForInstance(instanceId, instanceName) {
 }
 
 function _showTerminalInstance(instanceId) {
-    // Hide all terminal hosts
+    // Hide all terminal hosts, show only the target one
     DOM.terminalContent.querySelectorAll('[id^="terminal-host-"]').forEach(el => {
-        el.style.display = 'none';
+        el.style.visibility = 'hidden';
     });
 
-    let termState = state.terminals[instanceId];
+    const termState = state.terminals[instanceId];
     if (!termState) return;
 
     const hostEl = document.getElementById(`terminal-host-${instanceId}`);
     if (hostEl) {
-        hostEl.style.display = '';
-        // Refit after making visible
-        requestAnimationFrame(() => {
-            try { termState.fitAddon.fit(); } catch (e) { }
+        hostEl.style.visibility = 'visible';
+        // Use setTimeout to ensure the browser has finished layout recalculation
+        // before we try to fit and focus the terminal. A single requestAnimationFrame
+        // is not always enough when switching between hidden/shown DOM subtrees.
+        setTimeout(() => {
+            try { termState.fitAddon.fit(); } catch (e) { /* ignore */ }
+            termState.terminal.refresh(0);
             termState.terminal.focus();
-        });
+        }, 50);
     }
 }
 
