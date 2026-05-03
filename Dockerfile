@@ -7,12 +7,13 @@ FROM ghcr.io/linuxserver/baseimage-kasmvnc:ubuntunoble
 # allowing the internal AiKore Module Builder to compile dependencies on demand.
 
 # --- Add Mozilla PPA & NVIDIA CUDA Repo ---
+# Retry logic added for network resilience during image builds
 RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common wget gnupg && \
     add-apt-repository ppa:mozillateam/ppa && \
     printf "Package: firefox*\\nPin: release o=LP-PPA-mozillateam\\nPin-Priority: 1001\\n" > /etc/apt/preferences.d/mozilla-firefox && \
-    wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
+    for i in 1 2 3; do wget --tries=3 --waitretry=5 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && break || sleep 10; done && \
     dpkg -i cuda-keyring_1.1-1_all.deb && \
-    rm cuda-keyring_1.1-1_all.deb && \
+    rm -f cuda-keyring_1.1-1_all.deb && \
     apt-get update
 
 # --- Install All System Dependencies ---

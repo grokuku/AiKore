@@ -9,9 +9,24 @@ DATABASE_URL = SQLALCHEMY_DATABASE_URL
 connect_args={"check_same_thread": False}
 
 # Create the SQLAlchemy engine.
+# WAL mode enables concurrent reads while a write is in progress, preventing
+# the "database is locked" errors that occur with the default journal mode.
+# busy_timeout sets how long SQLite waits (in ms) for a lock before raising an error.
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args=connect_args
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={**connect_args, "timeout": 30},
+    pool_pre_ping=True,
 )
+
+# Enable WAL mode at engine creation time
+from sqlalchemy import event
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.close()
 
 # Each instance of the SessionLocal class will be a new database session.
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

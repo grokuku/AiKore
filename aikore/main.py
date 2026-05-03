@@ -60,22 +60,30 @@ async def lifespan(app: FastAPI):
     # === STARTUP ===
     # 0. Initialize NVML
     _t0 = __import__('time').time()
+    print("[Startup] Step 0: Initializing NVML...")
     try:
         nvmlInit()
         print(f"[Startup] NVML initialized successfully. ({__import__('time').time() - _t0:.2f}s)")
     except NVMLError as error:
-        print(f"[Startup] [Warning] NVML could not be initialized: {error}. GPU features will be disabled. ({__import__('time').time() - _t0:.2f}s)")
+        print(f"[Startup] [Warning] NVML could not be initialized: {error}. ({__import__('time').time() - _t0:.2f}s)")
+    except Exception as error:
+        print(f"[Startup] [Warning] NVML unexpected error: {error}. ({__import__('time').time() - _t0:.2f}s)")
 
+    # 1. Open database
     _t1 = __import__('time').time()
+    print("[Startup] Step 1: Opening database...")
     db = SessionLocal()
+    print(f"[Startup] Database session opened. ({__import__('time').time() - _t1:.2f}s)")
     try:
-        # 1. Reset all instance statuses
+        # 2. Reset instance statuses
+        print("[Startup] Step 2: Resetting instance statuses...")
         num_rows_updated = db.query(models.Instance).update({"status": "stopped", "pid": None})
         db.commit()
         print(f"[Startup] Reset status for {num_rows_updated} instances. ({__import__('time').time() - _t1:.2f}s)")
 
-        # 2. Clear old log files
+        # 3. Clear old log files
         _t2 = __import__('time').time()
+        print("[Startup] Step 3: Clearing old log files...")
         log_files = glob.glob(os.path.join(INSTANCES_DIR, "**", "output.log"), recursive=True)
         cleared_count = 0
         for log_file in log_files:
@@ -89,9 +97,9 @@ async def lifespan(app: FastAPI):
         else:
             print(f"[Startup] No log files to clear. ({__import__('time').time() - _t2:.2f}s)")
 
-        # 3. Autostart instances
+        # 4. Autostart instances
         _t3 = __import__('time').time()
-        print("[Startup] Checking for instances to autostart...")
+        print("[Startup] Step 4: Checking for instances to autostart...")
         autostart_instances = crud.get_autostart_instances(db)
         if not autostart_instances:
             print(f"[Startup] No instances marked for autostart. ({__import__('time').time() - _t3:.2f}s)")
@@ -99,19 +107,20 @@ async def lifespan(app: FastAPI):
             print(f"[Startup] Found {len(autostart_instances)} instance(s) to start.")
             for instance in autostart_instances:
                 _ti = __import__('time').time()
-                print(f"[Startup] Autostarting instance '{instance.name}' (ID: {instance.id})...")
                 try:
+                    db.refresh(instance)
+                    print(f"[Startup] Starting instance '{instance.name}' (ID: {instance.id})...")
                     process_manager.start_instance_process(db, instance)
-                    print(f"[Startup] Instance '{instance.name}' autostarted. ({__import__('time').time() - _ti:.2f}s)")
+                    print(f"[Startup] Instance '{instance.name}' started. ({__import__('time').time() - _ti:.2f}s)")
                 except Exception as e:
-                    print(f"[Startup] [ERROR] Failed to autostart instance '{instance.name}': {e} ({__import__('time').time() - _ti:.2f}s)")
+                    print(f"[Startup] [ERROR] Failed to autostart '{instance.name}': {e} ({__import__('time').time() - _ti:.2f}s)")
                     instance.status = "error"
                     db.commit()
-            print(f"[Startup] All autostarts complete. ({__import__('time').time() - _t3:.2f}s)")
     finally:
         db.close()
+        print("[Startup] Database session closed.")
 
-    print(f"[Startup] Total startup time: {__import__('time').time() - _t0:.2f}s")
+    print(f"[Startup] ✓ Application startup complete. Total: {__import__('time').time() - _t0:.2f}s")
 
     yield  # <-- Application runs here
 
