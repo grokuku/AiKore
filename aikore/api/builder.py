@@ -37,8 +37,8 @@ WHEELS_DIR = os.path.join(INSTANCES_DIR, ".wheels")
 MANIFEST_FILE = os.path.join(WHEELS_DIR, "manifest.json")
 
 # Environment management
-CONDA_EXE = "/home/abc/miniconda3/bin/conda"
-CONDA_BASE_DIR = "/home/abc/miniconda3"
+CONDA_EXE = os.environ.get("CONDA_EXE", shutil.which("conda") or "/home/abc/miniconda3/bin/conda")
+CONDA_BASE_DIR = os.environ.get("CONDA_BASE_DIR", "/home/abc/miniconda3")
 
 # Ensure directory exists
 os.makedirs(WHEELS_DIR, exist_ok=True)
@@ -227,6 +227,15 @@ class WheelMetadata(BaseModel):
     torch_ver: str
     source_preset: str
 
+# --- FALLBACK PYTHON VERSIONS (single source of truth) ---
+_FALLBACK_PYTHON_VERSIONS = ["3.15", "3.14", "3.13", "3.12", "3.11", "3.10"]
+
+# --- MANIFEST CONCURRENCY LOCK ---
+_manifest_lock = asyncio.Lock()
+
+# --- PYTHON VERSION CACHE LOCK ---
+_cache_lock = asyncio.Lock()
+
 # --- HELPERS ---
 
 def get_manifest():
@@ -235,21 +244,23 @@ def get_manifest():
     try:
         with open(MANIFEST_FILE, 'r') as f:
             return json.load(f)
-    except:
+    except (json.JSONDecodeError, FileNotFoundError, IOError):
         return {}
 
-def update_manifest(filename, meta):
-    data = get_manifest()
-    data[filename] = meta
-    with open(MANIFEST_FILE, 'w') as f:
-        json.dump(data, f, indent=4)
-
-def remove_from_manifest(filename):
-    data = get_manifest()
-    if filename in data:
-        del data[filename]
+async def update_manifest(filename, meta):
+    async with _manifest_lock:
+        data = get_manifest()
+        data[filename] = meta
         with open(MANIFEST_FILE, 'w') as f:
             json.dump(data, f, indent=4)
+
+async def remove_from_manifest(filename):
+    async with _manifest_lock:
+        data = get_manifest()
+        if filename in data:
+            del data[filename]
+            with open(MANIFEST_FILE, 'w') as f:
+                json.dump(data, f, indent=4)
 
 async def stream_subprocess(cmd, cwd, websocket, env_vars=None):
     """Helper to run a command and stream output to websocket."""
@@ -315,7 +326,7 @@ def get_builder_info():
     }
     
 # --- NEW: Cache for python versions ---
-_cached_python_versions =[]
+_cached_python_versions = []
 
 @router.get("/versions/python")
 async def get_available_python_versions():
@@ -327,36 +338,46 @@ async def get_available_python_versions():
     if _cached_python_versions:
         return _cached_python_versions
 
-    try:
-        cmd = f"{CONDA_EXE} search ^python$ --json"
-        proc = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, _ = await proc.communicate()
-        
-        if proc.returncode == 0:
-            data = json.loads(stdout.decode())
-            versions = set()
-            for entry in data.get("python",[]):
-                ver = entry.get("version", "")
-                # Match major.minor and ensure it's >= 3.10
-                match = re.match(r'^(3\.(1[0-9]|[0-9]))', ver)
-                if match:
-                    versions.add(match.group(1))
-            
-            # Sort descending (e.g. 3.15, 3.14...)
-            _cached_python_versions = sorted(list(versions), key=lambda x:[int(p) for p in x.split('.')], reverse=True)
+    async with _cache_lock:
+        if _cached_python_versions:
             return _cached_python_versions
-    except Exception as e:
-        print(f"[DEBUG] Failed to discover python versions: {e}")
-    
-    # Fallback if conda fails
-    return["3.15", "3.14", "3.13", "3.12", "3.11", "3.10"]
+
+        try:
+            cmd = f"{CONDA_EXE} search ^python$ --json"
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                print("[DEBUG] conda search timed out after 15s.")
+                return _FALLBACK_PYTHON_VERSIONS
+            
+            if proc.returncode == 0:
+                data = json.loads(stdout.decode())
+                versions = set()
+                for entry in data.get("python", []):
+                    ver = entry.get("version", "")
+                    # Match major.minor and ensure it's >= 3.10
+                    match = re.match(r'^(3\.(1[0-9]|[0-9]))', ver)
+                    if match:
+                        versions.add(match.group(1))
+                
+                # Sort descending (e.g. 3.15, 3.14...)
+                _cached_python_versions = sorted(list(versions), key=lambda x:[int(p) for p in x.split('.')], reverse=True)
+                return _cached_python_versions
+        except Exception as e:
+            print(f"[DEBUG] Failed to discover python versions: {e}")
+        
+        # Fallback if conda fails
+        return _FALLBACK_PYTHON_VERSIONS
 
 @router.get("/versions/cuda")
-def get_available_cuda_versions():
+async def get_available_cuda_versions():
     """
     Dynamically discovers available CUDA versions from the PyTorch wheel index.
     Scrapes the top-level directory listing at download.pytorch.org/whl/
@@ -374,91 +395,97 @@ def get_available_cuda_versions():
         {"cu": "cu118", "version": "11.8"},
     ]
     try:
-        index_url = "https://download.pytorch.org/whl/"
-        req = urllib.request.Request(
-            index_url,
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            html = response.read().decode('utf-8')
-        # Find all cuXXX or cuXXXX links in the directory listing
-        matches = re.findall(r'href="(cu\d+)"', html)
-        if not matches:
-            # Alternative pattern: some listings use /cuXXX/
-            matches = re.findall(r'href="(cu\d+)/?"', html)
-        if not matches:
-            print("[DEBUG] No CUDA versions found via regex, using fallback.")
-            return fallback
-        # Deduplicate and build result
-        seen = set()
-        result = []
-        for cu in sorted(set(matches), reverse=True):
-            if cu in seen:
-                continue
-            seen.add(cu)
-            # Convert cuXXX to X.Y format: cu118 -> 11.8, cu130 -> 13.0, cu131 -> 13.1
-            num = cu[2:]  # strip "cu"
-            if len(num) == 3:
-                version = f"{num[0]}.{num[1:]}"
-            elif len(num) == 4:
-                version = f"{num[:2]}.{num[2:]}"
-            else:
-                version = num
-            result.append({"cu": cu, "version": version})
-        if not result:
-            return fallback
-        return result
+        return await asyncio.to_thread(_fetch_cuda_versions, fallback)
     except Exception as e:
         print(f"[DEBUG] Failed to fetch CUDA versions: {e}")
         return fallback
 
+def _fetch_cuda_versions(fallback):
+    """Blocking I/O helper for get_available_cuda_versions (runs in thread pool)."""
+    index_url = "https://download.pytorch.org/whl/"
+    req = urllib.request.Request(
+        index_url,
+        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    )
+    with urllib.request.urlopen(req, timeout=5) as response:
+        html = response.read().decode('utf-8')
+    # Find all cuXXX or cuXXXX links in the directory listing
+    matches = re.findall(r'href="(cu\d+)"', html)
+    if not matches:
+        # Alternative pattern: some listings use /cuXXX/
+        matches = re.findall(r'href="(cu\d+)/?"', html)
+    if not matches:
+        print("[DEBUG] No CUDA versions found via regex, using fallback.")
+        return fallback
+    # Deduplicate and build result
+    seen = set()
+    result = []
+    for cu in sorted(set(matches), reverse=True):
+        if cu in seen:
+            continue
+        seen.add(cu)
+        # Convert cuXXX to X.Y format: cu118 -> 11.8, cu130 -> 13.0, cu131 -> 13.1
+        num = cu[2:]  # strip "cu"
+        if len(num) == 3:
+            version = f"{num[0]}.{num[1:]}"
+        elif len(num) == 4:
+            version = f"{num[:2]}.{num[2:]}"
+        else:
+            version = num
+        result.append({"cu": cu, "version": version})
+    if not result:
+        return fallback
+    return result
+
 @router.get("/versions/torch/{cuda_ver}")
-def get_torch_versions_for_cuda(cuda_ver: str):
+async def get_torch_versions_for_cuda(cuda_ver: str):
     """
     Dynamically fetches available torch versions from download.pytorch.org
     for the specific CUDA version. 
     Fallback to a default list if offline.
     """
-    index_url = f"https://download.pytorch.org/whl/{cuda_ver}/torch/"
-    versions = set()
-    
     # Updated fallback list for 2026 (CUDA 12.6, 12.8, 13.0 compatible)
-    fallback_versions =["2.11.0", "2.10.0", "2.9.1", "2.8.0", "2.7.0", "2.6.0", "2.5.1", "2.4.1"]
-    
+    fallback_versions = ["2.11.0", "2.10.0", "2.9.1", "2.8.0", "2.7.0", "2.6.0", "2.5.1", "2.4.1"]
     try:
-        print(f"[DEBUG] Fetching versions from {index_url}...")
-        # Added User-Agent to prevent 403 Forbidden from PyTorch CDN
-        req = urllib.request.Request(
-            index_url, 
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            html = response.read().decode('utf-8')
-            
-            matches = re.findall(r'torch-([0-9]+\.[0-9]+\.[0-9]+)%2B', html)
-            if not matches:
-                matches = re.findall(r'torch-([0-9]+\.[0-9]+\.[0-9]+)\+', html)
-                
-            for m in matches:
-                versions.add(m)
-                
-        if not versions:
-            print("[DEBUG] No versions found via regex, using fallback.")
-            return sorted(fallback_versions, reverse=True)
-            
-        def safe_version_key(s):
-            return[int(p) if p.isdigit() else 0 for p in re.split(r'\D+', s) if p]
-            
-        return sorted(list(versions), key=safe_version_key, reverse=True)
-
+        result = await asyncio.to_thread(_fetch_torch_versions, cuda_ver, fallback_versions)
+        return result
     except Exception as e:
         print(f"[DEBUG] Failed to fetch torch versions: {e}")
         return sorted(fallback_versions, reverse=True)
 
+def _fetch_torch_versions(cuda_ver, fallback_versions):
+    """Blocking I/O helper for get_torch_versions_for_cuda (runs in thread pool)."""
+    index_url = f"https://download.pytorch.org/whl/{cuda_ver}/torch/"
+    versions = set()
+
+    print(f"[DEBUG] Fetching versions from {index_url}...")
+    req = urllib.request.Request(
+        index_url, 
+        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    )
+    with urllib.request.urlopen(req, timeout=5) as response:
+        html = response.read().decode('utf-8')
+        
+        matches = re.findall(r'torch-([0-9]+\.[0-9]+\.[0-9]+)%2B', html)
+        if not matches:
+            matches = re.findall(r'torch-([0-9]+\.[0-9]+\.[0-9]+)\+', html)
+                
+        for m in matches:
+            versions.add(m)
+
+    if not versions:
+        print("[DEBUG] No versions found via regex, using fallback.")
+        return sorted(fallback_versions, reverse=True)
+            
+    def safe_version_key(s):
+        return [int(p) if p.isdigit() else 0 for p in re.split(r'\D+', s) if p]
+            
+    return sorted(list(versions), key=safe_version_key, reverse=True)
+
 @router.get("/wheels", response_model=List[WheelMetadata])
 def list_wheels():
     manifest = get_manifest()
-    wheels =[]
+    wheels = []
     
     # Scan directory
     files = glob.glob(os.path.join(WHEELS_DIR, "*.whl"))
@@ -498,13 +525,13 @@ def download_wheel(filename: str):
     raise HTTPException(status_code=404, detail="File not found")
 
 @router.delete("/wheels/{filename}")
-def delete_wheel(filename: str):
+async def delete_wheel(filename: str):
     safe_name = os.path.basename(filename) # Prevent directory traversal
     path = os.path.join(WHEELS_DIR, safe_name)
     
     if os.path.exists(path):
         os.remove(path)
-        remove_from_manifest(safe_name)
+        await remove_from_manifest(safe_name)
         return {"ok": True}
     raise HTTPException(status_code=404, detail="File not found")
 
@@ -526,6 +553,20 @@ async def build_websocket(websocket: WebSocket):
         cuda_ver = data.get("cuda_ver", "cu130")
         # Extract requested torch version
         requested_torch_ver = data.get("torch_ver", "2.5.1")
+
+        # --- SECURITY: Validate individual fields immediately ---
+        if not isinstance(python_ver, str) or not re.match(r'^\d+\.\d+$', python_ver):
+            await websocket.send_text("\x1b[31m[ERROR] Invalid python_ver format. Expected 'X.Y'.\x1b[0m\r\n")
+            await websocket.close()
+            return
+        if not isinstance(cuda_ver, str) or not re.match(r'^cu\d+$', cuda_ver):
+            await websocket.send_text("\x1b[31m[ERROR] Invalid cuda_ver format. Expected 'cuXXX'.\x1b[0m\r\n")
+            await websocket.close()
+            return
+        if not isinstance(requested_torch_ver, str) or not re.match(r'^\d+\.\d+\.\d+$', requested_torch_ver):
+            await websocket.send_text("\x1b[31m[ERROR] Invalid torch_ver format. Expected 'X.Y.Z'.\x1b[0m\r\n")
+            await websocket.close()
+            return
         
         if preset_key not in PRESETS:
             print("[DEBUG] Invalid preset.")
@@ -676,7 +717,7 @@ async def build_websocket(websocket: WebSocket):
                 # Move from tmp to final
                 shutil.move(generated_file_path, final_path)
                 
-                update_manifest(final_filename, {
+                await update_manifest(final_filename, {
                     "cuda_arch": target_arch,
                     "source_preset": preset_key,
                     "git_url": git_url,
@@ -688,8 +729,12 @@ async def build_websocket(websocket: WebSocket):
         else:
             await websocket.send_text(f"\r\n\x1b[31m[FAILURE] Build failed with exit code {return_code}.\x1b[0m\r\n")
             
-        # Clean up temp dir
-        shutil.rmtree(build_tmp_dir, ignore_errors=True)
+        # Clean up temp dir (guaranteed even on exception)
+        try:
+            if os.path.exists(build_tmp_dir):
+                shutil.rmtree(build_tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
 
     except Exception as e:
         print(f"[DEBUG] Exception in build_websocket: {e}")
@@ -700,6 +745,13 @@ async def build_websocket(websocket: WebSocket):
         except:
             pass
     finally:
+        # Ensure temp dir is always cleaned up even if exception handler didn't run
+        build_tmp_dir = os.path.join(WHEELS_DIR, "build_tmp")
+        try:
+            if os.path.exists(build_tmp_dir):
+                shutil.rmtree(build_tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
         print("[DEBUG] Closing WebSocket.")
         try:
             await websocket.close()

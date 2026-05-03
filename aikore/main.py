@@ -33,6 +33,23 @@ migration.run_db_migration()
 
 from .config import INSTANCES_DIR
 
+# --- Request Size Limit Middleware ---
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Rejects request bodies larger than 10 MB to prevent resource exhaustion."""
+    MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method in ("POST", "PUT", "PATCH"):
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > self.MAX_BODY_SIZE:
+                return Response("Request body too large", status_code=413)
+        return await call_next(request)
+
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 @asynccontextmanager
@@ -111,6 +128,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Apply request size limit (10 MB) to prevent resource exhaustion
+app.add_middleware(RequestSizeLimitMiddleware)
 
 # Include the API routers
 app.include_router(instances.router)

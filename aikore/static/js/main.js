@@ -11,7 +11,14 @@ const INSTANCE_ORDER_KEY = 'aikoreInstanceOrder';
 async function scheduleNextPoll(interval = 2000) {
     if (state.pollTimeoutId) clearTimeout(state.pollTimeoutId);
     state.pollTimeoutId = setTimeout(async () => {
-        await fetchAndRenderInstances();
+        if (!state.isPolling) {
+            state.isPolling = true;
+            try {
+                await fetchAndRenderInstances();
+            } finally {
+                state.isPolling = false;
+            }
+        }
     }, interval);
 }
 
@@ -147,11 +154,15 @@ export async function fetchAndRenderInstances() {
 
 async function initializeApp() {
     try {
-        // --- NEW: Inject dynamic Python versions discovery ---
-        const discoveredPyVersions = await fetchAvailablePythonVersions();
-        if (discoveredPyVersions && discoveredPyVersions.length > 0) {
-            state.versions.python = discoveredPyVersions;
-        }
+        // --- Python versions: fire-and-forget (non-blocking) ---
+        // Runs in parallel; falls back to defaults stored in state.js if slow/fails.
+        fetchAvailablePythonVersions()
+            .then(versions => {
+                if (versions && versions.length > 0) {
+                    state.versions.python = versions;
+                }
+            })
+            .catch(err => { console.warn('Failed to fetch Python versions, using defaults:', err); });
 
         const [systemInfo, blueprints, ports] = await Promise.all([
             fetchSystemInfo(),
@@ -336,7 +347,7 @@ async function initializeApp() {
             const pane = label.dataset.pane;
             if (pane === 'tools') {
                 const key = getCurrentToolsZoomKey();
-                label.textContent = state.zoom.tools[key] + '%';
+                label.textContent = (state.zoom.tools[key] ?? 100) + '%';
             } else {
                 label.textContent = state.zoom[pane] + '%';
             }
@@ -346,7 +357,7 @@ async function initializeApp() {
     function changeZoom(paneName, delta) {
         if (paneName === 'tools') {
             const key = getCurrentToolsZoomKey();
-            state.zoom.tools[key] = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, state.zoom.tools[key] + delta));
+            state.zoom.tools[key] = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, (state.zoom.tools[key] ?? 100) + delta));
         } else {
             state.zoom[paneName] = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, state.zoom[paneName] + delta));
         }
@@ -355,7 +366,7 @@ async function initializeApp() {
             // Apply to the tools-pane-content directly
             const toolsContent = document.querySelector('#tools-pane .pane-content');
             const key = getCurrentToolsZoomKey();
-            if (toolsContent) toolsContent.style.zoom = (state.zoom.tools[key] / 100);
+            if (toolsContent) toolsContent.style.zoom = ((state.zoom.tools[key] ?? 100) / 100);
         } else {
             applyZoom(paneName === 'instance' ? 'instance-pane' : 'monitoring-pane', state.zoom[paneName]);
         }
@@ -403,7 +414,7 @@ async function initializeApp() {
             if (pane === 'tools') {
                 const toolsContent = document.querySelector('#tools-pane .pane-content');
                 const key = getCurrentToolsZoomKey();
-                if (toolsContent) toolsContent.style.zoom = (state.zoom.tools[key] / 100);
+                if (toolsContent) toolsContent.style.zoom = ((state.zoom.tools[key] ?? 100) / 100);
             } else {
                 applyZoom(pane === 'instance' ? 'instance-pane' : 'monitoring-pane', state.zoom[pane]);
             }
@@ -444,6 +455,14 @@ async function initializeApp() {
         });
     });
     resizeObserver.observe(toolsPane);
+
+    // --- CLEANUP ON PAGE UNLOAD ---
+    window.addEventListener('beforeunload', () => {
+        if (state.pollTimeoutId) clearTimeout(state.pollTimeoutId);
+        if (statsIntervalId) clearInterval(statsIntervalId);
+        if (state.viewResizeObserver) state.viewResizeObserver.disconnect();
+        resizeObserver.disconnect();
+    });
 }
 
 document.addEventListener('DOMContentLoaded', initializeApp);

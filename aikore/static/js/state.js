@@ -61,6 +61,7 @@ export const state = {
     terminals: {},  // { instanceId: { terminal: Terminal, fitAddon: FitAddon, socket: WebSocket, instanceName: string } }
     instancesPollInterval: null,
     pollTimeoutId: null,
+    isPolling: false,
     viewResizeObserver: null,
     pendingUpdates: [],
     currentWheelsInstanceId: null,
