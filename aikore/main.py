@@ -1,5 +1,4 @@
 import os
-import glob
 import time as _time
 _t_import_start = _time.time()
 print("[Import] Starting AiKore module imports...")
@@ -81,17 +80,19 @@ async def lifespan(app: FastAPI):
         db.commit()
         print(f"[Startup] Reset status for {num_rows_updated} instances. ({__import__('time').time() - _t1:.2f}s)")
 
-        # 3. Clear old log files
+        # 3. Clear old log files (only check direct instance dirs, not deep subtree)
         _t2 = __import__('time').time()
         print("[Startup] Step 3: Clearing old log files...")
-        log_files = glob.glob(os.path.join(INSTANCES_DIR, "**", "output.log"), recursive=True)
         cleared_count = 0
-        for log_file in log_files:
-            try:
-                os.remove(log_file)
-                cleared_count += 1
-            except OSError as e:
-                print(f"[Startup] Error removing log file {log_file}: {e}")
+        for entry in os.scandir(INSTANCES_DIR):
+            if entry.is_dir():
+                log_path = os.path.join(entry.path, "output.log")
+                if os.path.exists(log_path):
+                    try:
+                        os.remove(log_path)
+                        cleared_count += 1
+                    except OSError as e:
+                        print(f"[Startup] Error removing log file {log_path}: {e}")
         if cleared_count > 0:
             print(f"[Startup] Cleared {cleared_count} old log files. ({__import__('time').time() - _t2:.2f}s)")
         else:
