@@ -69,7 +69,8 @@ RUN printf '#!/bin/bash\n# Service disabled by AiKore\nexit 0\n' > /etc/s6-overl
 # --- Environment Variables ---
 ENV BASE_DIR=/config \
     SD_INSTALL_DIR=/opt/sd-install \
-    XDG_CACHE_HOME=/config/temp
+    XDG_CACHE_HOME=/config/temp \
+    PYTHONUNBUFFERED=1
 
 # Set compiler for runtime compilations by the Module Builder
 ENV CC=/usr/bin/gcc-13
