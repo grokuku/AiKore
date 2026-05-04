@@ -7,42 +7,44 @@ FROM ghcr.io/linuxserver/baseimage-kasmvnc:ubuntunoble
 # allowing the internal AiKore Module Builder to compile dependencies on demand.
 
 # --- Add Mozilla PPA & NVIDIA CUDA Repo ---
-# Retry logic added for network resilience during image builds
-RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common wget gnupg && \
-    add-apt-repository ppa:mozillateam/ppa && \
+# Retry logic for both downloads and apt-get update for network resilience
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends software-properties-common wget gnupg && \
+    add-apt-repository ppa:mozillateam/ppa -y && \
     printf "Package: firefox*\\nPin: release o=LP-PPA-mozillateam\\nPin-Priority: 1001\\n" > /etc/apt/preferences.d/mozilla-firefox && \
-    for i in 1 2 3; do wget --tries=3 --waitretry=5 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && break || sleep 10; done && \
+    for i in 1 2 3; do \
+        wget --tries=3 --waitretry=5 https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && break || sleep 10; \
+    done && \
     dpkg -i cuda-keyring_1.1-1_all.deb && \
     rm -f cuda-keyring_1.1-1_all.deb && \
-    apt-get update
+    for i in 1 2 3; do \
+        apt-get update --allow-releaseinfo-change && break || sleep 5; \
+    done
 
 # --- Install All System Dependencies ---
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # CUDA Toolkit (System-level compiler for the Module Builder)
-    cuda-toolkit-13-0 \
-    # Audio Backend for Torchaudio
-    ffmpeg \
-    # Core application tools
-    rsync \
-    dos2unix \
-    socat \
-    # Compilation tools for the Module Builder
-    cmake \
-    build-essential \
-    gcc-13 \
-    g++-13 \
-    git \
-    ninja-build \
-    # Common utility tools for debugging and scripting
-    curl \
-    mc \
-    bc \
-    nano \
-    python3-xdg \
-    # KasmVNC/Persistent mode dependencies
-    xvfb \
-    firefox \
-    && rm -rf /var/lib/apt/lists/*
+RUN for i in 1 2 3; do \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        cuda-toolkit-13-0 \
+        ffmpeg \
+        rsync \
+        dos2unix \
+        socat \
+        cmake \
+        build-essential \
+        gcc-13 \
+        g++-13 \
+        git \
+        ninja-build \
+        curl \
+        mc \
+        bc \
+        nano \
+        python3-xdg \
+        xvfb \
+        firefox \
+    && rm -rf /var/lib/apt/lists/* && break || sleep 10; \
+    done
 
 # --- s6-overlay & Sudoers Configuration ---
 # Copy our custom s6-overlay services and sudoers configuration
