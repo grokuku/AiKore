@@ -58,15 +58,28 @@
 
     ### Step 2: Environment Isolation
     Use Conda to isolate the environment. Always clean the cache and respect the user's custom python version if defined.
+
+    **Critical**: always add `pip` to `conda create` and use `source activate` (not direct
+    `bin/pip` paths). Without `source activate`, the PATH may still point to the system
+    Python instead of the venv Python, especially if the base environment runs a newer version.
+
     ```bash
     conda clean -ya
     clean_env "${VENV_DIR}"
 
     if [ ! -d "${VENV_DIR}" ]; then
-        conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.12}" -y
+        # Include pip explicitly — it is NOT automatically included by conda create
+        conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.12}" pip -y
     fi
+
+    # REQUIRED: activate the environment so pip/python resolve to the venv, not the base
     source activate "${VENV_DIR}"
     ```
+
+    **Why this matters**: If the container's base Python is e.g. 3.13 and your app requires
+    Python 3.10 (because numba/misaki need <3.12), using `${VENV_DIR}/bin/pip` directly
+    can fail — the binary may not exist or may need conda activation to work. The pattern
+    `conda create ... pip` + `source activate` + `pip install` is the only reliable approach.
 
     ### Step 3: Dependency Handling (The Most Critical Step)
     AiKore relies on a centralized builder. **You must prevent the application's `requirements.txt` from overriding AiKore's optimized wheels.**
@@ -150,4 +163,36 @@
     If an application requires specific models at runtime that are not standard (e.g., JustRayzist specific safetensors), download them directly using `wget` into the correct structure, but only if they don't already exist.
     ```bash
     if [ ! -f "${TARGET_PATH}" ]; then
-        wget -q --show
+        wget -q --show-progress -O "${TARGET_PATH}" "${MODEL_URL}"
+    fi
+    ```
+
+    ### Case E: Stale Version Pins & Incompatible Dependencies
+    Some upstream projects pin packages to exact versions that no longer exist on PyPI,
+    or that are incompatible with the container's default Python version.
+
+    **Symptom 1 — Package version not found**: e.g., `numpy==1.26.0` — this version
+    never existed on PyPI (the release jumped from 1.25.2 to 1.26.2).
+
+    **Fix**: Add the package to `PACKAGES_TO_EXCLUDE` and let pip resolve a compatible
+    version via transitive dependencies:
+    ```bash
+    PACKAGES_TO_EXCLUDE="torch|...|numpy"
+    ```
+
+    **Symptom 2 — C extension build failures**: e.g., `pyaudio` fails with
+    `portaudio.h: No such file or directory` when pip tries to build from source.
+
+    **Fix**: Install the package and its C library via Conda instead of pip:
+    ```bash
+    conda create -p "${VENV_DIR}" python=3.10 pip portaudio pyaudio -c conda-forge -y
+    ```
+    Then add `pyaudio` to `PACKAGES_TO_EXCLUDE` so pip doesn't try to overwrite it.
+
+    **Symptom 3 — Python version too new**: e.g., `numba` / `misaki` require Python
+    `<3.12` but the container's base Python is 3.13.
+
+    **Fix**: Hardcode a compatible Python version in `conda create` (e.g. `python=3.10`),
+    add `pip` to the conda packages, activate with `source activate`, and use plain `pip`
+    (not `${VENV_DIR}/bin/pip`). This ensures all commands run inside the isolated
+    environment, not the base Python.
