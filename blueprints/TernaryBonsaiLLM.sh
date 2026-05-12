@@ -89,12 +89,25 @@ done
 # Make conda CUDA libs available to llama-server
 export LD_LIBRARY_PATH="${VENV_DIR}/lib:${LD_LIBRARY_PATH}"
 
-# --- 4. Launch llama.cpp server ---
+# --- 4. API key ---
+# Generate or reuse an API key to protect the endpoint
+API_KEY_FILE="${INSTANCE_CONF_DIR}/api.key"
+if [ ! -f "${API_KEY_FILE}" ]; then
+    API_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(24))")
+    echo "${API_KEY}" > "${API_KEY_FILE}"
+    echo "--- Generated new API key: ${API_KEY} ---"
+    echo "--- Key saved to ${API_KEY_FILE} ---"
+else
+    API_KEY=$(cat "${API_KEY_FILE}")
+    echo "--- Reusing existing API key from ${API_KEY_FILE} ---"
+fi
+
+# --- 5. Launch llama.cpp server ---
 echo "--- Launching Ternary Bonsai LLM server on port ${WEBUI_PORT} ---"
 
 cd "${APP_DIR}"
 
-CMD="${APP_DIR}/llama-server -m ${MODEL_DIR}/${MODEL_FILE} --host 0.0.0.0 --port ${WEBUI_PORT} -c 4096 -ngl 99 -t 4 --log-disable"
+CMD="${APP_DIR}/llama-server -m ${MODEL_DIR}/${MODEL_FILE} --host 0.0.0.0 --port ${WEBUI_PORT} -c 4096 -ngl 99 -t 4 --log-disable --api-key ${API_KEY}"
 
 # Allow user to override launch args via launch_args.txt
 if [ -f "${INSTANCE_CONF_DIR}/launch_args.txt" ]; then
@@ -107,6 +120,8 @@ echo "Launching Ternary Bonsai LLM:"
 echo "${CMD}"
 echo "---"
 echo "OpenAI-compatible API: http://localhost:${WEBUI_PORT}/v1/chat/completions"
+echo "API key: ${API_KEY}"
+echo "Usage: curl -H 'Authorization: Bearer ${API_KEY}' ..."
 echo ""
 
 eval ${CMD}

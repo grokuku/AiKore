@@ -66,11 +66,15 @@ conda clean -ya
 # Clean the Conda environment if required by user
 clean_env "${VENV_DIR}"
 
+# Track whether this is a fresh environment installation
+FRESH_INSTALL=false
+
 # Create the Conda environment if it doesn't exist
 if [ ! -d "${VENV_DIR}" ]; then
     # --- NEW: Dynamic Python version with fallback ---
     echo "Creating Conda environment with Python ${PYTHON_VERSION:-3.12}..."
     conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.12}" -y
+    FRESH_INSTALL=true
 fi
 
 # Activate the environment
@@ -111,30 +115,34 @@ pip install -r "${COMFYUI_DIR}/requirements-filtered.txt"
 # 3. Install dependencies for ComfyUI-Manager.
 pip install -r "${MANAGER_DIR}/requirements.txt"
 
-# 4. Find and install dependencies for all other custom nodes
-echo "--- Installing dependencies for other custom nodes ---"
-CUSTOM_NODES_DIR="${COMFYUI_DIR}/custom_nodes"
+# 4. Find and install dependencies for custom nodes (only on fresh install)
+if [ "$FRESH_INSTALL" = true ]; then
+    echo "--- Fresh install: installing custom node dependencies ---"
+    CUSTOM_NODES_DIR="${COMFYUI_DIR}/custom_nodes"
 
-find "${CUSTOM_NODES_DIR}" -name "requirements.txt" -print0 | while IFS= read -r -d $'\0' req_file; do
-    # Exclude the ComfyUI-Manager's requirements file as we've already installed it
-    if [ "$req_file" != "${MANAGER_DIR}/requirements.txt" ]; then
-        echo "--- Processing custom node requirements: $req_file ---"
-        
-        TEMP_REQ_FILE=$(mktemp)
-        
-        grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "$req_file" > "$TEMP_REQ_FILE"
-        
-        # Only run pip if the filtered file is not empty
-        if [ -s "$TEMP_REQ_FILE" ]; then
-            echo "Installing filtered dependencies from $req_file"
-            pip install -r "$TEMP_REQ_FILE"
-        else
-            echo "No dependencies to install from $req_file after filtering."
+    find "${CUSTOM_NODES_DIR}" -name "requirements.txt" -print0 | while IFS= read -r -d $'\0' req_file; do
+        # Exclude the ComfyUI-Manager's requirements file as we've already installed it
+        if [ "$req_file" != "${MANAGER_DIR}/requirements.txt" ]; then
+            echo "--- Processing custom node requirements: $req_file ---"
+            
+            TEMP_REQ_FILE=$(mktemp)
+            
+            grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "$req_file" > "$TEMP_REQ_FILE"
+            
+            # Only run pip if the filtered file is not empty
+            if [ -s "$TEMP_REQ_FILE" ]; then
+                echo "Installing filtered dependencies from $req_file"
+                pip install -r "$TEMP_REQ_FILE"
+            else
+                echo "No dependencies to install from $req_file after filtering."
+            fi
+            
+            rm "$TEMP_REQ_FILE"
         fi
-        
-        rm "$TEMP_REQ_FILE"
-    fi
-done
+    done
+else
+    echo "--- Existing environment: skipping custom node dependency installation ---"
+fi
 
 # 5. Install other packages
 pip install peft opencv-python nunchaku
