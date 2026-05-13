@@ -425,13 +425,16 @@ def _fetch_cuda_versions(fallback):
             continue
         seen.add(cu)
         # Convert cuXXX to X.Y format: cu118 -> 11.8, cu130 -> 13.0, cu131 -> 13.1
+        # For 3-digit nums the format is XY.Z (e.g. 118->11.8, 130->13.0)
+        # For 4-digit nums the format is XY.ZZ (e.g. 1010->10.10)
+        # For 2-digit nums the format is X.Y (e.g. 92->9.2)
         num = cu[2:]  # strip "cu"
         if len(num) == 3:
-            version = f"{num[0]}.{num[1:]}"
+            version = f"{num[:2]}.{num[2:]}"
         elif len(num) == 4:
             version = f"{num[:2]}.{num[2:]}"
-        else:
-            version = num
+        elif len(num) == 2:
+            version = f"{num[0]}.{num[1:]}"
         result.append({"cu": cu, "version": version})
     if not result:
         return fallback
