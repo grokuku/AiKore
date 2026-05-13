@@ -571,16 +571,28 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         defOpt.textContent = placeholder;
         sel.appendChild(defOpt);
         
-        options.forEach(opt => {
+        // Normalize options: each option can be a string or an object {cu, version}
+        // Strings are used as-is; objects are converted to {value, label} pairs.
+        const normalized = options.map(opt => {
+            if (typeof opt === 'object' && opt !== null) {
+                // CUDA versions: {cu: "cu130", version: "13.0"}
+                return { value: opt.version, label: `CUDA ${opt.version}`, cu: opt.cu };
+            }
+            return { value: opt, label: String(opt) };
+        });
+        
+        normalized.forEach(opt => {
             const o = document.createElement('option');
-            o.value = opt;
-            o.textContent = opt;
+            o.value = opt.value;
+            o.textContent = opt.label;
+            if (opt.cu) o.dataset.cu = opt.cu; // store cu-string for torch lookup
             sel.appendChild(o);
         });
         
         // FIX: If currentValue is set but not in the options list, add it as a custom option
         // This prevents false dirty state when the DB value doesn't match any populated option
-        if (currentValue && !options.includes(currentValue)) {
+        const allValues = normalized.map(opt => opt.value);
+        if (currentValue && !allValues.includes(currentValue)) {
             const customOpt = document.createElement('option');
             customOpt.value = currentValue;
             customOpt.textContent = currentValue;
@@ -640,11 +652,15 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     };
 
     cudaSelect.addEventListener('change', () => {
-        updateTorchOptions(cudaSelect.value, null);
+        const selectedOption = cudaSelect.options[cudaSelect.selectedIndex];
+        const cuVal = selectedOption?.dataset?.cu || cudaSelect.value;
+        updateTorchOptions(cuVal, null);
     });
 
     // --- FIX: Always initialize the torch options, even if cuda_version is empty ---
-    updateTorchOptions(instance.cuda_version, instance.torch_version);
+    // Use the cu-string from dataset if available, falling back to the version string
+    const initialCu = cudaSelect.options[cudaSelect.selectedIndex]?.dataset?.cu || instance.cuda_version;
+    updateTorchOptions(initialCu || '12.8', instance.torch_version);
 
     envWrapper.appendChild(pySelect);
     envWrapper.appendChild(cudaSelect);

@@ -178,6 +178,12 @@ sl_folder "${COMFYUI_DIR}" "output" "${TARGET_PARENT}" "${TARGET_FOLDER}"
 # --- Launch ---
 cd "${COMFYUI_DIR}"
 
+# Disable PyTorch's expandable_segments memory allocator which causes severe
+# performance degradation (GPU at 0% compute, VRAM at 100%) due to broken
+# memory tracking in the pyt-cu-plug-alloc-async plugin.
+# See: https://github.com/pytorch/pytorch/issues/124565
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:False"
+
 CMD="python main.py --listen --port ${WEBUI_PORT}"
 
 # Add any user-defined launch arguments
