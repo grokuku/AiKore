@@ -1,5 +1,5 @@
 import { state, DOM } from './state.js';
-import { fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSystemStats, fetchAvailablePythonVersions } from './api.js';
+import { fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSystemStats, fetchAvailablePythonVersions, fetchCudaVersions } from './api.js';
 import { renderInstanceRow, updateSystemStats, checkRowForChanges, buildInstanceUrl } from './ui.js';
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
@@ -154,21 +154,24 @@ export async function fetchAndRenderInstances() {
 
 async function initializeApp() {
     try {
-        // --- Python versions: fire-and-forget (non-blocking) ---
-        // Runs in parallel; falls back to defaults stored in state.js if slow/fails.
-        fetchAvailablePythonVersions()
-            .then(versions => {
-                if (versions && versions.length > 0) {
-                    state.versions.python = versions;
-                }
-            })
-            .catch(err => { console.warn('Failed to fetch Python versions, using defaults:', err); });
-
-        const [systemInfo, blueprints, ports] = await Promise.all([
+        // --- Fetch version lists in parallel with system info ---
+        // These must complete before rendering instances so the dropdowns are populated.
+        const [systemInfo, blueprints, ports, pyVersions, cudaVersions] = await Promise.all([
             fetchSystemInfo(),
             fetchAndStoreBlueprints(),
-            fetchAvailablePorts()
+            fetchAvailablePorts(),
+            fetchAvailablePythonVersions().catch(err => {
+                console.warn('Failed to fetch Python versions, using defaults:', err);
+                return null;
+            }),
+            fetchCudaVersions().catch(err => {
+                console.warn('Failed to fetch CUDA versions, using defaults:', err);
+                return null;
+            })
         ]);
+        // Store version data in shared state (only if fetch succeeded)
+        if (pyVersions && pyVersions.length > 0) state.versions.python = pyVersions;
+        if (cudaVersions && cudaVersions.length > 0) state.versions.cuda = cudaVersions;
 
         state.systemInfo = systemInfo;
         state.availableBlueprints = blueprints;
