@@ -43,6 +43,7 @@ echo "--- Setting up Conda environment ---"
 if [ ! -d "${VENV_DIR}" ]; then
     echo "Creating Conda environment with Xorg libraries..."
     conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.10}" \
+        pip \
         gtk3 gdk-pixbuf cairo pango \
         alsa-lib nss nspr at-spi2-atk \
         libdrm libxkbcommon \

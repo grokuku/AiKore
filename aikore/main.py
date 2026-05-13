@@ -5,7 +5,7 @@ print("[Import] Starting AiKore module imports...")
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 print(f"[Import] FastAPI loaded. ({_time.time() - _t_import_start:.2f}s)")
 
 _t_nvml = _time.time()
@@ -148,7 +148,19 @@ app.include_router(system.router)
 app.include_router(builder.router)
 
 # Mount the static directory to serve frontend files
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Serve JS/CSS with no-cache headers to prevent stale cached assets
+# after updates — Python, HTML, and image files are cached normally.
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles subclass that adds Cache-Control: no-cache for JS/CSS files."""
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if path.endswith((".js", ".css", ".mjs")):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+app.mount("/static", NoCacheStaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/api/status", tags=["System"])
 def get_status():
@@ -158,4 +170,8 @@ def get_status():
 @app.get("/", include_in_schema=False)
 def read_root():
     """Serve the main index.html file."""
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    response = FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response

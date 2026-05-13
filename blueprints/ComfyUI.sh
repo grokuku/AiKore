@@ -73,7 +73,7 @@ FRESH_INSTALL=false
 if [ ! -d "${VENV_DIR}" ]; then
     # --- NEW: Dynamic Python version with fallback ---
     echo "Creating Conda environment with Python ${PYTHON_VERSION:-3.12}..."
-    conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.12}" -y
+    conda create -p "${VENV_DIR}" python="${PYTHON_VERSION:-3.12}" pip -y
     FRESH_INSTALL=true
 fi
 
