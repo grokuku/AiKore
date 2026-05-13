@@ -70,6 +70,12 @@ fi
 conda create -p "${VENV_DIR}" python=3.10 pip -c conda-forge -y
 source activate "${VENV_DIR}"
 
+# Ensure pip is available inside the environment
+if [ ! -f "${VENV_DIR}/bin/pip" ]; then
+    echo "--- pip not found in environment, installing via conda ---"
+    conda install -p "${VENV_DIR}" pip -y
+fi
+
 pip install \
     nvidia-cuda-runtime-cu12 \
     nvidia-cublas-cu12 \

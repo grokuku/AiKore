@@ -62,6 +62,12 @@ if [ ! -d "${VENV_DIR}" ]; then
 fi
 source activate "${VENV_DIR}"
 
+# Ensure pip is available inside the environment
+if [ ! -f "${VENV_DIR}/bin/pip" ]; then
+    echo "--- pip not found in environment, installing via conda ---"
+    conda install -p "${VENV_DIR}" pip -y
+fi
+
 # --- 3. Robust Update Logic (0.4.x Focus) ---
 mkdir -p "${APP_DIR}"
 cd "${APP_DIR}"

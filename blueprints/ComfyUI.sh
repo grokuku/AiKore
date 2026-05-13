@@ -80,6 +80,14 @@ fi
 # Activate the environment
 source activate "${VENV_DIR}"
 
+# Ensure pip is available inside the environment.
+# If the env was created before pip was added to conda create, pip may be missing
+# and all installs would silently go to the system conda instead.
+if [ ! -f "${VENV_DIR}/bin/pip" ]; then
+    echo "--- pip not found in environment, installing via conda ---"
+    conda install -p "${VENV_DIR}" pip -y
+fi
+
 # --- Dependency Installation ---
 echo "--- Installing dependencies ---"
 

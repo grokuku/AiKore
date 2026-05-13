@@ -60,6 +60,12 @@ fi
 # Activate the environment so conda/mamba tools resolve correctly
 source activate "${VENV_DIR}"
 
+# Ensure pip is available inside the environment
+if [ ! -f "${VENV_DIR}/bin/pip" ]; then
+    echo "--- pip not found in environment, installing via conda ---"
+    conda install -p "${VENV_DIR}" pip -y
+fi
+
 # Install ffmpeg via conda only if not already present
 if ! conda list -p "${VENV_DIR}" ffmpeg &>/dev/null | grep -q ffmpeg; then
     conda install -p "${VENV_DIR}" -c conda-forge ffmpeg -y
