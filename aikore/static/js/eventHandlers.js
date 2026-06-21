@@ -143,7 +143,10 @@ export function setupMainEventListeners() {
 
                     Object.keys(changes).forEach(key => {
                         const div = document.createElement('div');
-                        div.innerHTML = `<strong>[${instanceName}] ${fieldMap[key]}:</strong> ${changes[key].old} &rarr; ${changes[key].new}`;
+                        const strong = document.createElement('strong');
+                        strong.textContent = `[${instanceName}] ${fieldMap[key]}:`;
+                        div.appendChild(strong);
+                        div.appendChild(document.createTextNode(` ${changes[key].old} → ${changes[key].new}`));
                         changesContainer.appendChild(div);
                     });
 

@@ -19,6 +19,7 @@ print(f"[Import] Database modules loaded. ({_time.time() - _t_db:.2f}s)")
 
 _t_api = _time.time()
 from .api import instances, system, builder
+from .api.builder import cleanup_stale_builder_envs
 print(f"[Import] API routers loaded. ({_time.time() - _t_api:.2f}s)")
 
 _t_pm = _time.time()
@@ -122,6 +123,13 @@ async def lifespan(app: FastAPI):
         print("[Startup] Database session closed.")
 
     print(f"[Startup] ✓ Application startup complete. Total: {__import__('time').time() - _t0:.2f}s")
+
+    # 5. Cleanup stale builder Conda environments
+    print("[Startup] Step 5: Cleaning stale builder environments...")
+    try:
+        cleanup_stale_builder_envs()
+    except Exception as e:
+        print(f"[Startup] [Warning] Builder environment cleanup failed: {e}")
 
     yield  # <-- Application runs here
 

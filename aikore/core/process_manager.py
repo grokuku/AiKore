@@ -75,8 +75,8 @@ def update_nginx_config(db: Session):
     and reloads the NGINX service. This allows updating routing (like hostnames)
     without killing the instance processes.
     """
-    # Find all instances that are ostensibly running
-    active_instances = db.query(models.Instance).filter(models.Instance.status != "stopped").all()
+    # Find all instances that are started
+    active_instances = db.query(models.Instance).filter(models.Instance.status == "started").all()
     
     updated_count = 0
     
@@ -124,7 +124,6 @@ def _cleanup_instance_files(instance_slug: str):
     # Cleanup Firefox profile if it exists
     firefox_profile_dir = f"/tmp/firefox-profiles/{instance_slug}"
     if os.path.isdir(firefox_profile_dir):
-        import shutil
         shutil.rmtree(firefox_profile_dir, ignore_errors=True)
 
 # --- TERMINAL MANAGEMENT ---
@@ -466,7 +465,7 @@ def start_instance_process(db: Session, instance: models.Instance):
     if not os.path.exists(dest_script_path):
         raise FileNotFoundError(f"Launch script not found for instance '{instance.name}' at expected path '{dest_script_path}'. The parent instance may be missing its script.")
 
-    os.chmod(dest_script_path, os.stat(dest_script_path).st_mode | stat.S_IEXEC)
+    os.chmod(dest_script_path, os.stat(dest_script_path).st_mode | stat.S_IXUSR)
 
     # --- Environment Setup ---
     env = os.environ.copy()
@@ -580,12 +579,31 @@ def stop_instance_process(db: Session, instance: models.Instance):
     print(f"[Manager] Instance {instance.name} stopped and cleaned up.")
 
 
+def _get_instance_venv_metadata(instance: models.Instance, instance_conf_dir: str) -> dict:
+    """
+    Resolves venv metadata for an instance by first checking its launch.sh
+    (the actual runtime file), then falling back to the original blueprint.
+    This is the same pattern used by start_terminal_process().
+    """
+    launch_sh_path = os.path.join(instance_conf_dir, "launch.sh")
+    metadata = _parse_venv_from_launch_sh(launch_sh_path)
+
+    # If launch.sh doesn't have metadata, fall back to the blueprint
+    if not metadata.get('venv_type') or not metadata.get('venv_path'):
+        fallback_metadata = parse_blueprint_metadata(instance.base_blueprint)
+        for key in ('venv_type', 'venv_path'):
+            if key not in metadata and key in fallback_metadata:
+                metadata[key] = fallback_metadata[key]
+
+    return metadata
+
+
 def run_version_check(instance: models.Instance) -> str:
     """
     Runs the version check script within the instance's environment.
     """
     instance_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
-    metadata = parse_blueprint_metadata(instance.base_blueprint)
+    metadata = _get_instance_venv_metadata(instance, instance_conf_dir)
     
     venv_type = metadata.get('venv_type')
     venv_path = metadata.get('venv_path')
@@ -628,7 +646,7 @@ def run_command_in_instance_venv(instance: models.Instance, command_to_run: str)
     Returns a tuple of (success: bool, output: str).
     """
     instance_conf_dir = os.path.join(INSTANCES_DIR, instance.name)
-    metadata = parse_blueprint_metadata(instance.base_blueprint)
+    metadata = _get_instance_venv_metadata(instance, instance_conf_dir)
     
     venv_type = metadata.get('venv_type')
     venv_path = metadata.get('venv_path')

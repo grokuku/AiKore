@@ -35,10 +35,11 @@ def get_blueprint_venv_path(blueprint_name: str) -> str:
             in_metadata_block = False
             for line in f:
                 line = line.strip()
-                if line == '### AIKORE-METADATA-START ###':
+                # Use substring match for consistency with process_manager.py
+                if '### AIKORE-METADATA-START ###' in line:
                     in_metadata_block = True
                     continue
-                if line == '### AIKORE-METADATA-END ###':
+                if '### AIKORE-METADATA-END ###' in line:
                     break
                 
                 if in_metadata_block and line.startswith('#'):

@@ -55,6 +55,7 @@ function hideAllToolViews({ keepBuilder = false } = {}) {
 }
 
 // --- PERSISTENT TERMINAL POOL ---
+const MAX_TERMINALS = 5;
 
 function _createTerminalForInstance(instanceId, instanceName) {
     const termState = {
@@ -65,7 +66,8 @@ function _createTerminalForInstance(instanceId, instanceName) {
         fitAddon: new FitAddon.FitAddon(),
         socket: null,
         instanceName: instanceName,
-        resizeObserver: null
+        resizeObserver: null,
+        lastUsed: Date.now()
     };
 
     // Each terminal host is absolutely positioned so they stack on top of each
@@ -108,6 +110,8 @@ function _createTerminalForInstance(instanceId, instanceName) {
 
     socket.onclose = (event) => {
         termState.terminal.write(`\r\n\x1b[31m[CLOSED]\x1b[0m ${event.reason || ''}\r\n`);
+        // Mark as dead so LRU eviction prioritizes this terminal for cleanup
+        termState.lastUsed = 0;
     };
 
     socket.onerror = () => {
@@ -134,6 +138,9 @@ function _showTerminalInstance(instanceId) {
 
     const termState = state.terminals[instanceId];
     if (!termState) return;
+
+    // Refresh last-used timestamp for LRU eviction
+    termState.lastUsed = Date.now();
 
     const hostEl = document.getElementById(`terminal-host-${instanceId}`);
     if (hostEl) {
@@ -249,27 +256,24 @@ async function populateTorchVersions() {
     }
 }
 
-export async function renderBuilderStatus() {
+export function renderBuilderStatus() {
     const btn = document.getElementById('btn-open-builder');
     if (!btn) return;
 
-    try {
-        const info = await fetchBuilderInfo();
-        const isBuilding = info.status === 'building' || info.is_building === true;
+    // Use client-side WebSocket state instead of polling the API.
+    // The builderSocket's readyState tells us if a build is in progress.
+    const isBuilding = builderSocket && builderSocket.readyState === WebSocket.OPEN;
 
-        if (isBuilding) {
-            if (btn.textContent === "Build Module") {
-                btn.textContent = "BUILDING...";
-            }
-            btn.style.backgroundColor = "#e67e22";
-            btn.style.borderColor = "#e67e22";
-        } else {
-            btn.textContent = "Build Module";
-            btn.style.backgroundColor = "#6f42c1";
-            btn.style.borderColor = "#6f42c1";
+    if (isBuilding) {
+        if (btn.textContent === "Build Module") {
+            btn.textContent = "BUILDING...";
         }
-    } catch (e) {
-        // Silent fail
+        btn.style.backgroundColor = "#e67e22";
+        btn.style.borderColor = "#e67e22";
+    } else {
+        btn.textContent = "Build Module";
+        btn.style.backgroundColor = "#6f42c1";
+        btn.style.borderColor = "#6f42c1";
     }
 }
 
@@ -971,7 +975,7 @@ export function openInstanceView(instanceName, url) {
     DOM.instanceViewContainer.classList.remove('hidden');
     DOM.toolsCloseBtn.classList.remove('hidden');
     DOM.toolsPaneTitle.textContent = `View: ${instanceName}`;
-    setToolZoom('welcome'); // View uses same zoom as welcome
+    setToolZoom('instanceView');
     if (!url || url === '#') {
         DOM.instanceIframe.src = 'about:blank';
         return;
@@ -1001,6 +1005,24 @@ export function openTerminal(instanceId, instanceName) {
     if (state.terminals[instanceId]) {
         _showTerminalInstance(instanceId);
         return;
+    }
+
+    // LRU eviction: if pool is full, close the least recently used terminal
+    const poolIds = Object.keys(state.terminals);
+    if (poolIds.length >= MAX_TERMINALS) {
+        // Find the terminal with the oldest lastUsed (dead terminals have lastUsed=0)
+        let lruId = null;
+        let lruTime = Infinity;
+        for (const id of poolIds) {
+            const ts = state.terminals[id].lastUsed;
+            if (ts < lruTime) {
+                lruTime = ts;
+                lruId = id;
+            }
+        }
+        if (lruId) {
+            closeTerminal(lruId);
+        }
     }
 
     // Create new terminal (do NOT clear terminalContent — it hosts ALL terminal
@@ -1035,7 +1057,10 @@ export async function showLogViewer(instanceId, instanceName) {
                 const isScrolled = DOM.logViewerContainer.scrollHeight - DOM.logViewerContainer.scrollTop <= DOM.logViewerContainer.clientHeight + 2;
                 if (data.content) {
                     if (DOM.logContentArea.textContent === 'Loading logs...') DOM.logContentArea.innerHTML = '';
-                    const logHtml = ansi_up.ansi_to_html(data.content);
+                    // Sanitize log content before ANSI conversion to prevent XSS
+                    // ansi_up doesn't escape HTML — raw <script> tags in logs would execute
+                    const sanitized = data.content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const logHtml = ansi_up.ansi_to_html(sanitized);
                     DOM.logContentArea.insertAdjacentHTML('beforeend', logHtml);
                     state.logSize = data.size;
                     if (isScrolled) DOM.logViewerContainer.scrollTop = DOM.logViewerContainer.scrollHeight;

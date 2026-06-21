@@ -181,7 +181,7 @@ def process_background_copy(new_instance_id: int, source_instance_id: int):
 
             if os.path.isdir(source_env_path):
                 print(f"[Background] Cloning Conda environment...")
-                subprocess.run(["conda", "create", "--prefix", clone_env_path, "--clone", source_env_path, "-y"],
+                subprocess.run(["/home/abc/miniconda3/bin/conda", "create", "--prefix", clone_env_path, "--clone", source_env_path, "-y"],
                     capture_output=True, text=True, check=True
                 )
 

@@ -236,6 +236,86 @@ _manifest_lock = asyncio.Lock()
 # --- PYTHON VERSION CACHE LOCK ---
 _cache_lock = asyncio.Lock()
 
+# --- BUILDER ENVIRONMENT CLEANUP ---
+# Environnements Conda inutilisés depuis plus de X jours sont automatiquement supprimés
+_BUILDER_ENV_MAX_AGE_DAYS = 7
+
+
+def _get_conda_envs_dir() -> str:
+    """Returns the conda environments directory."""
+    return os.path.join(os.path.dirname(CONDA_BASE_DIR), "envs")
+
+
+def _mark_env_used(env_name: str):
+    """
+    Touch a .last_used marker file in the conda environment directory.
+    This timestamp is checked by cleanup_stale_builder_envs() to determine
+    if the environment is stale.
+    """
+    env_dir = os.path.join(_get_conda_envs_dir(), env_name)
+    marker = os.path.join(env_dir, ".aikore_last_used")
+    try:
+        with open(marker, 'a') as f:
+            os.utime(marker, None)
+    except Exception as e:
+        print(f"[DEBUG] Failed to mark env '{env_name}' as used: {e}")
+
+
+def cleanup_stale_builder_envs():
+    """
+    Scans all builder Conda environments and removes those whose .last_used
+    marker is older than _BUILDER_ENV_MAX_AGE_DAYS days.
+    Called on application startup.
+    """
+    envs_dir = _get_conda_envs_dir()
+    if not os.path.isdir(envs_dir):
+        return
+
+    now = time.time()
+    max_age_seconds = _BUILDER_ENV_MAX_AGE_DAYS * 24 * 3600
+    removed_count = 0
+    total_size_mb = 0
+
+    for entry in os.listdir(envs_dir):
+        if not entry.startswith("builder_py"):
+            continue
+        env_path = os.path.join(envs_dir, entry)
+        if not os.path.isdir(env_path):
+            continue
+
+        marker = os.path.join(env_path, ".aikore_last_used")
+        if os.path.exists(marker):
+            age = now - os.path.getmtime(marker)
+        else:
+            # Pas de marker — probablement un env créé par une version antérieure
+            # On utilise la date de modification du dossier
+            dir_mtime = os.path.getmtime(env_path)
+            # Si le dossier a moins de 24h, on attend (un build pourrait être en cours)
+            if now - dir_mtime < 86400:
+                continue
+            age = now - dir_mtime
+
+        if age > max_age_seconds:
+            try:
+                dir_size = sum(
+                    os.path.getsize(os.path.join(dirpath, f))
+                    for dirpath, _, filenames in os.walk(env_path)
+                    for f in filenames
+                ) if os.path.isdir(env_path) else 0
+
+                shutil.rmtree(env_path, ignore_errors=True)
+                removed_count += 1
+                total_size_mb += round(dir_size / (1024 * 1024), 1)
+                print(f"[Builder-Cleanup] Removed stale env '{entry}' (unused for {int(age/86400)}d, ~{round(dir_size/(1024*1024))}MB)")
+            except Exception as e:
+                print(f"[Builder-Cleanup] Failed to remove '{entry}': {e}")
+
+    if removed_count > 0:
+        print(f"[Builder-Cleanup] Cleanup complete: removed {removed_count} stale environment(s) ({total_size_mb} MB freed).")
+    else:
+        print(f"[Builder-Cleanup] No stale builder environments to clean.")
+
+
 # --- HELPERS ---
 
 def get_manifest():
@@ -657,6 +737,10 @@ async def build_websocket(websocket: WebSocket):
         build_tools_cmd = f"source {CONDA_BASE_DIR}/bin/activate {env_name} && pip install cmake scikit-build-core"
         if await stream_subprocess(build_tools_cmd, WHEELS_DIR, websocket) != 0:
             await websocket.send_text(f"\x1b[33m[WARN] Failed to update build tools. Build might fail.\x1b[0m\r\n")
+
+        # --- Mark environment as used for cache management ---
+        # Ceci permet au cleanup de savoir que l'environnement est actif
+        _mark_env_used(env_name)
 
         # 2.5 DETECT TORCH VERSION (NEW)
         # We query the environment to find out exactly what version was installed

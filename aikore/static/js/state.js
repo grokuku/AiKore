@@ -85,7 +85,8 @@ export const state = {
             terminal: 100,
             versionCheck: 100,
             builder: 100,
-            wheels: 100
+            wheels: 100,
+            instanceView: 100
         },
         monitoring: 100
     },

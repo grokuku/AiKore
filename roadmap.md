@@ -1,4 +1,4 @@
-# AiKore: Technical Project Context & Manifest
+# AiKore: Technical Project Roadmap & Audit Report
 
 ## 0. META: Interaction Rules & Protocols
 
@@ -267,7 +267,7 @@ Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_me
 
 ---
 
-## 7. Bugs Already Fixed (Session 1)
+## 7. Bugs Already Fixed (Sessions 1–6)
 
 | # | Bug | File | Fix |
 |---|---|---|---|
@@ -281,104 +281,203 @@ Parsed by `blueprint_parser.py` (venv_path), `process_manager.parse_blueprint_me
 | 8 | "Save as Custom Blueprint" button had no event listener | `eventHandlers.js` | Added listener that pre-fills filename and shows modal |
 | 9 | `pendingUpdates` missing from initial state | `state.js` | Added `pendingUpdates: []` |
 | 10 | `cpu_percent(interval=None)` returns 0 on first call | `system.py` | Pre-seeded with `cpu_percent(interval=0.1)` |
+| 8.1 | Stale DB session passed to background copy task | `crud.py` | `process_background_copy()` creates own `SessionLocal()` |
+| 8.2 | DB session held open for WebSocket lifetime | `instances.py` | `db.close()` after reading instance data |
+| 8.3 | Duplicate event listeners on update-confirm modal buttons | `modals.js` | Removed duplicate confirm handler |
+| 8.4 | XSS via innerHTML with wheel filenames | `tools.js`, `ui.js` | Replaced with `textContent` + `createElement` |
+| 8.5 | `get_available_ports` doesn't include `persistent_port` | `system.py` | Added `instance.persistent_port` to `used_ports` |
+| 8.6 | Cannot delete instances in `installing` or `error` status | `instances.py` | Changed check to include those statuses |
+| 8.7 | `TORCH_VISION_MAP` outdated | `builder.py` | Removed map, pip resolves versions automatically |
+| 8.8 | Conda env name not sanitized → shell injection | `builder.py` | Added regex validation before using env_name |
+| 8.9 | Rollback logic for directory rename is fragile | `instances.py` | Replaced `'new_dir' in locals()` with `os.path.isdir()` |
+| 8.10 | `InstanceUpdate` schema missing `port` field | `schemas/instance.py` | Added `port: int \| None = None` |
+| 8.11 | `INSTANCES_DIR` hardcoded in 3 separate files | Multiple | Centralized in `config.py` |
+| 8.12 | `setInterval` for system stats never cleared | `main.js` | Pauses when `document.hidden`, resumes on visibility change |
+| 8.13 | `shutil.rmtree` without `onexc` in `crud.py` | `crud.py` | Added `_on_rm_error` handler |
+| 8.14 | Unused `import subprocess` in `instances.py` | `instances.py` | Removed |
+| 8.15 | `status-error` CSS color unclear | CSS | Changed to dark red with border |
+| 8.16 | `InstanceUpdate` missing `persistent_port`/`persistent_display` | `schemas/instance.py` | Added both fields |
+| 8.17 | Double-commit pattern in `update_instance_details` | `instances.py` | Removed manual `setattr` loop |
+| 8.18 | `stat.S_IWRITE` is Windows-only | `instances.py`, `crud.py` | Changed to `stat.S_IWUSR` |
+| 8.19 | XSS in `ui.js` status cell via `innerHTML` | `ui.js` | Replaced with `createElement` + `textContent` |
+| 8.20 | XSS in `tools.js` error messages via `innerHTML` | `tools.js` | Added HTML entity escaping |
+| 8.21 | `pollTimeoutId` missing from `state.js` | `state.js` | Added `pollTimeoutId: null` |
+| 8.22 | Duplicate comment in `state.js` | `state.js` | Removed duplicate |
+| 8.23 | False dirty state on page refresh (env selects) | `ui.js` | `createEnvSelect` adds custom values; `updateTorchOptions` re-checks |
+| 8.24 | View/Open buttons disabled for started satellites | `main.js` | Partial update now updates `a[data-action="open"]` |
+| 8.25 | Split pane sizes not persisting | `main.js` | Changed `onEnd` to `onDragEnd` for Split.js |
+| 8.26 | Builder `ModuleNotFoundError: No module named 'torch'` | `builder.py` | Reverted to `source activate` pattern |
+| 8.27 | Welcome animation issues | `welcome/js/main.js` | Complete rewrite as single-file animation |
+| 8.28 | `parse_blueprint_metadata()` ignores custom blueprints | `process_manager.py` | Added `_find_blueprint_path()` helper |
+| 8.29 | Terminal venv activation reads blueprint instead of launch.sh | `process_manager.py` | Added `_parse_venv_from_launch_sh()` |
+| 8.30 | Terminal destroyed when switching tools | `tools.js` | Persistent terminal pool (`state.terminals`) |
+| 8.31 | Builder state lost when switching tools | `tools.js` | `hideAllToolViews({keepBuilder: true})` |
+| 8.32b | Terminal slightly smaller than frame | `tools.css` | Changed padding to 0, added `position: relative` |
+| 8.34 | Previous terminals show black screen | `tools.js`, `tools.css` | Removed innerHTML clearing; absolute positioning with visibility toggle |
+| 8.35 | Wrong torchvision version mapping | `builder.py` | Removed `TORCH_VISION_MAP`, pip resolves versions |
 
 ---
 
-## 8. Known Bugs & Issues (Remaining)
+## 8. Audit Report — New Bugs, Anomalies & Improvement Points
 
-### All bugs listed below have been FIXED. This section is kept for reference.
+> **Methodology**: Full code review of all Python backend files, all JavaScript frontend files, Dockerfile, NGINX config, s6-overlay services, and database layer. Each finding is categorized by severity.
 
-#### 8.1 — Stale DB session passed to background copy task ✅ FIXED
-**Fix**: `crud.process_background_copy()` now creates its own `SessionLocal()` context manager instead of receiving `db` as parameter. The caller in `instances.py` passes IDs only.
+### 8.1 Bugs Found
 
-#### 8.2 — DB session held open for WebSocket lifetime ✅ FIXED
-**Fix**: `instance_terminal_endpoint()` now calls `db.close()` immediately after reading instance data, before entering the WebSocket loop.
+#### 🔴 B-NEW-01 — `run_version_check` and `run_command_in_instance_venv` use stale venv metadata ✅ FIXED
+**Files**: `process_manager.py` — `run_version_check()`, `run_command_in_instance_venv()`
+**Problem**: The fix described in 8.29 added `_parse_venv_from_launch_sh()` and applied it to `start_terminal_process()`. However, `run_version_check()` and `run_command_in_instance_venv()` were **not updated** — they still call `parse_blueprint_metadata(instance.base_blueprint)` which reads from the original blueprint file, not from the instance's `launch.sh`. If a user modified `launch.sh` (e.g., via "Save as Custom Blueprint" or direct editing), the version check and venv commands will use incorrect venv metadata (wrong `venv_type` or `venv_path`).
+**Impact**: Version checks and pip installs may run outside the correct virtual environment, producing wrong results or failing silently.
+**Fix**: Added `_get_instance_venv_metadata()` helper that encapsulates the `_parse_venv_from_launch_sh()` → `parse_blueprint_metadata()` fallback pattern. Both `run_version_check()` and `run_command_in_instance_venv()` now call this helper instead of `parse_blueprint_metadata()` directly.
 
-#### 8.3 — Duplicate event listeners on update-confirm modal buttons ✅ FIXED
-**Fix**: Removed the duplicate confirm handler from `modals.js`. The cancel handler now uses `state.pendingUpdates` instead of the stale `state.instanceToUpdate`. The confirm action is handled entirely by `eventHandlers.js`.
+#### 🟠 B-NEW-02 — XSS in update confirmation modal via `innerHTML` ✅ FIXED
+**File**: `eventHandlers.js` line 146
+**Problem**: `div.innerHTML = \`<strong>[${instanceName}] ${fieldMap[key]}:</strong> ${changes[key].old} &rarr; ${changes[key].new}\`;` — instance names and field values (old/new) are inserted via `innerHTML` without HTML escaping. An instance name containing `<img onerror=...>` or `<script>` tags could inject arbitrary HTML. While instance names are user-controlled, this is a real XSS vector.
+**Impact**: Potential HTML injection if instance names or blueprint names contain HTML.
+**Fix**: Replaced `innerHTML` with `createElement` + `textContent` + `createTextNode`. The `→` arrow character is now a literal text node instead of an HTML entity (`&rarr;`).
 
-#### 8.4 — XSS via innerHTML with wheel filenames ✅ FIXED
-**Fix**: Replaced all `innerHTML` with `textContent` + `createElement` + `addEventListener` in both `tools.js` (wheels manager + builder wheels table) and `ui.js`.
+#### 🟠 B-NEW-03 — `renderBuilderStatus` polls `/api/builder/info` every 2 seconds (wasteful) ✅ FIXED
+**Files**: `main.js` (stats polling calls `renderBuilderStatus()`), `tools.js` (`renderBuilderStatus` fetches `/api/builder/info`), `builder.py` (`get_builder_info`)
+**Problem**: `renderBuilderStatus()` is called inside the 2-second stats polling interval. It makes an HTTP request to `/api/builder/info` which calls `pynvml.nvmlInit()` + `nvmlDeviceGetHandleByIndex(0)` + `nvmlDeviceGetCudaComputeCapability()` + `nvmlShutdown()` every single time. This is wasteful and could cause NVML state issues with frequent init/shutdown cycles. Furthermore, `get_builder_info()` returns `{presets, detected_arch, gpu_name, python_path}` — **none** of which indicate build status. The function checks `info.status` and `info.is_building` which don't exist in the response. The function is effectively a no-op that wastes HTTP requests.
+**Impact**: Unnecessary network traffic, NVML init/shutdown cycles every 2s, function never actually detects building state.
+**Fix**: Changed `renderBuilderStatus()` from `async` (HTTP fetch) to synchronous, using the client-side `builderSocket.readyState === WebSocket.OPEN` state to determine if a build is in progress. No API call needed — the WebSocket connection state is the definitive indicator of an active build.
 
-### 🟠 Medium (Incorrect Behavior) — All FIXED
+#### 🟠 B-NEW-04 — Blueprint metadata parsing inconsistency between `blueprint_parser.py` and `process_manager.py` ✅ FIXED
+**Files**: `blueprint_parser.py` vs `process_manager.py`
+**Problem**: `blueprint_parser.py` uses exact string match: `line == '### AIKORE-METADATA-START ###'` (after `.strip()`). `process_manager.py` uses substring match: `"### AIKORE-METADATA-START ###" in line`. If a blueprint has trailing whitespace or different formatting on the marker line, `blueprint_parser.py` will fail to detect the metadata block while `process_manager.py` will succeed. This means `get_blueprint_venv_path()` (used in `crud.py` for background copy) could return a different result than `parse_blueprint_metadata()` (used for terminals and version checks).
+**Impact**: Inconsistent venv path resolution depending on which function is called. Could cause copy operations to ignore the wrong venv directory.
+**Fix**: Changed `blueprint_parser.py` to use substring match (`in` operator) for metadata block markers, matching the behavior of `process_manager.py`.
 
-#### 8.5 — `get_available_ports` doesn't include `persistent_port` ✅ FIXED
-**Fix**: Added `instance.persistent_port` to the `used_ports` set in `system.py`.
+#### 🟠 B-NEW-05 — No timeout/recovery for instances stuck in "installing" status
+**Files**: `crud.py` (`process_background_copy`), `instances.py` (`copy_instance`)
+**Problem**: When copying an instance, a background task is launched with `status="installing"`. If the background task fails silently (e.g., process killed, OOM, conda crash without proper exception handling), the instance stays in "installing" status indefinitely. There is no timeout mechanism to detect and recover from this state. The user cannot start, stop, or interact with the instance normally.
+**Impact**: Orphaned instances in "installing" status that can only be deleted (the delete check allows `installing` status).
+**Status**: Mitigated by existing startup reset (all instances → `stopped` on boot). Remaining gap: watchdog thread for intra-session recovery.
 
-#### 8.6 — Cannot delete instances in `installing` or `error` status ✅ FIXED
-**Fix**: Changed the check to `status not in ("stopped", "error", "installing")`.
+#### 🟡 B-NEW-06 — `stat.S_IEXEC` non-standard constant (same class as fixed bug 8.18) ✅ FIXED
+**File**: `process_manager.py` line 469
+**Problem**: `os.chmod(dest_script_path, os.stat(dest_script_path).st_mode | stat.S_IEXEC)` uses `stat.S_IEXEC` which is not a POSIX-standard constant. It works on Linux (value 0o100, same as `S_IXUSR`), but is semantically incorrect and non-portable — exactly the same class of issue as bug 8.18 which was fixed for `S_IWRITE` → `S_IWUSR`.
+**Impact**: Works on Linux, but non-portable and inconsistent with the 8.18 fix.
+**Fix**: Changed to `stat.S_IXUSR`.
 
-#### 8.7 — `TORCH_VISION_MAP` outdated ✅ FIXED
-**Fix**: Added versions 2.6.0→0.18.0, 2.7.0→0.19.0, 2.8.0→0.19.1, 2.9.0→0.20.0, 2.9.1→0.20.1, 2.10.0→0.21.0, 2.11.0→0.22.0.
+#### 🟡 B-NEW-07 — XSS in log viewer via `insertAdjacentHTML` with unescaped content ✅ FIXED
+**File**: `tools.js` line 1039
+**Problem**: `DOM.logContentArea.insertAdjacentHTML('beforeend', logHtml)` where `logHtml = ansi_up.ansi_to_html(data.content)`. The `ansi_up` library converts ANSI escape codes to HTML but does **not** escape existing HTML in the content. If an application's log output contains `<script>`, `<img>`, or other HTML tags, they will be rendered as DOM elements. While the risk is limited (logs come from within the container), it's still an XSS vector if an instance outputs crafted log content.
+**Impact**: Potential HTML injection from log content.
+**Fix**: Escape `<` and `>` in the raw log content before passing to `ansi_up.ansi_to_html()`.
 
-#### 8.8 — Conda env name not sanitized → shell injection ✅ FIXED
-**Fix**: Added `re.match(r'^[a-zA-Z0-9_-]+$', env_name)` validation before using `env_name` in shell commands.
+#### 🟡 B-NEW-08 — `openInstanceView` uses own zoom key instead of `welcome` ✅ FIXED
+**File**: `tools.js` — `openInstanceView()`
+**Problem**: `openInstanceView` calls `setToolZoom('welcome')` — the instance embedded view shares its zoom level with the welcome screen. If the user zooms in on the welcome screen, then opens an instance view, the instance view inherits the welcome screen's zoom. Changing one affects the other.
+**Impact**: Confusing UX — zoom level of instance view is coupled to welcome screen.
+**Fix**: Added an `instanceView` key to `state.zoom.tools` and used `setToolZoom("instanceView")` in `openInstanceView()`.
 
-#### 8.9 — Rollback logic for directory rename is fragile ✅ FIXED
-**Fix**: Replaced `'new_dir' in locals()` with an actual `os.path.isdir()` check, wrapped in a try/except with logging.
+#### 🟡 B-NEW-09 — Redundant `import shutil` inside `_cleanup_instance_files` ✅ FIXED
+**File**: `process_manager.py` — `_cleanup_instance_files()`
+**Problem**: `import shutil` is done locally inside the function, but `shutil` is already imported at the top of the file (line 13). This is dead code — the local import is shadowed by the module-level import.
+**Impact**: No functional impact, but indicates code quality issue.
+**Fix**: Removed the local `import shutil`.
 
-#### 8.10 — `InstanceUpdate` schema missing `port` field ✅ FIXED
-**Fix**: Added `port: int | None = None` to `InstanceUpdate` schema.
+#### 🟡 B-NEW-10 — Terminal pool memory leak (no LRU eviction, no dead terminal cleanup) ✅ FIXED
+**Files**: `modals.js` (`handleDelete`), `tools.js` (terminal pool)
+**Problem**: When an instance is deleted, `closeTerminalById()` is called in `handleDelete()`. However, if the delete fails (e.g., 409 conflict → overwrite modal), the terminal is not closed. Also, if the user permanently deletes an instance without having opened its terminal, there's no issue, but if the terminal was open and the delete succeeds, the terminal WebSocket will disconnect server-side (instance directory gone) but the client-side cleanup depends on the `socket.onclose` handler which only writes a `[CLOSED]` message — the Terminal object and DOM element remain in `state.terminals` forever.
+**Impact**: Memory leak — orphaned xterm.js Terminal objects and disconnected WebSockets accumulate in `state.terminals`.
+**Fix**: Implemented LRU eviction with `MAX_TERMINALS = 5` limit. Each terminal tracks a `lastUsed` timestamp (refreshed on display). When opening a 6th terminal, the least recently used one is automatically closed (WebSocket + xterm.js + DOM). Dead terminals (WebSocket closed server-side) get `lastUsed = 0`, making them the highest priority for eviction. Existing cleanup on instance deletion (`closeTerminalById` in `handleDelete`) remains unchanged.
 
-### 🟡 Minor (Quality / Robustness) — All FIXED
+#### 🟡 B-NEW-11 — `update_nginx_config` writes NGINX configs for non-running instances ✅ FIXED
+**File**: `process_manager.py` — `update_nginx_config()`
+**Problem**: The function queries all instances with `status != "stopped"` and writes NGINX configs for them. This includes instances in `stalled`, `error`, and `installing` status. An instance in `error` status may have its internal port pointing to a dead process, and writing an NGINX config for it creates a proxy to nowhere.
+**Impact**: NGINX may proxy to dead ports for error/stalled instances, causing 502 errors for users who try to access them.
+**Fix**: Changed query filter from `status != "stopped"` to `status == "started"`. Only active, healthy instances get NGINX configs.
 
-#### 8.11 — `INSTANCES_DIR` hardcoded in 3 separate files ✅ FIXED
-**Fix**: Created `aikore/config.py` with centralized constants. All files now import from there.
+#### 🟡 B-NEW-12 — `state.systemInfo.gpus` never populated from API
+**Files**: `api.js` (`fetchSystemInfo`), `state.js`
+**Problem**: `fetchSystemInfo()` returns `{ gpu_count: N }` with no `gpus` array. But `state.systemInfo` is initialized with `gpus: []` and `renderInstanceRow` checks `state.systemInfo.gpus && Array.isArray(state.systemInfo.gpus)` — this is always true (empty array), so `state.systemInfo.gpus.length` is 0, falling back to `state.systemInfo.gpu_count || 0`. The `gpus` array in `state.systemInfo` is never populated. This is misleading code.
+**Impact**: Works correctly by accident (fallback to `gpu_count`), but the `gpus` array is dead state.
+**Fix**: Either remove the `gpus` array from `state.systemInfo` or populate it from `/api/system/stats` (which does return GPU details).
 
-#### 8.12 — `setInterval` for system stats never cleared ✅ FIXED
-**Fix**: Stats polling now pauses when `document.hidden` is true and resumes on visibility change.
+### 8.2 Anomalies & Design Issues
 
-#### 8.13 — `shutil.rmtree` without `onexc` in `crud.py` ✅ FIXED
-**Fix**: Added `_on_rm_error` handler and `onexc=_on_rm_error` to all `shutil.rmtree` calls in `crud.py`.
+#### 🟠 A-01 — Conda environments from Module Builder never cleaned up ✅ RESOLVED (auto-cleanup after 7 days)
+**File**: `builder.py`
+**Problem**: Each build creates (or reuses) a Conda environment named `builder_py{ver}_{cu}{ver}_pt{ver}`. These environments are never deleted after builds. Each environment contains a full PyTorch installation (~2-5 GB). Over time, with different Python/CUDA/Torch combinations, disk usage can grow to tens of GB. There is no UI or API to list, clean up, or manage these environments.
+**Impact**: Gradual disk space exhaustion. Users may not realize builder environments are accumulating.
+**Fix**: Added `_mark_env_used()` which touches a `.aikore_last_used` marker file in the environment directory after every build. Added `cleanup_stale_builder_envs()` which scans all `builder_py*` environments on startup and removes those whose `.aikore_last_used` is older than 7 days (`_BUILDER_ENV_MAX_AGE_DAYS = 7`). The marker is updated on every build (not just creation), so actively reused environments are preserved indefinitely.
 
-#### 8.14 — Unused `import subprocess` in `instances.py` ✅ FIXED
-**Fix**: Removed the import.
+#### 🟠 A-02 — `monitor_instance_thread` will never mark non-HTTP instances as "started"
+**File**: `process_manager.py` — `monitor_instance_thread()`
+**Problem**: The monitor thread polls `http://127.0.0.1:{port}` expecting an HTTP response with status code < 500. If an instance doesn't serve HTTP (e.g., CLI-only tools, batch processing, training scripts), the monitor will never detect readiness and will mark the instance as "stalled" after 180s. This is a design limitation — the monitoring strategy assumes all instances are web servers.
+**Impact**: Non-web instances are always marked as "stalled" even if running correctly.
+**Recommendation**: Add a process-based health check as a fallback: if the process is still alive (PID exists) after the stall timeout, mark as "started" instead of "stalled". Or add an `aikore.health_check_type` metadata field to let blueprints declare their monitoring type (HTTP vs process).
 
-#### 8.15 — `status-error` CSS color may be unclear ✅ FIXED
-**Fix**: Changed from Bootstrap red (`#dc3545`, same as delete button) to dark red (`#8b0000`) with light red text (`#ffcccc`) and a `1px solid #dc3545` border for distinction.
+#### 🟡 A-03 — Blueprint change confirmation uses blocking `confirm()` dialog
+**File**: `ui.js` — blueprint change handler
+**Problem**: The blueprint change handler uses `confirm()` which blocks the main thread and shows a browser-native dialog. This is inconsistent with the rest of the application which uses styled modal dialogs. It also doesn't match the application's dark theme.
+**Impact**: UX inconsistency, jarring native dialog.
+**Recommendation**: Replace with a styled modal dialog matching the application's design system.
 
----
+#### 🟡 A-04 — `RequestSizeLimitMiddleware` doesn't check actual body for chunked transfers
+**File**: `main.py`
+**Problem**: The middleware only checks the `content-length` header. Chunked transfer encoding (no `content-length`) bypasses the 10 MB limit entirely. A client could send an arbitrarily large body via chunked encoding.
+**Impact**: Low risk in a single-container application, but could be exploited if the API is exposed externally.
+**Recommendation**: For robust protection, wrap the request body reading or use a streaming size check. For the current use case (single container, internal API), this is low priority.
 
-## 8.16–8.22 — Bugs Found and Fixed in Session 2 (Full Code Review Pass)
+#### 🟡 A-05 — `crud.py` `process_background_copy` uses `conda` without full path ✅ FIXED
+**File**: `crud.py`
+**Problem**: Uses `"conda"` without the full path `/home/abc/miniconda3/bin/conda`. Relies on PATH being set correctly. In background tasks (launched via `BackgroundTasks`), the PATH from `entry.sh` may not be inherited, depending on the ASGI server's process model. Uvicorn typically inherits the environment, but this is fragile.
+**Impact**: Conda clone may fail silently if PATH is not set.
+**Fix**: Changed from bare `conda` to absolute path `/home/abc/miniconda3/bin/conda`.
 
-### 🟠 Medium
+#### 🟡 A-06 — No CSRF protection on API endpoints
+**Problem**: The API uses no CSRF tokens. Since it's a single-container application accessed through NGINX, this is less of a concern. However, if the AiKore port (9000) is exposed externally without additional protection, CSRF attacks are possible.
+**Impact**: Low risk in typical deployment, higher risk if exposed externally.
+**Recommendation**: Low priority for current architecture. If external exposure is planned, add CSRF tokens or restrict to same-origin.
 
-#### 8.16 — `InstanceUpdate` schema missing `persistent_port` and `persistent_display` ✅ FIXED
-**Files**: `schemas/instance.py`, `instances.py`
-**Problem**: `InstanceUpdate` had `port` but not `persistent_port` or `persistent_display`. When switching from persistent to normal mode, `final_update_data` contained `persistent_port: None` and `persistent_display: None`, but Pydantic silently dropped them because the schema didn't declare those fields. The switch to normal mode never actually cleared the VNC ports in DB.
-**Fix**: Added `persistent_port: int | None = None` and `persistent_display: int | None = None` to `InstanceUpdate`.
+### 8.3 Improvement Recommendations
 
-#### 8.17 — Double-commit pattern in `update_instance_details` ✅ FIXED
-**File**: `instances.py`
-**Problem**: The code did `setattr(db_instance, field, value)` in a loop, then separately called `crud.update_instance()` which does `setattr` + `commit` again. This double-commit was prone to race conditions and could overwrite the manually-set fields if `InstanceUpdate` didn't include them (which was the case for `persistent_port`/`persistent_display` before fix 8.16).
-**Fix**: Removed the manual `setattr` loop. `crud.update_instance()` is now the single source of truth for the commit.
+#### I-01 — Global error handling and user feedback
+**Current**: API failures in `fetchAndRenderInstances()` are silently logged to console. No user-visible feedback for network errors, 500 responses, or backend crashes.
+**Recommendation**: Add a global error banner or toast notification when API calls fail. Show connection status indicator in the UI. Implement retry logic with exponential backoff.
 
-### 🟡 Minor
+#### I-02 — User and system documentation
+**Current**: No user-facing documentation exists. Only internal context/roadmap files.
+**Recommendation**: Write a user guide covering: instance creation, blueprints, builder usage, terminal access, wheel management, persistent mode, custom versions. Write a system guide covering: Docker deployment, port configuration, GPU setup, backup/restore, troubleshooting.
 
-#### 8.18 — `stat.S_IWRITE` is Windows-only, should be `stat.S_IWUSR` ✅ FIXED
-**Files**: `instances.py`, `crud.py`
-**Problem**: `stat.S_IWRITE` is a Windows-specific constant (value 128). On Linux it happens to work because `S_IWRITE == S_IWUSR == 128`, but using `S_IWRITE` is non-portable and semantically incorrect.
-**Fix**: Changed to `stat.S_IWUSR` (POSIX standard) in both files.
+#### I-03 — Unify blueprint metadata parsing
+**Current**: Three separate implementations parse the same metadata format:
+1. `blueprint_parser.py` — `get_blueprint_venv_path()` (exact match for markers)
+2. `process_manager.py` — `parse_blueprint_metadata()` (substring match)
+3. `process_manager.py` — `_parse_venv_from_launch_sh()` (substring match)
+4. `system.py` — `_parse_blueprint_category()` (substring match)
+**Recommendation**: Create a single `parse_metadata(filepath)` function that returns a dict of all metadata fields. All callers should use this single function. This eliminates inconsistency and code duplication.
 
-#### 8.19 — XSS in `ui.js` status cell via `innerHTML` ✅ FIXED
-**File**: `ui.js`
-**Problem**: `row.insertCell().innerHTML = '<span ...>${instance.status}</span>'` — while `status` comes from the backend and is constrained to known values, using `innerHTML` with dynamic data is inconsistent with the XSS fixes in 8.4.
-**Fix**: Replaced with `createElement('span')` + `textContent`.
+#### I-04 — Stuck instance recovery on startup
+**Current**: On startup, all instances are reset to `stopped` status (except autostart ones). But if the container was killed during a copy operation, instances in `installing` status are also reset to `stopped`, which is correct. However, there's no detection of partially-copied directories or corrupted environments.
+**Recommendation**: Add integrity checks on startup: detect incomplete copies (missing directories, missing launch.sh), mark them as `error` status, and provide a "repair" or "re-create" option.
 
-#### 8.20 — XSS in `tools.js` error messages via `innerHTML` ✅ FIXED
-**File**: `tools.js`
-**Problem**: Error messages like `Error: ${e.message}` were inserted via `innerHTML`. A crafted error message containing HTML tags could inject markup.
-**Fix**: Added `.replace(/</g, '&lt;').replace(/>/g, '&gt;')` sanitization on `e.message`.
+#### I-05 — Builder Conda environment management
+**Current**: Builder Conda environments accumulate on disk with no cleanup.
+**Recommendation**: Add an API endpoint to list builder environments (`GET /api/builder/environments`) and delete them (`DELETE /api/builder/environments/{name}`). Add automatic cleanup of environments older than N days. Show disk usage in the UI.
 
-#### 8.21 — `pollTimeoutId` missing from `state.js` initialization ✅ FIXED
-**File**: `state.js`
-**Problem**: `state.pollTimeoutId` is used in `main.js` (`scheduleNextPoll`) but never initialized in `state.js`. Works by accident (undefined is falsy) but is fragile.
-**Fix**: Added `pollTimeoutId: null` to `state` export.
+#### I-06 — Terminal pool cleanup
+**Current**: Terminal pool (`state.terminals`) accumulates entries that are never cleaned up unless explicitly closed.
+**Recommendation**: Add a "Close All Terminals" button. Implement LRU eviction when pool exceeds a threshold (e.g., 5 terminals). Show active terminal count in the UI.
 
-#### 8.22 — Duplicate comment in `state.js` ✅ FIXED
-**File**: `state.js`
-**Problem**: `// --- NEW: Custom Versions Configuration ---` was duplicated on consecutive lines.
-**Fix**: Removed the duplicate comment.
+#### I-07 — Non-HTTP instance monitoring
+**Current**: All instances are monitored via HTTP polling. Non-HTTP instances (CLI tools, training scripts) will always be marked "stalled".
+**Recommendation**: Add `aikore.monitor_type` metadata to blueprints (`http` vs `process`). For `process` type, monitor PID existence instead of HTTP port. Mark as "started" when the process has been alive for >10s.
+
+#### I-08 — Instance name validation
+**Current**: Instance names are used directly in directory paths, NGINX config paths, and shell contexts. While `_slugify` is used for NGINX, the raw name is used for directory paths. Names with special characters (spaces, quotes, `$`, etc.) could cause issues.
+**Recommendation**: Validate instance names on creation: allow only `[a-zA-Z0-9_-]` characters. Show a validation error in the UI if the name contains invalid characters.
+
+#### I-09 — Log viewer improvements
+**Current**: Log viewer uses `insertAdjacentHTML` with `ansi_up` which doesn't escape HTML. Logs are polled every 2s with byte offset.
+**Recommendation**: Escape HTML in log content before ANSI conversion. Add a "Download Full Log" button. Add log search/filter capability. Consider WebSocket-based log streaming instead of polling.
+
+#### I-10 — NGINX config cleanup on status changes
+**Current**: NGINX configs are written when instances start and cleaned up when they stop. But `update_nginx_config()` writes configs for all non-stopped instances, including stalled/error ones.
+**Recommendation**: Only write NGINX configs for `started` instances. Clean up configs when instances transition to `stopped`, `stalled`, or `error`.
 
 ---
 
