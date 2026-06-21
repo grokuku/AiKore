@@ -59,11 +59,24 @@ if [ ! -d "${FRONTEND_DIR}" ]; then
     echo "--- Building web frontend (first run only) ---"
 
     # Install bun (fast JavaScript runtime needed for Vite build)
+    # We download and extract manually because the bun install script requires
+    # 'unzip' which is not available in the AiKore container.
     BUN_DIR="${INSTANCE_CONF_DIR}/.bun"
-    if [ ! -f "${BUN_DIR}/bin/bun" ]; then
-        echo "Installing bun..."
-        # Install to instance-specific dir to avoid conflicts
-        BUN_INSTALL="${BUN_DIR}" curl -fsSL https://bun.sh/install | bash
+    BUN_BIN="${BUN_DIR}/bin/bun"
+    if [ ! -f "${BUN_BIN}" ]; then
+        echo "Installing bun (manual extraction)..."
+        mkdir -p "${BUN_DIR}/bin"
+        BUN_ZIP="$(mktemp /tmp/bun-XXXXXX.zip)"
+        BUN_EXTRACT="$(mktemp -d /tmp/bun-extract-XXXXXX)"
+        # Download the bun binary for linux x64
+        curl -fsSL -o "${BUN_ZIP}" https://github.com/oven-sh/bun/releases/latest/download/bun-linux-x64.zip
+        # Extract using Python's zipfile module (unzip is not available in the container)
+        python3 -c "import zipfile, sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "${BUN_ZIP}" "${BUN_EXTRACT}"
+        # Find the bun binary and move it to the target directory
+        find "${BUN_EXTRACT}" -name 'bun' -type f -executable -exec mv {} "${BUN_BIN}" \;
+        rm -rf "${BUN_EXTRACT}" "${BUN_ZIP}"
+        chmod +x "${BUN_BIN}"
+        echo "Bun installed to ${BUN_BIN}"
     fi
     export PATH="${BUN_DIR}/bin:$PATH"
 

@@ -37,6 +37,7 @@ RUN for i in 1 2 3; do \
         git \
         ninja-build \
         curl \
+        unzip \
         mc \
         bc \
         nano \
