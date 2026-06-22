@@ -100,6 +100,10 @@ It uses a **"Neutral Image Architecture"**: the base Docker image is lightweight
 │   └── requirements.txt                # fastapi, uvicorn, sqlalchemy, pydantic, websockets, psutil, nvidia-ml-py, PyXDG
 │
 ├── blueprints/                         # Stock installation scripts (each has AIKORE-METADATA block, sources versions.env)
+│   ├── ComfyUI.sh                      # Image generation (Conda, Python 3.11)
+│   ├── IOPaint.sh                      # Image inpainting (Conda, Python 3.11)
+│   ├── LMStudio.sh                     # LLM serving (Conda, Python 3.11, persistent mode)
+│   └── Voicebox.sh                     # AI voice studio (Conda, Python 3.11, bun frontend build)
 ├── docker/                             # Container overlay (s6 services, NGINX config)
 ├── entry.sh                            # Container entrypoint
 ├── functions.sh                        # Shell helper functions
@@ -674,3 +678,44 @@ The following intermediate build infrastructure was removed because the final `D
 
 - [ ] Improve global error handling and status reporting across the entire application
 - [ ] Write comprehensive user and system documentation
+
+---
+
+## 16. Voicebox Blueprint
+
+**Status**: ✅ Created, tested, and functional
+
+**Blueprint file**: `blueprints/Voicebox.sh`
+
+### Blueprint Details
+
+| Field | Value |
+|---|---|
+| Category | Audio / TTS |
+| Repository | https://github.com/jamiepine/voicebox |
+| Backend | FastAPI (uvicorn) |
+| Frontend | React/Vite (built with bun) |
+| venv_type | conda |
+| venv_path | ./env |
+| Python | 3.11 |
+| Port | Dynamic (AiKore-managed) |
+| Persistent mode | No (has web UI) |
+
+### Key Implementation Details
+
+- **Frontend build**: Strips `tauri` (desktop) and `landing` workspaces from `package.json`, installs bun if needed, builds with `bun x vite build`. One-time operation (skipped on restart if `frontend/` dir exists).
+- **Dependency install order**: Voicebox's `backend/requirements.txt` is installed **first** (resolves all sub-dependencies with compatible versions), then torch/torchvision/torchaudio are **overwritten** with AiKore's CUDA 13.0 builds (`--force-reinstall` from `PYTORCH_INDEX_URL`). numpy is re-pinned to `<2.0` after (torch force-reinstall can pull numpy 2.x, breaking numba).
+- **Custom TTS engines**: `chatterbox-tts` and `hume-tada` installed with `--no-deps` (they pin incompatible torch versions). Their sub-dependencies are already covered by `requirements.txt`.
+- **Data directory**: Set via `--data-dir` flag to `${INSTANCE_CONF_DIR}/data`. Generations symlinked to `${INSTANCE_OUTPUT_DIR}` for AiKore access.
+- **Model cache**: `VOICEBOX_MODELS_DIR` env var redirects HuggingFace cache to `${DATA_DIR}/models` for persistence.
+- **Launch**: Uses `python -m backend.main` (not bare `uvicorn`) to pass `--data-dir` (argparse only available in `__main__`).
+
+### Issues Encountered & Fixed During Development
+
+| Issue | Cause | Fix |
+|---|---|---|
+| `unzip: not found` | bun install script requires unzip | Manual zip extraction via Python, later replaced with `curl` + `unzip` after unzip was added to Dockerfile |
+| `bunx: command not found` | Manual bun install doesn't create `bunx` symlink | Use `bun x` instead of `bunx` |
+| Trailing comma in package.json | `sed` JSON manipulation too fragile | Use Python `json.load/dump` to strip workspaces |
+| `Could not load libtorchaudio.abi3.so` | torch 2.10.0 (AiKore) + torchaudio 2.7.0 (requirements) ABI mismatch | Install requirements first, then `--force-reinstall` torch ecosystem from cu130 index |
+| `numba incompatible with numpy 2.x` | Torch force-reinstall upgraded numpy from 1.x to 2.x | Re-pin `numpy>=1.24.0,<2.0` after torch install

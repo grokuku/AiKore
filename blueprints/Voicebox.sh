@@ -59,23 +59,18 @@ if [ ! -d "${FRONTEND_DIR}" ]; then
     echo "--- Building web frontend (first run only) ---"
 
     # Install bun (fast JavaScript runtime needed for Vite build)
-    # We download and extract manually because the bun install script requires
-    # 'unzip' which is not available in the AiKore container.
     BUN_DIR="${INSTANCE_CONF_DIR}/.bun"
     BUN_BIN="${BUN_DIR}/bin/bun"
     if [ ! -f "${BUN_BIN}" ]; then
-        echo "Installing bun (manual extraction)..."
+        echo "Installing bun..."
         mkdir -p "${BUN_DIR}/bin"
         BUN_ZIP="$(mktemp /tmp/bun-XXXXXX.zip)"
-        BUN_EXTRACT="$(mktemp -d /tmp/bun-extract-XXXXXX)"
-        # Download the bun binary for linux x64
         curl -fsSL -o "${BUN_ZIP}" https://github.com/oven-sh/bun/releases/latest/download/bun-linux-x64.zip
-        # Extract using Python's zipfile module (unzip is not available in the container)
-        python3 -c "import zipfile, sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "${BUN_ZIP}" "${BUN_EXTRACT}"
-        # Find the bun binary and move it to the target directory
-        find "${BUN_EXTRACT}" -name 'bun' -type f -executable -exec mv {} "${BUN_BIN}" \;
-        rm -rf "${BUN_EXTRACT}" "${BUN_ZIP}"
+        unzip -o "${BUN_ZIP}" -d /tmp/bun-extract-$$ 1>/dev/null
+        # The zip contains a directory 'bun-linux-x64/' with the binary inside
+        find /tmp/bun-extract-$$ -name 'bun' -type f -exec mv {} "${BUN_BIN}" \;
         chmod +x "${BUN_BIN}"
+        rm -rf /tmp/bun-extract-$$ "${BUN_ZIP}"
         echo "Bun installed to ${BUN_BIN}"
     fi
     export PATH="${BUN_DIR}/bin:$PATH"
@@ -84,15 +79,20 @@ if [ ! -d "${FRONTEND_DIR}" ]; then
 
     # Strip workspaces not needed for web build (tauri = desktop app, landing = marketing page)
     # This matches the official Dockerfile build steps
-    sed -i '/"tauri"/d; /"landing"/d' package.json
-    # Fix trailing comma left by workspace removal
-    sed -i -z 's/,\n ]/\n ]/' package.json
+    python3 -c "
+import json
+with open('package.json') as f:
+    data = json.load(f)
+data['workspaces'] = [w for w in data['workspaces'] if w not in ('tauri', 'landing')]
+with open('package.json', 'w') as f:
+    json.dump(data, f, indent=2)
+"
 
     echo "Installing frontend dependencies..."
     bun install --no-save
 
     echo "Building frontend with Vite..."
-    cd web && bunx --bun vite build
+    cd web && bun x vite build
 
     # Copy built frontend to where the backend expects it (../frontend/ relative to backend/)
     cp -r "${VOICEBOX_DIR}/web/dist" "${FRONTEND_DIR}"
@@ -128,13 +128,35 @@ if [ ! -f "${VENV_DIR}/bin/pip" ]; then
 fi
 
 # ============================================================
-# 4. INSTALL PYTORCH (using AiKore's centralized version)
+# 4. INSTALL ALL BACKEND DEPENDENCIES
 # ============================================================
-echo "--- Installing PyTorch ---"
-pip install torch==${TORCH_VERSION} torchvision torchaudio --index-url ${PYTORCH_INDEX_URL}
+echo "--- Installing backend dependencies ---"
+
+# Install everything from Voicebox's requirements.txt first.
+# This resolves all sub-dependencies (linacodec, Zipvoice, etc.) with compatible versions.
+pip install -r "${VOICEBOX_DIR}/backend/requirements.txt"
 
 # ============================================================
-# 5. INSTALL PRE-BUILT WHEELS (if any custom compiled modules exist)
+# 5. OVERWRITE TORCH ECOSYSTEM WITH AIKORE'S CUDA VERSIONS
+# ============================================================
+echo "--- Installing AiKore's CUDA-optimized PyTorch ---"
+
+# Voicebox pins torch==2.7.0, torchaudio==2.7.0 from PyPI (CPU or CUDA 12.x).
+# We overwrite with AiKore's CUDA 13.0 builds so torch uses the installed GPU toolkit.
+# All three packages must come from the same index at matching versions for ABI compat.
+pip install --upgrade --force-reinstall \
+    torch==${TORCH_VERSION} \
+    torchvision==${TORCHVISION_VERSION} \
+    torchaudio==${TORCHAUDIO_VERSION} \
+    --index-url ${PYTORCH_INDEX_URL}
+
+# Force-reinstalling torch may pull in newer numpy (e.g. 2.x) which breaks
+# numba (pinned to <2.0 in requirements.txt). Re-constrain numpy here.
+echo "--- Pinning numpy<2.0 for numba compatibility ---"
+pip install "numpy>=1.24.0,<2.0"
+
+# ============================================================
+# 6. INSTALL PRE-BUILT WHEELS (if any custom compiled modules exist)
 # ============================================================
 WHEELS_DIR="${INSTANCE_CONF_DIR}/wheels"
 if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
@@ -143,18 +165,6 @@ if [ -d "${WHEELS_DIR}" ] && ls "${WHEELS_DIR}"/*.whl 1> /dev/null 2>&1; then
 else
     echo "No custom wheels found in ${WHEELS_DIR}."
 fi
-
-# ============================================================
-# 6. INSTALL BACKEND DEPENDENCIES
-# ============================================================
-echo "--- Installing backend dependencies ---"
-
-# Filter out torch/torchvision/torchaudio (already installed above with correct CUDA version)
-PACKAGES_TO_EXCLUDE="torch|torchvision|torchaudio"
-grep -v -i -E "^(${PACKAGES_TO_EXCLUDE})" "${VOICEBOX_DIR}/backend/requirements.txt" > "${VOICEBOX_DIR}/backend/requirements-filtered.txt"
-
-echo "Installing filtered requirements..."
-pip install -r "${VOICEBOX_DIR}/backend/requirements-filtered.txt"
 
 # ============================================================
 # 7. INSTALL CUSTOM TTS ENGINES (--no-deps to avoid version conflicts)
