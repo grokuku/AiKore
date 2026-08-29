@@ -1,6 +1,10 @@
 import os
 from ..core.process_manager import BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR
 
+# LOT3 (M7): single shared metadata parser (dequoted values, one implementation).
+from ..core.metadata_parser import parse_metadata_file
+
+
 def get_blueprint_venv_path(blueprint_name: str) -> str:
     """
     Parses a blueprint file to find the 'aikore.venv_path' metadata.
@@ -10,7 +14,8 @@ def get_blueprint_venv_path(blueprint_name: str) -> str:
 
     Returns:
         The relative path of the venv dir (e.g., "./env") or a default
-        of "./env" if not found or specified.
+        of "./env" if not found or specified. The value is dequoted by the
+        shared parser ('"#./env"'-style metadata no longer keeps its quotes).
     """
     if not blueprint_name:
         return "./env"
@@ -31,30 +36,10 @@ def get_blueprint_venv_path(blueprint_name: str) -> str:
         return "./env"
 
     try:
-        with open(blueprint_path, 'r', encoding='utf-8') as f:
-            in_metadata_block = False
-            for line in f:
-                line = line.strip()
-                # Use substring match for consistency with process_manager.py
-                if '### AIKORE-METADATA-START ###' in line:
-                    in_metadata_block = True
-                    continue
-                if '### AIKORE-METADATA-END ###' in line:
-                    break
-                
-                if in_metadata_block and line.startswith('#'):
-                    # Remove '#' and leading/trailing whitespace
-                    cleaned_line = line.lstrip('#').strip()
-                    if '=' in cleaned_line:
-                        key, value = cleaned_line.split('=', 1)
-                        key = key.strip()
-                        value = value.strip()
-                        if key == 'aikore.venv_path':
-                            # Return the found value immediately
-                            return value
-    except (IOError, FileNotFoundError):
+        value = parse_metadata_file(blueprint_path).get("venv_path")
+    except (IOError, OSError):
         # In case of read errors, fall back to default
         return "./env"
 
-    # If loop finishes without finding the key, return default
-    return "./env"
+    # If the key is absent/empty, return default
+    return value if value else "./env"

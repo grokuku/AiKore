@@ -15,6 +15,18 @@ services:
           - PUID=${PUID:-1000}
           - PGID=${PGID:-1000}
           - AIKORE_INSTANCE_PORT_RANGE=${AIKORE_INSTANCE_PORT_RANGE:-19001-19020}
+          # --- Authentication (strongly recommended behind a public proxy) ---
+          # Generate a strong key with: openssl rand -hex 32
+          # - AIKORE_API_KEY=${AIKORE_API_KEY:-}
+          # --- WebSocket hardening ---
+          # Extra Origins allowed for WebSocket cross-origin checks (comma-separated),
+          # e.g. https://aikore-dev.example.com
+          # - AIKORE_WS_ALLOWED_ORIGINS=${AIKORE_WS_ALLOWED_ORIGINS:-}
+          # --- Extra public (unauthenticated) paths ---
+          # Comma-separated, '/path' = exact, '/prefix*' = prefix
+          # - AIKORE_AUTH_PUBLIC_PATHS=${AIKORE_AUTH_PUBLIC_PATHS:-}
+          # --- Debug endpoint kill-switch ('false' disables /api/system/debug-nginx) ---
+          # - AIKORE_ENABLE_DEBUG_NGINX=${AIKORE_ENABLE_DEBUG_NGINX:-true}
         security_opt:
           - seccomp:unconfined
           - apparmor:unconfined

@@ -24,9 +24,15 @@ print(f"[Import] API routers loaded. ({_time.time() - _t_api:.2f}s)")
 
 _t_pm = _time.time()
 from .core import process_manager
+from .core.auth import AuthMiddleware, init_auth_config
 print(f"[Import] Process manager loaded. ({_time.time() - _t_pm:.2f}s)")
 
 print(f"[Import] Total import time: {_time.time() - _t_import_start:.2f}s")
+
+# Initialize application authentication at import time (idempotent): this
+# covers launches without a lifespan (uvicorn --lifespan off), where the
+# lifespan call below would never run.
+init_auth_config()
 
 # --- Run Database Migration Check ---
 migration.run_db_migration()
@@ -52,12 +58,65 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
+# LOT3 (M5): the background-delete error path writes failure markers to
+# trashcan/.failed-deletions/ (api/instances.py) but nothing ever read them.
+_FAILED_DELETIONS_DIR = os.path.join(
+    os.path.dirname(INSTANCES_DIR), "trashcan", ".failed-deletions"
+)
+_FAILED_DELETION_MAX_AGE_DAYS = 7
+
+
+def _sweep_failed_deletion_markers():
+    """LOT3 (M5): the '.failed-deletions/' marker directory was written on
+    background-delete failures but never read back — a silent leak.
+    Sweep it at startup: count remaining markers + WARNING if any, and purge
+    markers older than MAX_AGE_DAYS (they are best-effort diagnostics only;
+    the orphaned instance directories they point at stay in trashcan/)."""
+    marker_dir = _FAILED_DELETIONS_DIR
+    try:
+        if not os.path.isdir(marker_dir):
+            return
+        entries = [e for e in os.listdir(marker_dir) if e.endswith(".err")]
+    except OSError as e:
+        print(f"[Startup] Could not inspect failed-deletions dir: {e}")
+        return
+    if not entries:
+        return
+    now = _time.time()
+    purged = 0
+    for name in entries:
+        marker_path = os.path.join(marker_dir, name)
+        try:
+            if (now - os.path.getmtime(marker_path)) > (7 * 86400):
+                os.remove(marker_path)
+                purged += 1
+        except OSError:
+            pass
+    remaining = len(entries) - purged
+    if purged:
+        print(f"[Startup] Purged {purged} failed-deletion marker(s) older than 7 days.")
+    if remaining:
+        print(
+            f"[Startup-WARNING] {remaining} failed background deletion(s) pending in "
+            f"'{marker_dir}' — orphaned instance directories may still exist in "
+            f"trashcan/; inspect and clean them up."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Modern lifespan handler for startup/shutdown events (replaces deprecated on_event).
     """
     # === STARTUP ===
+    # 0 bis. Re-affirm application authentication config (no-op: already done
+    # at module import time, and init_auth_config() is idempotent).
+    init_auth_config()
+
+    # 0 ter. LOT3 (M5): sweep the '.failed-deletions/' marker directory
+    # (count + WARNING + purge markers older than 7 days).
+    _sweep_failed_deletion_markers()
+
     # 0. Initialize NVML
     _t0 = __import__('time').time()
     print("[Startup] Step 0: Initializing NVML...")
@@ -149,6 +208,11 @@ app = FastAPI(
 
 # Apply request size limit (10 MB) to prevent resource exhaustion
 app.add_middleware(RequestSizeLimitMiddleware)
+
+# Authentication (static API key via AIKORE_API_KEY). Added LAST so it becomes
+# the OUTERMOST middleware: it wraps RequestSizeLimitMiddleware and handles both
+# http and websocket scopes (pure ASGI middleware - see aikore/core/auth.py).
+app.add_middleware(AuthMiddleware)
 
 # Include the API routers
 app.include_router(instances.router)

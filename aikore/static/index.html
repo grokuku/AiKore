@@ -10,8 +10,12 @@
     <link rel="stylesheet" href="/static/css/modals.css">
     <link rel="stylesheet" href="/static/css/components.css">
     <link rel="stylesheet" href="/static/css/tools.css">
-    <!-- NEW: ansi_up for log colors (Browser compatible) -->
-    <script src="https://cdn.jsdelivr.net/npm/ansi_up@5.1.0/ansi_up.min.js"></script>
+    <!-- NEW: ansi_up for log colors (Browser compatible).
+         FIX(perf): was a parser-blocking script in <head> — a slow/unreachable
+         CDN froze the FIRST PAINT of the entire page (blank screen). `defer`
+         keeps execution order (still runs before the main.js module) without
+         blocking rendering. -->
+    <script src="https://cdn.jsdelivr.net/npm/ansi_up@5.1.0/ansi_up.min.js" defer></script>
     <!-- NEW: Xterm.js styles -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
     <!-- NEW: CodeMirror for syntax highlighting -->
@@ -257,16 +261,27 @@
         <button class="context-item" data-action="output_viewer" disabled>Output Viewer</button>
     </div>
 
+    <!-- FIX(perf): all CDN libs below are `defer` — they used to block the
+         parser right before main.js, delaying DOMContentLoaded (and therefore
+         the whole app boot + first instances fetch) by the full download time
+         of all 7 libraries. `defer` parallelizes the downloads and preserves
+         execution order (each script still runs before the main.js module).
+         Versions pinned: split.js was resolved via an unpkg 302 redirect on
+         every page load; sortablejs@latest is a floating tag (audit finding). -->
     <!-- Split.js library -->
-    <script src="https://unpkg.com/split.js/dist/split.min.js"></script>
+    <script src="https://unpkg.com/split.js@1.6.5/dist/split.min.js" defer></script>
     <!-- NEW: Xterm.js library and Fit Addon -->
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js" defer></script>
     <!-- NEW: CodeMirror library and Shell mode -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js" defer></script>
     <!-- Sortable.js for drag-and-drop -->
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js" defer></script>
+    <!-- Auth: inline stub executed before any module code. A deployment (reverse
+         proxy, template injection) may define window.AIKORE_API_KEY beforehand;
+         it stays null when authentication is disabled server-side. -->
+    <script>window.AIKORE_API_KEY = window.AIKORE_API_KEY ?? null;</script>
     <!-- Our application script -->
     <script src="/static/js/main.js" type="module"></script>
 

@@ -13,6 +13,8 @@ import glob
 import traceback
 import urllib.request
 import re
+import time
+import uuid
 
 print("[DEBUG] Loading builder.py module...")
 
@@ -42,6 +44,37 @@ CONDA_BASE_DIR = os.environ.get("CONDA_BASE_DIR", "/home/abc/miniconda3")
 
 # Ensure directory exists
 os.makedirs(WHEELS_DIR, exist_ok=True)
+
+# --- SECURITY: Anchored safe schema for user-supplied git URLs (audit C-2) ---
+# The URL is interpolated UNQUOTED into a shell command executed with /bin/bash,
+# so it must be strictly constrained:
+#   - must start with 'https://' or 'git@'
+#   - URL-safe charset only: no shell metacharacters (; & | $ ` ' " < > ( )
+#     whitespace, newlines...), no globbing chars, no backslash
+#   - max total length ~2048
+GIT_URL_RE = re.compile(r'^(?:https://|git@)[A-Za-z0-9._~:/@%+\-]{1,2040}$')
+
+
+def is_safe_git_url(value) -> bool:
+    """True if value is a strictly-shaped git URL, safe for shell interpolation."""
+    # fullmatch (not match) so a trailing newline can never slip past the '$'.
+    return isinstance(value, str) and bool(GIT_URL_RE.fullmatch(value))
+
+
+def _ensure_safe_wheel_filename(filename: str) -> str:
+    """Rejects empty wheel filenames, '.'/'..' and anything containing path
+    separators or NUL bytes (defense in depth on top of the basename()
+    normalization)."""
+    if (
+        not filename
+        or filename in (".", "..")
+        or "/" in filename
+        or "\\" in filename
+        or "\x00" in filename
+        or os.path.basename(filename) != filename
+    ):
+        raise HTTPException(status_code=400, detail="Invalid wheel filename.")
+    return filename
 
 # --- VERSIONS MAPPING ---
 # We no longer hardcode a torch<->torchvision version map.
@@ -443,7 +476,9 @@ async def get_available_python_versions():
                 for entry in data.get("python", []):
                     ver = entry.get("version", "")
                     # Match major.minor and ensure it's >= 3.10
-                    match = re.match(r'^(3\.(1[0-9]|[0-9]))', ver)
+                    # (prefix match is intentional here: '3.12.7' -> '3.12';
+                    # re.match already anchors at the start, so no redundant ^)
+                    match = re.match(r'(3\.(1[0-9]|[0-9]))', ver)
                     if match:
                         versions.add(match.group(1))
                 
@@ -600,19 +635,35 @@ def list_wheels():
 
 @router.get("/wheels/{filename}/download")
 def download_wheel(filename: str):
+    _ensure_safe_wheel_filename(filename)  # SECURITY: reject empty/'.'/'..'/separators/NUL
     safe_name = os.path.basename(filename) # Prevent directory traversal
     path = os.path.join(WHEELS_DIR, safe_name)
-    
-    if os.path.exists(path):
+
+    try:
+        exists = os.path.exists(path)
+    except ValueError:
+        # LOT 2 REVIEW (L-2b): e.g. 'embedded null byte' — answer a clean 400
+        # instead of leaking an opaque 500.
+        raise HTTPException(status_code=400, detail="Invalid wheel filename.")
+
+    if exists:
         return FileResponse(path, media_type='application/octet-stream', filename=safe_name)
     raise HTTPException(status_code=404, detail="File not found")
 
 @router.delete("/wheels/{filename}")
 async def delete_wheel(filename: str):
+    _ensure_safe_wheel_filename(filename)  # SECURITY: reject empty/'.'/'..'/separators/NUL
     safe_name = os.path.basename(filename) # Prevent directory traversal
     path = os.path.join(WHEELS_DIR, safe_name)
-    
-    if os.path.exists(path):
+
+    try:
+        exists = os.path.exists(path)
+    except ValueError:
+        # LOT 2 REVIEW (L-2b): e.g. 'embedded null byte' — answer a clean 400
+        # instead of leaking an opaque 500.
+        raise HTTPException(status_code=400, detail="Invalid wheel filename.")
+
+    if exists:
         os.remove(path)
         await remove_from_manifest(safe_name)
         return {"ok": True}
@@ -623,6 +674,11 @@ async def build_websocket(websocket: WebSocket):
     print("[DEBUG] WebSocket connection request received.")
     await websocket.accept()
     print("[DEBUG] WebSocket accepted.")
+    
+    # LOT3 (#11): unique temp dir PER BUILD. The historical shared
+    # 'build_tmp' directory meant two simultaneous builds rmtree'd each
+    # other's outputs mid-compilation.
+    build_tmp_dir = None
     
     try:
         # 1. Receive Configuration
@@ -638,18 +694,36 @@ async def build_websocket(websocket: WebSocket):
         requested_torch_ver = data.get("torch_ver", "2.5.1")
 
         # --- SECURITY: Validate individual fields immediately ---
-        if not isinstance(python_ver, str) or not re.match(r'^\d+\.\d+$', python_ver):
+        # SECURITY (lot 2 review B-1): re.fullmatch instead of re.match(r'^...$') —
+        # in Python '$' also matches just before a trailing '\n', so values like
+        # '3.12\n' used to slip through and reach shell commands.
+        if not isinstance(python_ver, str) or not re.fullmatch(r'\d+\.\d+', python_ver):
             await websocket.send_text("\x1b[31m[ERROR] Invalid python_ver format. Expected 'X.Y'.\x1b[0m\r\n")
             await websocket.close()
             return
-        if not isinstance(cuda_ver, str) or not re.match(r'^cu\d+$', cuda_ver):
+        if not isinstance(cuda_ver, str) or not re.fullmatch(r'cu\d+', cuda_ver):
             await websocket.send_text("\x1b[31m[ERROR] Invalid cuda_ver format. Expected 'cuXXX'.\x1b[0m\r\n")
             await websocket.close()
             return
-        if not isinstance(requested_torch_ver, str) or not re.match(r'^\d+\.\d+\.\d+$', requested_torch_ver):
+        if not isinstance(requested_torch_ver, str) or not re.fullmatch(r'\d+\.\d+\.\d+', requested_torch_ver):
             await websocket.send_text("\x1b[31m[ERROR] Invalid torch_ver format. Expected 'X.Y.Z'.\x1b[0m\r\n")
             await websocket.close()
             return
+
+        # --- SECURITY (audit C-3): arch is interpolated into TORCH_CUDA_ARCH_LIST and
+        # into unquoted shell substitutions — only 'XY' or 'XY.Z' digits are allowed.
+        if not isinstance(target_arch, str) or not re.fullmatch(r'\d+(\.\d+)?', target_arch):
+            await websocket.send_text("\x1b[31m[ERROR] Invalid arch format. Expected CUDA architecture like '8.9' or '12' (digits and an optional dot only).\x1b[0m\r\n")
+            await websocket.close()
+            return
+
+        # --- SECURITY (audit C-2): the custom git URL is injected UNQUOTED into a
+        # bash command — enforce an anchored, shell-safe URL schema.
+        if preset_key == "custom":
+            if not is_safe_git_url(custom_url):
+                await websocket.send_text("\x1b[31m[ERROR] Invalid git_url. It must start with 'https://' or 'git@', be at most 2048 characters and contain only URL-safe characters (no shell metacharacters, spaces or quotes).\x1b[0m\r\n")
+                await websocket.close()
+                return
         
         if preset_key not in PRESETS:
             print("[DEBUG] Invalid preset.")
@@ -671,7 +745,7 @@ async def build_websocket(websocket: WebSocket):
         env_name = f"builder_py{python_ver.replace('.','')}_{cuda_ver}_pt{safe_torch_ver}"
         
         # --- SECURITY: Validate env_name to prevent shell injection ---
-        if not re.match(r'^[a-zA-Z0-9_-]+$', env_name):
+        if not re.fullmatch(r'[a-zA-Z0-9_-]+', env_name):
             await websocket.send_text(f"\x1b[31m[ERROR] Invalid environment name '{env_name}'. Only alphanumeric characters, hyphens and underscores are allowed.\x1b[0m\r\n")
             await websocket.close()
             return
@@ -760,9 +834,8 @@ async def build_websocket(websocket: WebSocket):
             await websocket.send_text(f"\x1b[32m[INFO] Confirmed PyTorch Version: {detected_torch_ver}\x1b[0m\r\n")
 
         # 3. Prepare Build
-        build_tmp_dir = os.path.join(WHEELS_DIR, "build_tmp")
-        if os.path.exists(build_tmp_dir):
-            shutil.rmtree(build_tmp_dir)
+        # LOT3 (#11): uuid4-suffixed directory, private to this build.
+        build_tmp_dir = os.path.join(WHEELS_DIR, f"build_tmp_{uuid.uuid4().hex}")
         os.makedirs(build_tmp_dir)
 
         # Template substitution
@@ -818,8 +891,9 @@ async def build_websocket(websocket: WebSocket):
             
         # Clean up temp dir (guaranteed even on exception)
         try:
-            if os.path.exists(build_tmp_dir):
+            if build_tmp_dir and os.path.exists(build_tmp_dir):
                 shutil.rmtree(build_tmp_dir, ignore_errors=True)
+                build_tmp_dir = None
         except Exception:
             pass
 
@@ -832,10 +906,10 @@ async def build_websocket(websocket: WebSocket):
         except:
             pass
     finally:
-        # Ensure temp dir is always cleaned up even if exception handler didn't run
-        build_tmp_dir = os.path.join(WHEELS_DIR, "build_tmp")
+        # LOT3 (#11): clean up THIS build's temp dir only (never a shared path,
+        # which used to wipe a concurrent build's workspace).
         try:
-            if os.path.exists(build_tmp_dir):
+            if build_tmp_dir and os.path.exists(build_tmp_dir):
                 shutil.rmtree(build_tmp_dir, ignore_errors=True)
         except Exception:
             pass

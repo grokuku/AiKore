@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 import re
 
 from ..core.process_manager import BLUEPRINTS_DIR, CUSTOM_BLUEPRINTS_DIR
+from ..core.metadata_parser import parse_metadata_file
 from ..database import crud
 from ..database.session import SessionLocal, get_db
 
@@ -36,26 +37,15 @@ def get_available_blueprints():
     custom_blueprints = []
     
     def _parse_blueprint_category(filepath):
-        """Parse a blueprint .sh file and return the aikore.category value, or None."""
+        """Parse a blueprint .sh file and return the aikore.category value, or None.
+
+        LOT3 (M7): delegates to the shared metadata parser so all blueprint
+        parsers stay in sync (dequoted values, single implementation).
+        """
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                in_metadata_block = False
-                for line in f:
-                    line = line.strip()
-                    if '### AIKORE-METADATA-START ###' in line:
-                        in_metadata_block = True
-                        continue
-                    if '### AIKORE-METADATA-END ###' in line:
-                        break
-                    if in_metadata_block and line.startswith('#'):
-                        cleaned_line = line.lstrip('#').strip()
-                        if '=' in cleaned_line:
-                            key, value = cleaned_line.split('=', 1)
-                            if key.strip() == 'aikore.category':
-                                return value.strip()
-        except (IOError, FileNotFoundError):
-            pass
-        return None
+            return parse_metadata_file(filepath).get("category")
+        except Exception:
+            return None
     
     try:
         # Scan stock blueprints
@@ -148,9 +138,16 @@ def get_system_stats():
             # Get utilization rates
             util_rates = nvmlDeviceGetUtilizationRates(handle)
             
+            # LOT3 (#12): nvmlDeviceGetName may return bytes on older pynvml
+            # versions -> json serialization raised TypeError -> raw 500.
+            # Same conversion as builder.get_builder_info().
+            gpu_name = nvmlDeviceGetName(handle)
+            if isinstance(gpu_name, bytes):
+                gpu_name = gpu_name.decode("utf-8", errors="replace")
+            
             gpu_info = {
                 "id": i,
-                "name": nvmlDeviceGetName(handle),
+                "name": gpu_name,
                 "vram": {
                     "total": mem_info.total,
                     "used": mem_info.used,
@@ -171,6 +168,11 @@ def get_system_stats():
 
 @router.get("/debug-nginx")
 def debug_nginx():
+    # Runtime kill-switch: AIKORE_ENABLE_DEBUG_NGINX (default "true"). When set
+    # to "false" the endpoint answers 404 even for authenticated clients.
+    if os.environ.get("AIKORE_ENABLE_DEBUG_NGINX", "true").strip().lower() in ("false", "0", "no", "off"):
+        raise HTTPException(status_code=404, detail="Not Found")
+
     nginx_log_path = "/var/log/nginx/debug.log"
     locations_dir = "/etc/nginx/locations.d"
     log_content = ""
@@ -220,13 +222,13 @@ def get_available_ports(db: Session = Depends(get_db)):
             detail=f"Invalid AIKORE_INSTANCE_PORT_RANGE format: '{port_range_str}'. Expected 'start-end'."
         )
 
-    instances = crud.get_instances(db, limit=1000) # Get all instances
+    # LOT3 (#13): targeted port projection — no LIMIT 1000 false-free ports.
     used_ports = set()
-    for instance in instances:
-        if instance.port is not None:
-            used_ports.add(instance.port)
-        if instance.persistent_port is not None:
-            used_ports.add(instance.persistent_port)
+    for _row_id, port, persistent_port in crud.get_used_ports(db):
+        if port is not None:
+            used_ports.add(port)
+        if persistent_port is not None:
+            used_ports.add(persistent_port)
     
     available_ports = sorted(list(all_possible_ports - used_ports))
     

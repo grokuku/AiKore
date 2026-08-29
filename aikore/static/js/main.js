@@ -1,6 +1,6 @@
 import { state, DOM } from './state.js';
-import { fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSystemStats, fetchAvailablePythonVersions, fetchCudaVersions } from './api.js';
-import { renderInstanceRow, updateSystemStats, checkRowForChanges, buildInstanceUrl } from './ui.js';
+import { fetchInstances, fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSystemStats, fetchAvailablePythonVersions, fetchCudaVersions } from './api.js';
+import { renderInstanceRow, updateSystemStats, checkRowForChanges, buildInstanceUrl, showToast } from './ui.js';
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
 import { showWelcomeScreen, showBuilderView, renderBuilderStatus } from './tools.js';
@@ -32,9 +32,7 @@ export async function fetchAndRenderInstances() {
         const activeElement = document.activeElement;
         const isInteracting = activeElement && activeElement.closest('#instances-table tr');
 
-        const response = await fetch('/api/instances/');
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        let instances = await response.json();
+        const instances = await fetchInstances();
 
         // Check for 'starting' status to adjust polling speed
         const hasStartingInstance = instances.some(i => i.status === 'starting' || i.status === 'installing');
@@ -152,40 +150,76 @@ export async function fetchAndRenderInstances() {
     }
 }
 
-async function initializeApp() {
+// Refresh the table without racing a scheduled poll tick (state.isPolling
+// guards against two concurrent DOM rebuilds; in the worst case the poll
+// picks the new data up on its next pass).
+async function refreshInstancesSafe() {
+    if (state.isPolling) return;
+    state.isPolling = true;
     try {
-        // --- Fetch version lists in parallel with system info ---
-        // These must complete before rendering instances so the dropdowns are populated.
-        const [systemInfo, blueprints, ports, pyVersions, cudaVersions] = await Promise.all([
-            fetchSystemInfo(),
-            fetchAndStoreBlueprints(),
-            fetchAvailablePorts(),
-            fetchAvailablePythonVersions().catch(err => {
-                console.warn('Failed to fetch Python versions, using defaults:', err);
-                return null;
-            }),
-            fetchCudaVersions().catch(err => {
-                console.warn('Failed to fetch CUDA versions, using defaults:', err);
-                return null;
-            })
-        ]);
-        // Store version data in shared state (only if fetch succeeded)
-        if (pyVersions && pyVersions.length > 0) state.versions.python = pyVersions;
-        if (cudaVersions && cudaVersions.length > 0) state.versions.cuda = cudaVersions;
-
-        state.systemInfo = systemInfo;
-        state.availableBlueprints = blueprints;
-        state.availablePorts = ports.available_ports;
-
-    } catch (error) {
-        console.error("Failed to initialize application:", error);
-        document.body.innerHTML = `<div style="color: red; text-align: center; padding: 2rem;">
-            <h1>Error Initializing Application</h1>
-            <p>${error.message}</p>
-            <p>Please check the console and try refreshing the page.</p>
-        </div>`;
-        return;
+        await fetchAndRenderInstances();
+    } finally {
+        state.isPolling = false;
     }
+}
+
+async function initializeApp() {
+    // --- FIRST RENDER (progressive display) -------------------------------
+    // The instances table is rendered as soon as /api/instances answers.
+    // It used to wait for the full init block below (system info / blueprints
+    // / ports / python & CUDA version discovery), the slowest of which run
+    // remote network operations (conda search subprocess, pytorch.org fetch,
+    // each with multi-second timeouts) — leaving the table blank for many
+    // seconds on page open. Dropdown payloads degrade to the built-in
+    // fallbacks (state.js) and are re-rendered once the background init
+    // below completes.
+    try {
+        await fetchAndRenderInstances();
+        // Start polling immediately regardless of the remaining init steps
+        // (fetchAndRenderInstances' finally-block already scheduled the next
+        // tick, so the table keeps its status updates fresh from now on).
+    } catch (error) {
+        console.error("Initial instances fetch failed (will be retried by polling):", error);
+    }
+
+    // --- BACKGROUND INIT ---------------------------------------------------
+    // Populates dropdown data (blueprints, ports, python/cuda versions, GPU
+    // count). Non-fatal and non-blocking: a slow endpoint here no longer
+    // prevents the table (and the rest of the UI) from appearing.
+    (async () => {
+        try {
+            const [systemInfo, blueprints, ports, pyVersions, cudaVersions] = await Promise.all([
+                fetchSystemInfo(),
+                fetchAndStoreBlueprints(),
+                fetchAvailablePorts(),
+                fetchAvailablePythonVersions().catch(err => {
+                    console.warn('Failed to fetch Python versions, using defaults:', err);
+                    return null;
+                }),
+                fetchCudaVersions().catch(err => {
+                    console.warn('Failed to fetch CUDA versions, using defaults:', err);
+                    return null;
+                })
+            ]);
+            // Store version data in shared state (only if fetch succeeded)
+            if (pyVersions && pyVersions.length > 0) state.versions.python = pyVersions;
+            if (cudaVersions && cudaVersions.length > 0) state.versions.cuda = cudaVersions;
+
+            state.systemInfo = systemInfo;
+            state.availableBlueprints = blueprints;
+            state.availablePorts = ports.available_ports;
+
+            // One refresh so the freshly loaded dropdown/blueprint/GPU data
+            // shows up without waiting for the next poll tick.
+            await refreshInstancesSafe();
+        } catch (error) {
+            // Non-fatal by design: the table already renders from fallbacks
+            // and the poll loop keeps retrying. (Previously any failure here
+            // replaced the whole document body with an error page.)
+            console.error("Failed to initialize application data:", error);
+            try { showToast(`Init data incomplete: ${error.message}`, 'error'); } catch (_) {}
+        }
+    })();
 
     // --- INJECT BUILDER BUTTON ---
     const buttons = document.querySelectorAll('button');
@@ -215,11 +249,15 @@ async function initializeApp() {
         console.warn("Could not find 'Add New Instance' button to inject Builder button.");
     }
 
-    // Start the polling loop
-    await fetchAndRenderInstances();
+    // (The instances polling loop was already started by the FIRST RENDER
+    // above — fetchAndRenderInstances reschedules itself in its finally
+    // block; no second call is needed here.)
 
-    const initialStats = await getSystemStats();
-    updateSystemStats(initialStats);
+    // Stats fetched WITHOUT blocking the boot sequence: /api/system/stats has
+    // a fixed ~100ms floor (psutil.cpu_percent(interval=0.1) sleep) plus NVML
+    // reads — it previously delayed showWelcomeScreen, the event listeners and
+    // the Split panes. Fire-and-forget; the interval below refreshes it.
+    getSystemStats().then(updateSystemStats);
 
     showWelcomeScreen();
 
@@ -253,20 +291,26 @@ async function initializeApp() {
 
     DOM.toolsCloseBtn.addEventListener('click', showWelcomeScreen);
 
-    new Sortable(DOM.instancesTable, {
-        animation: 150,
-        handle: '.drag-handle',
-        draggable: 'tbody.instance-group',
-        ghostClass: 'sortable-ghost',
-        dragClass: 'sortable-drag',
-        onEnd: function (evt) {
-            const groups = DOM.instancesTable.querySelectorAll('tbody.instance-group');
-            const newOrder = Array.from(groups)
-                .map(group => group.dataset.groupId)
-                .filter(id => id && id !== 'new');
-            localStorage.setItem(INSTANCE_ORDER_KEY, JSON.stringify(newOrder));
-        },
-    });
+    // Sortable comes from a CDN; if it failed to load the app must still boot
+    // (drag & drop degrades gracefully instead of aborting the whole init).
+    if (typeof Sortable !== 'undefined') {
+        new Sortable(DOM.instancesTable, {
+            animation: 150,
+            handle: '.drag-handle',
+            draggable: 'tbody.instance-group',
+            ghostClass: 'sortable-ghost',
+            dragClass: 'sortable-drag',
+            onEnd: function (evt) {
+                const groups = DOM.instancesTable.querySelectorAll('tbody.instance-group');
+                const newOrder = Array.from(groups)
+                    .map(group => group.dataset.groupId)
+                    .filter(id => id && id !== 'new');
+                localStorage.setItem(INSTANCE_ORDER_KEY, JSON.stringify(newOrder));
+            },
+        });
+    } else {
+        console.warn("[Init] Sortable.js unavailable (CDN unreachable) — drag & drop disabled.");
+    }
 
     setupMainEventListeners();
     setupModalEventHandlers();
@@ -284,29 +328,34 @@ async function initializeApp() {
         console.error("Failed to load or parse split sizes from localStorage.", e);
     }
 
-    Split(['#instance-pane', '#bottom-split'], {
-        sizes: state.split.savedSizes.vertical,
-        minSize: [200, 150],
-        gutterSize: 5,
-        direction: 'vertical',
-        cursor: 'row-resize',
-        onDragEnd: function (sizes) {
-            state.split.savedSizes.vertical = sizes;
-            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes));
-        }
-    });
+    // Split.js comes from a CDN: degrade gracefully (the flexbox CSS layout
+    // in base.css .split-container remains usable without it) if unavailable.
+    if (typeof Split !== 'undefined' && typeof Split === 'function') {
+        Split(['#instance-pane', '#bottom-split'], {
+            sizes: state.split.savedSizes.vertical,
+            minSize: [200, 150],
+            gutterSize: 5,
+            direction: 'vertical',
+            onDragEnd: function (sizes) {
+                state.split.savedSizes.vertical = sizes;
+                localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes));
+            }
+        });
 
-    Split(['#tools-pane', '#monitoring-pane'], {
-        sizes: state.split.savedSizes.horizontal,
-        minSize: [300, 200],
-        gutterSize: 5,
-        direction: 'horizontal',
-        cursor: 'col-resize',
-        onDragEnd: function (sizes) {
-            state.split.savedSizes.horizontal = sizes;
-            localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes));
-        }
-    });
+        Split(['#tools-pane', '#monitoring-pane'], {
+            sizes: state.split.savedSizes.horizontal,
+            minSize: [300, 200],
+            gutterSize: 5,
+            direction: 'horizontal',
+            cursor: 'col-resize',
+            onDragEnd: function (sizes) {
+                state.split.savedSizes.horizontal = sizes;
+                localStorage.setItem(SPLIT_STORAGE_KEY, JSON.stringify(state.split.savedSizes));
+            }
+        });
+    } else {
+        console.warn("[Init] Split.js unavailable (CDN) — panes fixed, no resize handle.");
+    }
 
     // --- ZOOM CONTROLS ---
     const ZOOM_STORAGE_KEY = 'aikoreZoomLevels';

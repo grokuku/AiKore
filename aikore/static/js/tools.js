@@ -1,8 +1,19 @@
 import { state, DOM } from './state.js';
-import { fetchLogs, performVersionCheck, fetchFileContent, fetchTorchVersions, fetchCudaVersions, fetchAvailablePythonVersions } from './api.js';
+import { fetchLogs, performVersionCheck, fetchFileContent, fetchTorchVersions, fetchCudaVersions, fetchAvailablePythonVersions, authHeaders } from './api.js';
 import { showToast } from './ui.js';
 
 const ansi_up = new AnsiUp();
+
+// --- Authenticated WebSocket helper -------------------------------------------
+// Browsers cannot set custom headers on a WebSocket, so when AIKORE_API_KEY is
+// configured the key is offered as a subprotocol: ['aikore-auth', '<key>'].
+// The server answers with 'aikore-auth' and never echoes the key back.
+function _connectWs(path) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${protocol}//${window.location.host}${path}`;
+    const protocols = window.AIKORE_API_KEY ? ['aikore-auth', window.AIKORE_API_KEY] : [];
+    return new WebSocket(url, protocols);
+}
 
 /** Write a colored message to the builder terminal (if it exists). */
 function logBuilderMessage(msg) {
@@ -80,10 +91,8 @@ function _createTerminalForInstance(instanceId, instanceName) {
     termState.terminal.loadAddon(termState.fitAddon);
     termState.terminal.open(container);
 
-    // WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/instances/${instanceId}/terminal`;
-    const socket = new WebSocket(wsUrl);
+    // WebSocket (authenticated via subprotocol when AIKORE_API_KEY is set)
+    const socket = _connectWs(`/api/instances/${instanceId}/terminal`);
     socket.binaryType = 'arraybuffer';
     termState.socket = socket;
 
@@ -180,10 +189,6 @@ function closeAllTerminals() {
     Object.keys(state.terminals).forEach(id => closeTerminal(id));
 }
 
-function _disposeTerminalRef() {
-    // Legacy: no longer needed, kept for compatibility
-}
-
 // --- BUILDER LOGIC ---
 
 let builderSocket = null;
@@ -193,7 +198,7 @@ let builderBtnInterval = null;
 let builderResizeObserver = null;
 
 async function fetchBuilderInfo() {
-    const res = await fetch('/api/builder/info');
+    const res = await fetch('/api/builder/info', { headers: authHeaders() });
     return await res.json();
 }
 
@@ -278,18 +283,39 @@ export function renderBuilderStatus() {
 }
 
 async function fetchWheelsList() {
-    const res = await fetch('/api/builder/wheels');
+    const res = await fetch('/api/builder/wheels', { headers: authHeaders() });
     return await res.json();
 }
 
 async function deleteWheel(filename) {
     if (!confirm(`Delete ${filename}?`)) return;
-    await fetch(`/api/builder/wheels/${filename}`, { method: 'DELETE' });
+    await fetch(`/api/builder/wheels/${encodeURIComponent(filename)}`, { method: 'DELETE', headers: authHeaders() });
     renderWheelsTable();
 }
 
-function downloadWheel(filename) {
-    window.open(`/api/builder/wheels/${filename}/download`, '_blank');
+async function downloadWheel(filename) {
+    // window.open() cannot carry custom headers, so stream the download through
+    // fetch with the auth header and hand the browser a temporary object URL.
+    try {
+        const response = await fetch(`/api/builder/wheels/${encodeURIComponent(filename)}/download`, {
+            headers: authHeaders()
+        });
+        if (!response.ok) {
+            if (response.status === 401) throw new Error('Clé API requise (401)');
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e) {
+        showToast(`Download failed: ${e.message}`, "error");
+    }
 }
 
 async function renderWheelsTable() {
@@ -478,8 +504,7 @@ async function startBuild() {
     if (builderTerminal) builderTerminal.clear();
     else initBuilderTerminal();
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    builderSocket = new WebSocket(`${protocol}//${window.location.host}/api/builder/build`);
+    builderSocket = _connectWs('/api/builder/build');
 
     builderSocket.onopen = () => {
         builderSocket.send(JSON.stringify(payload));
@@ -782,7 +807,7 @@ async function loadInstanceWheels(instanceId) {
     document.getElementById('wheels-installed-body').innerHTML = '<tr><td colspan="3" style="text-align:center">Loading...</td></tr>';
 
     try {
-        const res = await fetch(`/api/instances/${instanceId}/wheels`);
+        const res = await fetch(`/api/instances/${instanceId}/wheels`, { headers: authHeaders() });
         if (!res.ok) throw new Error("Failed to fetch");
         currentWheelsData = await res.json();
 
@@ -878,7 +903,7 @@ async function saveInstanceWheels(instanceId) {
     try {
         const res = await fetch(`/api/instances/${instanceId}/wheels`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...authHeaders() },
             body: JSON.stringify({ filenames })
         });
 

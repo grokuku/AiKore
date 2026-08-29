@@ -2,30 +2,115 @@ import os
 import sys
 import shutil
 import time
+import sqlite3
 from sqlalchemy import create_engine, inspect, Column, Integer, String, Boolean, text
 from sqlalchemy.orm import sessionmaker, Session, DeclarativeBase
 from . import models
-from .session import SessionLocal, DATABASE_URL, connect_args
+# LOT3 (H2): import the GLOBAL engine — the destructive rebuild steps
+# (os.remove + recreate) leave the global engine's QueuePool holding
+# connections attached to the deleted inode; the pool must be disposed.
+from .session import SessionLocal, DATABASE_URL, connect_args, engine as _global_engine
 
 # --- AUTOMATED DATABASE MIGRATION LOGIC ---
 
 EXPECTED_DB_VERSION = 6
 
+
+def _backup_database_before_step(db_path: str, backup_path: str, log_prefix: str = "0."):
+    """LOT3 (M6): WAL-checkpoint-then-copy backup used by every step.
+
+    The app DB runs in WAL mode (PRAGMA journal_mode=WAL in session.py), so
+    the latest committed writes may still live in the '-wal' side file;
+    shutil.copy2 of the main file alone would snapshot a stale state.
+    PRAGMA wal_checkpoint(TRUNCATE) folds the WAL back into the main file
+    immediately before the copy.
+    """
+    print(f"[DB Migration] {log_prefix} Backing up current database to: {backup_path}")
+    try:
+        checkpoint_con = sqlite3.connect(db_path)
+        try:
+            checkpoint_con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            checkpoint_con.close()
+    except Exception as checkpoint_err:
+        # Best-effort: a failed checkpoint degrades backup freshness, it must
+        # not abort the migration itself.
+        print(f"[DB Migration] WARNING: WAL checkpoint before backup failed: {checkpoint_err}", file=sys.stderr)
+    try:
+        shutil.copy2(db_path, backup_path)
+    except Exception as e:
+        print(f"[DB Migration] FATAL: Could not back up database. Aborting. Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+class DatabaseVersionError(RuntimeError):
+    """LOT3 (M5): raised when the DB state cannot be trusted for a safe decision.
+
+    Aborting startup (instead of silently assuming v1) is critical: the v1->v2
+    migration is DESTRUCTIVE (it deletes and recreates the database file), so a
+    transient access error on a v4/v5/v6 database must never be mistaken for a
+    legacy v1 database.
+    """
+
+# Columns introduced AFTER schema v1. Their presence together with a missing
+# meta table means the meta table was lost/corrupted — NOT a legitimate v1.
+_POST_V1_COLUMNS = {
+    "hostname", "use_custom_hostname", "output_path",
+    "parent_instance_id", "python_version", "cuda_version", "torch_version",
+}
+
 def _get_db_version(db_session):
-    """Checks the version of the database."""
+    """Checks the version of the database.
+
+    LOT3 (M5): the historical implementation returned 1 on ANY exception, so a
+    transient error (locked file, permission problem, corrupted page...) on a
+    v4/v5/v6 database silently triggered the destructive v1->v2 migration.
+    Now:
+      - no meta table AND instances table looks genuinely v1 -> legitimate v1;
+      - no meta table BUT post-v1 columns present -> hard abort (corrupted);
+      - meta table present but no/invalid version row -> hard abort;
+      - any other error -> CRITICAL log + raise (no silent fallback to 1).
+    """
     try:
         inspector = inspect(db_session.bind)
         if not inspector.has_table(models.AikoreMeta.__tablename__):
+            # No meta table: could be a legitimate v1 database... verify it.
+            if inspector.has_table("instances"):
+                columns = {col['name'] for col in inspector.get_columns('instances')}
+                suspicious = sorted(columns & _POST_V1_COLUMNS)
+                if suspicious:
+                    raise DatabaseVersionError(
+                        "The 'aikore_meta' table is missing but the 'instances' table "
+                        f"contains post-v1 column(s) {suspicious}. The metadata table "
+                        "was likely lost or the database is corrupted. Refusing to "
+                        "run migrations (the v1->v2 step would DESTROY this data). "
+                        "Restore 'aikore_meta' or restore from backup."
+                    )
             return 1
         
         version_entry = db_session.query(models.AikoreMeta).filter_by(key="schema_version").first()
         if not version_entry:
-            return 1
+            raise DatabaseVersionError(
+                "Table 'aikore_meta' exists but has no 'schema_version' entry. "
+                "Refusing to guess the schema version (a wrong guess would run "
+                "destructive migrations)."
+            )
         
-        return int(version_entry.value)
+        try:
+            return int(version_entry.value)
+        except (TypeError, ValueError) as e:
+            raise DatabaseVersionError(
+                f"Invalid 'schema_version' value {version_entry.value!r}: {e}"
+            )
+    except DatabaseVersionError:
+        raise
     except Exception as e:
-        print(f"[DB Migration] Error checking DB version: {e}", file=sys.stderr)
-        return 1
+        print(
+            f"[DB Migration] CRITICAL: could not determine the database version: {e}\n"
+            f"[DB Migration] Refusing to migrate: falling back to version 1 would "
+            f"trigger the DESTRUCTIVE v1->v2 rebuild on a possibly recent database.",
+            file=sys.stderr,
+        )
+        raise
 
 def _perform_v1_to_v2_migration():
     """
@@ -37,12 +122,8 @@ def _perform_v1_to_v2_migration():
     db_path = DATABASE_URL.split("///")[1]
     backup_path = f"{db_path}.bak.v1_to_v2.{int(time.time())}"
     
-    print(f"[DB Migration] 1. Backing up current database to: {backup_path}")
-    try:
-        shutil.copy2(db_path, backup_path)
-    except Exception as e:
-        print(f"[DB Migration] FATAL: Could not back up database. Aborting. Error: {e}", file=sys.stderr)
-        sys.exit(1)
+    # LOT3 (M6): WAL checkpoint before copying (see _backup_database_before_step).
+    _backup_database_before_step(db_path, backup_path, "1.")
 
     # --- Old Schema (V1) ---
     class _BaseV1(DeclarativeBase):
@@ -134,9 +215,16 @@ def _perform_v1_to_v2_migration():
         sys.exit(1)
     finally:
         temp_new_engine.dispose()
+        # LOT3 (H2): os.remove()+recreate replaced the DB file underneath the
+        # global engine; its QueuePool (WAL active — session.py) still holds a
+        # connection to the GHOST inode. Dispose the pool so nothing reuses a
+        # stale handle; new connections re-open the real file (the WAL pragma
+        # listener re-applies on fresh connections).
+        _global_engine.dispose()
         
-    print("[DB Migration] 5. Migration from V1 to V2 complete. Please restart the application.")
-    sys.exit(0)
+    print("[DB Migration] 5. Migration from V1 to V2 complete.")
+    # LOT3 (M6): no sys.exit here anymore — run_db_migration() chains all steps
+    # in a single run, so an upgrade from v1 no longer requires 5 restarts.
 
 def _perform_v2_to_v3_migration():
     """
@@ -148,12 +236,8 @@ def _perform_v2_to_v3_migration():
     db_path = DATABASE_URL.split("///")[1]
     backup_path = f"{db_path}.bak.v2_to_v3.{int(time.time())}"
     
-    print(f"[DB Migration] 1. Backing up current database to: {backup_path}")
-    try:
-        shutil.copy2(db_path, backup_path)
-    except Exception as e:
-        print(f"[DB Migration] FATAL: Could not back up database. Aborting. Error: {e}", file=sys.stderr)
-        sys.exit(1)
+    # LOT3 (M6): WAL checkpoint before copy (see _backup_database_before_step).
+    _backup_database_before_step(db_path, backup_path, "1.")
 
     # --- Old Schema (V2) ---
     class _BaseV2_Old(DeclarativeBase):
@@ -248,9 +332,11 @@ def _perform_v2_to_v3_migration():
         sys.exit(1)
     finally:
         temp_new_engine.dispose()
+        # LOT3 (H2): same ghost-inode cleanup as the v1->v2 step.
+        _global_engine.dispose()
         
-    print("[DB Migration] 5. Migration from V2 to V3 complete. Please restart the application.")
-    sys.exit(0)
+    print("[DB Migration] 5. Migration from V2 to V3 complete.")
+    # LOT3 (M6): chained by run_db_migration(), see note above.
 
 def _perform_v3_to_v4_migration():
     """
@@ -262,12 +348,8 @@ def _perform_v3_to_v4_migration():
     db_path = DATABASE_URL.split("///")[1]
     backup_path = f"{db_path}.bak.v3_to_v4.{int(time.time())}"
     
-    print(f"[DB Migration] 1. Backing up current database to: {backup_path}")
-    try:
-        shutil.copy2(db_path, backup_path)
-    except Exception as e:
-        print(f"[DB Migration] FATAL: Could not back up database. Aborting. Error: {e}", file=sys.stderr)
-        sys.exit(1)
+    # LOT3 (M6): WAL checkpoint before copy (see _backup_database_before_step).
+    _backup_database_before_step(db_path, backup_path, "1.")
 
     # --- Old Schema (V3) ---
     class _BaseV3_Old(DeclarativeBase):
@@ -339,9 +421,11 @@ def _perform_v3_to_v4_migration():
         sys.exit(1)
     finally:
         temp_new_engine.dispose()
+        # LOT3 (H2): last of the three destructive os.remove+recreate steps.
+        _global_engine.dispose()
         
-    print("[DB Migration] 5. Migration from V3 to V4 complete. Please restart the application.")
-    sys.exit(0)
+    print("[DB Migration] 5. Migration from V3 to V4 complete.")
+    # LOT3 (M6): chained by run_db_migration(), see note above.
 
 def _perform_v4_to_v5_migration():
     """
@@ -351,6 +435,15 @@ def _perform_v4_to_v5_migration():
     """
     print("[DB Migration] Starting migration from V4 to V5...")
     engine = create_engine(DATABASE_URL, connect_args=connect_args)
+    
+    # LOT3 (M6): back up the database BEFORE the ALTER TABLE (after a WAL
+    # checkpoint — see _backup_database_before_step), like the rebuild-based
+    # v1->v4 steps already do. An ALTER on SQLite is safer than a
+    # full rebuild but a backup still turns any mid-flight failure into a
+    # restore instead of data loss.
+    db_path = DATABASE_URL.split("///")[1]
+    backup_path = f"{db_path}.bak.v4_to_v5.{int(time.time())}"
+    _backup_database_before_step(db_path, backup_path, "0.")
     
     try:
         with engine.connect() as connection:
@@ -379,6 +472,7 @@ def _perform_v4_to_v5_migration():
         print("[DB Migration] Migration from V4 to V5 complete.")
     except Exception as e:
         print(f"[DB Migration] FATAL: Error during V4 to V5 migration: {e}", file=sys.stderr)
+        print(f"[DB Migration] A pre-migration backup exists at: {backup_path}", file=sys.stderr)
         print("[DB Migration] Manual inspection of the database is required.", file=sys.stderr)
         sys.exit(1)
         
@@ -389,6 +483,11 @@ def _perform_v5_to_v6_migration():
     """
     print("[DB Migration] Starting migration from V5 to V6...")
     engine = create_engine(DATABASE_URL, connect_args=connect_args)
+    
+    # LOT3 (M6): same pre-ALTER backup as v4->v5 (WAL checkpoint before copy).
+    db_path = DATABASE_URL.split("///")[1]
+    backup_path = f"{db_path}.bak.v5_to_v6.{int(time.time())}"
+    _backup_database_before_step(db_path, backup_path, "0.")
     
     try:
         with engine.connect() as connection:
@@ -416,8 +515,19 @@ def _perform_v5_to_v6_migration():
         print("[DB Migration] Migration from V5 to V6 complete.")
     except Exception as e:
         print(f"[DB Migration] FATAL: Error during V5 to V6 migration: {e}", file=sys.stderr)
+        print(f"[DB Migration] A pre-migration backup exists at: {backup_path}", file=sys.stderr)
         print("[DB Migration] Manual inspection of the database is required.", file=sys.stderr)
         sys.exit(1)
+
+# LOT3 (M6): explicit migration-step table, executed SEQUENTIALLY by
+# run_db_migration() so an upgrade from v1 to v6 completes in a single run.
+_MIGRATION_STEPS = {
+    1: _perform_v1_to_v2_migration,
+    2: _perform_v2_to_v3_migration,
+    3: _perform_v3_to_v4_migration,
+    4: _perform_v4_to_v5_migration,
+    5: _perform_v5_to_v6_migration,
+}
 
 def run_db_migration():
     # This is a hack to get the correct engine for the migration check
@@ -435,21 +545,42 @@ def run_db_migration():
 
     with SessionLocal() as db:
         current_version = _get_db_version(db)
-        print(f"[DB Check] Current DB version: {current_version}. Expected version: {EXPECTED_DB_VERSION}.")
-    
-        if current_version < EXPECTED_DB_VERSION:
-            if current_version == 1:
-                _perform_v1_to_v2_migration()
-            elif current_version == 2:
-                _perform_v2_to_v3_migration()
-            elif current_version == 3:
-                _perform_v3_to_v4_migration()
-            elif current_version == 4:
-                _perform_v4_to_v5_migration()
-            elif current_version == 5:
-                _perform_v5_to_v6_migration()
-            else:
-                print(f"[DB Migration] FATAL: Unsupported migration path from v{current_version} to v{EXPECTED_DB_VERSION}.", file=sys.stderr)
-                sys.exit(1)
-        elif current_version > EXPECTED_DB_VERSION:
-            print(f"[DB Migration] WARNING: Database version ({current_version}) is newer than the application's expected version.", file=sys.stderr)
+    print(f"[DB Check] Current DB version: {current_version}. Expected version: {EXPECTED_DB_VERSION}.")
+
+    if current_version > EXPECTED_DB_VERSION:
+        print(f"[DB Migration] WARNING: Database version ({current_version}) is newer than the application's expected version.", file=sys.stderr)
+        return
+
+    # LOT3 (H2): the session used to read the version is CLOSED before any
+    # step runs — steps delete/recreate the DB file (v1..v4) or ALTER it, and
+    # an open session/pooled connection must not ride across those operations.
+    # The version is re-read with a FRESH session after every step.
+
+    # LOT3 (M6): run ALL pending steps in one go instead of exiting after a
+    # single step (the old behaviour required up to 5 restarts for a
+    # v1 -> v6 upgrade). Each step keeps its own backup + failure abort.
+    while current_version < EXPECTED_DB_VERSION:
+        step = _MIGRATION_STEPS.get(current_version)
+        if step is None:
+            print(f"[DB Migration] FATAL: Unsupported migration path from v{current_version} to v{EXPECTED_DB_VERSION}.", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"[DB Migration] Applying step v{current_version} -> v{current_version + 1}...")
+        before_version = current_version
+        step()
+
+        # Re-read the version with a FRESH session (the previous one is
+        # closed) to confirm the step actually advanced the schema; guards
+        # against a silently no-op step looping forever.
+        with SessionLocal() as verify_db:
+            current_version = _get_db_version(verify_db)
+        if current_version <= before_version:
+            print(
+                f"[DB Migration] FATAL: step from v{before_version} did not advance "
+                f"the schema version (still v{current_version}). Aborting.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"[DB Migration] Now at schema version {current_version}.")
+
+        print(f"[DB Migration] Database is up to date at schema version {current_version}.")
