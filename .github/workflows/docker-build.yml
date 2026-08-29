@@ -19,7 +19,7 @@ env:
 
 jobs:
   build-and-push:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -29,6 +29,19 @@ jobs:
       cancel-in-progress: false
 
     steps:
+      # The image installs cuda-toolkit-13-0 (~multi-GB). GitHub-hosted runners
+      # only expose ~14 GB of free disk, so reclaim space from preinstalled
+      # toolchains we don't use (self-hosted runners had plenty of disk).
+      - name: Free disk space on runner
+        run: |
+          set -x
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+            /usr/lib/jvm /usr/local/lib/android /opt/gradle
+          sudo docker image prune -af || true
+          df -h /
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
