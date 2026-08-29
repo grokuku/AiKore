@@ -113,10 +113,9 @@ def get_system_stats():
     """
     Retrieves system and GPU statistics.
     """
-    # cpu_percent(interval=None) returns 0 on first call.
-    # We call it once with a tiny interval to seed the internal counter.
-    psutil.cpu_percent(interval=0.1)
-    
+    # cpu_percent(interval=None) is non-blocking (no sleep). The counter is
+    # seeded once at server startup (lifespan in main.py) so deltas are
+    # meaningful from the first request.
     stats = {
         "cpu_percent": psutil.cpu_percent(interval=None),
         "ram": {

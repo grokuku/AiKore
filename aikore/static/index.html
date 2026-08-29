@@ -15,12 +15,12 @@
          CDN froze the FIRST PAINT of the entire page (blank screen). `defer`
          keeps execution order (still runs before the main.js module) without
          blocking rendering. -->
-    <script src="https://cdn.jsdelivr.net/npm/ansi_up@5.1.0/ansi_up.min.js" defer></script>
+    <script src="/static/vendor/ansi_up-5.1.0.min.js" integrity="sha384-dAnYURSL1lFGH3o8Q9bh1OiIOOWSCXUnUu0lKq9yvQR6xbkaJ0T//hAHy4TJK0iP" crossorigin="anonymous" defer></script>
     <!-- NEW: Xterm.js styles -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+    <link rel="stylesheet" href="/static/vendor/xterm-5.3.0.min.css" integrity="sha384-9ftsg11+LSxVUaknegCfeKvlkO9EdIPI2op725RqY87IvhyGjElmpjZlP3LhTQjn" crossorigin="anonymous" />
     <!-- NEW: CodeMirror for syntax highlighting -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/darcula.min.css" />
+    <link rel="stylesheet" href="/static/vendor/codemirror-5.65.16.min.css" integrity="sha384-zaeBlB/vwYsDRSlFajnDd7OydJ0cWk+c2OWybl3eSUf6hW2EbhlCsQPqKr3gkznT" crossorigin="anonymous" />
+    <link rel="stylesheet" href="/static/vendor/codemirror-darcula-5.65.16.min.css" integrity="sha384-O7baQ60DV8PF9lmTWsCobbRqqwybdAMd27xf3MCGJPyaiJOUgqR5MD/l2KvMVqan" crossorigin="anonymous" />
 
     <style>
         /* Satellite Tree Visuals */
@@ -269,15 +269,15 @@
          Versions pinned: split.js was resolved via an unpkg 302 redirect on
          every page load; sortablejs@latest is a floating tag (audit finding). -->
     <!-- Split.js library -->
-    <script src="https://unpkg.com/split.js@1.6.5/dist/split.min.js" defer></script>
+    <script src="/static/vendor/split-1.6.5.min.js" integrity="sha384-q2ksSc8z6Q4ZUnxlfZj9AXZLpSdWmD3q/YrId1twTeNHh56fNh98YbJSpppzGUvL" crossorigin="anonymous" defer></script>
     <!-- NEW: Xterm.js library and Fit Addon -->
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js" defer></script>
+    <script src="/static/vendor/xterm-5.3.0.min.js" integrity="sha384-xjfWUeCWdMtvpAb/SmM6lMzS6pQGcQa0loOl1d97j6Odw0vjK9nW3+dTb/bn/mwH" crossorigin="anonymous" defer></script>
+    <script src="/static/vendor/xterm-addon-fit-0.8.0.min.js" integrity="sha384-dpjGwSSISUTz2taP54Bor7qkyMR20sSO9oe11UVYnGs2/YdUBf7HW30XKQx9PCzn" crossorigin="anonymous" defer></script>
     <!-- NEW: CodeMirror library and Shell mode -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js" defer></script>
+    <script src="/static/vendor/codemirror-5.65.16.min.js" integrity="sha384-ZYmwuq4n2gOcNxMSiJ6jyTj+BbIrilr7p6dlq6q5nmSWKmsH9UU4K1qqjycMkfmR" crossorigin="anonymous" defer></script>
+    <script src="/static/vendor/codemirror-shell-5.65.16.min.js" integrity="sha384-dmPRq54XNtYnlnAo7QrwJnZNa5r0JP5gU8z4H0686Cgz37qrR2jmNaDHUXyMI4wn" crossorigin="anonymous" defer></script>
     <!-- Sortable.js for drag-and-drop -->
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js" defer></script>
+    <script src="/static/vendor/sortable-1.15.7.min.js" integrity="sha384-DgmC6Xe2bSN2WjTDXzWYbUbxyhNP+NNkGDR/g78pCXV7E7rcVTGxVg0uIVCUUcBc" crossorigin="anonymous" defer></script>
     <!-- Auth: inline stub executed before any module code. A deployment (reverse
          proxy, template injection) may define window.AIKORE_API_KEY beforehand;
          it stays null when authentication is disabled server-side. -->

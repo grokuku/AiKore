@@ -3,6 +3,8 @@ import time as _time
 _t_import_start = _time.time()
 print("[Import] Starting AiKore module imports...")
 from contextlib import asynccontextmanager
+import asyncio
+import psutil
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
@@ -127,6 +129,22 @@ async def lifespan(app: FastAPI):
         print(f"[Startup] [Warning] NVML could not be initialized: {error}. ({__import__('time').time() - _t0:.2f}s)")
     except Exception as error:
         print(f"[Startup] [Warning] NVML unexpected error: {error}. ({__import__('time').time() - _t0:.2f}s)")
+
+    # Seed psutil's cpu_percent counter so get_system_stats() can use the
+    # non-blocking interval=None form with a meaningful first delta.
+    try:
+        psutil.cpu_percent(interval=None)
+    except Exception as e:
+        print(f"[Startup] [Warning] Could not seed psutil cpu_percent: {e}")
+
+    # Prewarm the python/cuda version caches in the background (conda search
+    # can take several seconds; download.pytorch.org up to 5s). Non-blocking:
+    # failures are expected offline and handled by endpoint fallbacks.
+    try:
+        asyncio.get_running_loop().create_task(builder.prewarm_version_caches())
+        print("[Startup] Version caches prewarm scheduled (background).")
+    except Exception as e:
+        print(f"[Startup] [Warning] Could not schedule version cache prewarm: {e}")
 
     # 1. Open database
     _t1 = __import__('time').time()

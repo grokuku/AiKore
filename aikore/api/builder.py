@@ -13,6 +13,7 @@ import glob
 import traceback
 import urllib.request
 import re
+import threading
 import time
 import uuid
 
@@ -438,8 +439,25 @@ def get_builder_info():
         "python_path": sys.executable
     }
     
-# --- NEW: Cache for python versions ---
+# --- Cache for python versions (24h TTL, same model as cuda/torch) ---
+_PYTHON_CACHE_TTL = 24 * 3600  # 24 hours
 _cached_python_versions = []
+_cached_python_versions_at = 0.0
+
+
+async def prewarm_version_caches():
+    """Warm python/cuda version caches in the background so the first page
+    load doesn't pay the conda search / network cost. Never raises — failures
+    are expected when offline and already handled by the endpoint fallbacks."""
+    try:
+        await get_available_python_versions()
+    except Exception as e:
+        print(f"[Startup] [Warning] Python versions prewarm failed (offline?): {e}")
+    try:
+        await get_available_cuda_versions()
+    except Exception as e:
+        print(f"[Startup] [Warning] CUDA versions prewarm failed (offline?): {e}")
+
 
 @router.get("/versions/python")
 async def get_available_python_versions():
@@ -447,12 +465,13 @@ async def get_available_python_versions():
     Finds available python versions using conda search.
     Results are cached to avoid slow repeated calls.
     """
-    global _cached_python_versions
-    if _cached_python_versions:
+    global _cached_python_versions, _cached_python_versions_at
+    now = time.monotonic()
+    if _cached_python_versions and (now - _cached_python_versions_at) < _PYTHON_CACHE_TTL:
         return _cached_python_versions
 
     async with _cache_lock:
-        if _cached_python_versions:
+        if _cached_python_versions and (time.monotonic() - _cached_python_versions_at) < _PYTHON_CACHE_TTL:
             return _cached_python_versions
 
         try:
@@ -463,12 +482,17 @@ async def get_available_python_versions():
                 stderr=asyncio.subprocess.PIPE
             )
             try:
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5.0)
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.wait()
-                print("[DEBUG] conda search timed out after 15s.")
-                return _FALLBACK_PYTHON_VERSIONS
+                print("[DEBUG] conda search timed out after 5s.")
+                # Cache the fallback with a timestamp (same mechanism as the
+                # cuda cache; write already guarded by _cache_lock) so a
+                # slow/offline conda doesn't re-trigger a 5s fetch per call.
+                _cached_python_versions = list(_FALLBACK_PYTHON_VERSIONS)
+                _cached_python_versions_at = time.monotonic()
+                return _cached_python_versions
             
             if proc.returncode == 0:
                 data = json.loads(stdout.decode())
@@ -484,12 +508,27 @@ async def get_available_python_versions():
                 
                 # Sort descending (e.g. 3.15, 3.14...)
                 _cached_python_versions = sorted(list(versions), key=lambda x:[int(p) for p in x.split('.')], reverse=True)
+                _cached_python_versions_at = time.monotonic()
                 return _cached_python_versions
         except Exception as e:
             print(f"[DEBUG] Failed to discover python versions: {e}")
         
-        # Fallback if conda fails
-        return _FALLBACK_PYTHON_VERSIONS
+        # Fallback if conda fails: cache it with a timestamp (same mechanism
+        # as the cuda cache, write guarded by the held _cache_lock) so we
+        # don't re-fetch in a loop while conda is offline.
+        _cached_python_versions = list(_FALLBACK_PYTHON_VERSIONS)
+        _cached_python_versions_at = time.monotonic()
+        return _cached_python_versions
+
+# --- Cache for CUDA versions (6h TTL, thread-safe) ---
+# The fetch hits download.pytorch.org with a 5s timeout; without a cache every
+# builder-page open pays that latency. The offline fallback is the initial
+# cached value's safety net: we never raise to the UI if it exists.
+_CUDA_CACHE_TTL = 6 * 3600  # 6 hours
+_cuda_cache_lock = threading.Lock()
+_cached_cuda_versions = None
+_cached_cuda_versions_at = 0.0
+
 
 @router.get("/versions/cuda")
 async def get_available_cuda_versions():
@@ -509,11 +548,20 @@ async def get_available_cuda_versions():
         {"cu": "cu121", "version": "12.1"},
         {"cu": "cu118", "version": "11.8"},
     ]
+    global _cached_cuda_versions, _cached_cuda_versions_at
+    now = time.monotonic()
+    with _cuda_cache_lock:
+        if _cached_cuda_versions is not None and (now - _cached_cuda_versions_at) < _CUDA_CACHE_TTL:
+            return _cached_cuda_versions
     try:
-        return await asyncio.to_thread(_fetch_cuda_versions, fallback)
+        result = await asyncio.to_thread(_fetch_cuda_versions, fallback)
     except Exception as e:
         print(f"[DEBUG] Failed to fetch CUDA versions: {e}")
-        return fallback
+        result = fallback
+    with _cuda_cache_lock:
+        _cached_cuda_versions = result
+        _cached_cuda_versions_at = time.monotonic()
+    return result
 
 def _fetch_cuda_versions(fallback):
     """Blocking I/O helper for get_available_cuda_versions (runs in thread pool)."""
@@ -555,6 +603,12 @@ def _fetch_cuda_versions(fallback):
         return fallback
     return result
 
+# --- Cache for torch versions per CUDA target (24h TTL, thread-safe) ---
+_TORCH_CACHE_TTL = 24 * 3600  # 24 hours
+_torch_cache_lock = threading.Lock()
+_cached_torch_versions = {}  # {cu: (fetched_at_monotonic, versions_list)}
+
+
 @router.get("/versions/torch/{cuda_ver}")
 async def get_torch_versions_for_cuda(cuda_ver: str):
     """
@@ -564,12 +618,19 @@ async def get_torch_versions_for_cuda(cuda_ver: str):
     """
     # Updated fallback list for 2026 (CUDA 12.6, 12.8, 13.0 compatible)
     fallback_versions = ["2.11.0", "2.10.0", "2.9.1", "2.8.0", "2.7.0", "2.6.0", "2.5.1", "2.4.1"]
+    now = time.monotonic()
+    with _torch_cache_lock:
+        entry = _cached_torch_versions.get(cuda_ver)
+        if entry is not None and (now - entry[0]) < _TORCH_CACHE_TTL:
+            return entry[1]
     try:
         result = await asyncio.to_thread(_fetch_torch_versions, cuda_ver, fallback_versions)
-        return result
     except Exception as e:
         print(f"[DEBUG] Failed to fetch torch versions: {e}")
-        return sorted(fallback_versions, reverse=True)
+        result = sorted(fallback_versions, reverse=True)
+    with _torch_cache_lock:
+        _cached_torch_versions[cuda_ver] = (time.monotonic(), result)
+    return result
 
 def _fetch_torch_versions(cuda_ver, fallback_versions):
     """Blocking I/O helper for get_torch_versions_for_cuda (runs in thread pool)."""
