@@ -44,6 +44,9 @@ RUN for i in 1 2 3; do \
         python3-xdg \
         xvfb \
         firefox \
+        libgtk-3-0 \
+        libwebkit2gtk-4.1-0 \
+        libayatana-appindicator3-1 \
     && rm -rf /var/lib/apt/lists/* && break || sleep 10; \
     done
 
