@@ -453,7 +453,11 @@ def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, in
     """
     start_time = time.time()
     last_log_time = 0.0
-    
+    # FIX: une fois l'instance prête on CONTINUE à boucler (pas de break) :
+    # l'entrée running_instances et le kiosque Firefox survivent ; on ne
+    # teardown QUE lorsque le process meurt réellement (popen.poll() != None).
+    app_ready = False
+
     while True:
         # --- LOT3 (M2): zombie-safe liveness check -------------------------
         # poll() returns None while alive AND reaps the process once dead,
@@ -464,67 +468,76 @@ def monitor_instance_thread(instance_id: int, pid: int, port_to_monitor: int, in
         elif not psutil.pid_exists(pid):
             break
         try:
-            # Poll the internal application port to confirm it's truly ready
-            response = requests.get(f"http://127.0.0.1:{internal_app_port}", timeout=2)
-            
-            if response.status_code < 500:
-                print(f"[Monitor-{instance_id}] Instance is RUNNING on port {internal_app_port}.")
-                with SessionLocal() as db:
-                    # LOT3 (M2): promote starting->started ONLY. If the instance
-                    # was stopped concurrently, its 'stopped' status must not be
-                    # overwritten back to 'started' by this late transition.
-                    updated_rows = (
-                        db.query(models.Instance)
-                        .filter(
-                            models.Instance.id == instance_id,
-                            models.Instance.status == "starting",
-                        )
-                        .update({"status": "started"})
-                    )
-                    db.commit()
-                    if updated_rows == 0:
-                        print(f"[Monitor-{instance_id}] Status no longer 'starting'; skipping 'started' update.")
+            # Poll the internal application port ONLY until the app is ready.
+            if not app_ready:
+                response = requests.get(f"http://127.0.0.1:{internal_app_port}", timeout=2)
 
-                if persistent_display is not None:
-                    print(f"[Monitor-{instance_id}] Persistent mode detected. Launching Firefox on display :{persistent_display}.")
-                    firefox_profile_dir = f"/tmp/firefox-profiles/{instance_slug}"
-                    os.makedirs(firefox_profile_dir, exist_ok=True)
-                    
-                    ff_env = os.environ.copy()
-                    ff_env["DISPLAY"] = f":{persistent_display}"
-                    
-                    target_url = f'http://127.0.0.1:{internal_web_port or internal_app_port}'
-                    print(f"[Monitor-{instance_id}] Pointing internal Firefox to {target_url}")
-                    
-                    # LOT3 (M4): own session + tracked handle. Previously this
-                    # Popen inherited the API server's process group, so the
-                    # instance killpg never reached it -> orphaned kiosk
-                    # Firefox piling up on every stop/restart.
-                    ff_process = subprocess.Popen(
-                        ['/usr/bin/firefox', '--profile', firefox_profile_dir, '--kiosk', '-url', target_url],
-                        env=ff_env,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        start_new_session=True,
-                    )
-                    firefox_processes[instance_id] = ff_process
-                break
-        
+                if response.status_code < 500:
+                    app_ready = True
+                    print(f"[Monitor-{instance_id}] Instance is RUNNING on port {internal_app_port}.")
+                    with SessionLocal() as db:
+                        # LOT3 (M2): promote starting->started ONLY. If the instance
+                        # was stopped concurrently, its 'stopped' status must not be
+                        # overwritten back to 'started' by this late transition.
+                        updated_rows = (
+                            db.query(models.Instance)
+                            .filter(
+                                models.Instance.id == instance_id,
+                                models.Instance.status == "starting",
+                            )
+                            .update({"status": "started"})
+                        )
+                        db.commit()
+                        if updated_rows == 0:
+                            print(f"[Monitor-{instance_id}] Status no longer 'starting'; skipping 'started' update.")
+
+                    if persistent_display is not None:
+                        print(f"[Monitor-{instance_id}] Persistent mode detected. Launching Firefox on display :{persistent_display}.")
+                        firefox_profile_dir = f"/tmp/firefox-profiles/{instance_slug}"
+                        os.makedirs(firefox_profile_dir, exist_ok=True)
+
+                        ff_env = os.environ.copy()
+                        ff_env["DISPLAY"] = f":{persistent_display}"
+
+                        target_url = f'http://127.0.0.1:{internal_web_port or internal_app_port}'
+                        print(f"[Monitor-{instance_id}] Pointing internal Firefox to {target_url}")
+
+                        # LOT3 (M4): own session + tracked handle. Previously this
+                        # Popen inherited the API server's process group, so the
+                        # instance killpg never reached it -> orphaned kiosk
+                        # Firefox piling up on every stop/restart.
+                        ff_process = subprocess.Popen(
+                            ['/usr/bin/firefox', '--profile', firefox_profile_dir, '--kiosk', '-url', target_url],
+                            env=ff_env,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            start_new_session=True,
+                        )
+                        firefox_processes[instance_id] = ff_process
+                # FIX: ne PAS break ici. On continue la boucle: l'entrée
+                # running_instances et le kiosque Firefox restent vivants, et
+                # la mort réelle du process (haut de boucle) provoquera le
+                # teardown uniquement à ce moment-là.
+                continue
+            time.sleep(MONITOR_POLL_INTERVAL)
+
         except requests.exceptions.ConnectionError:
             # Process is alive but not yet listening on HTTP.
             # Don't mark as stalled — slow startup (model download, first boot)
             # is normal. We only mark stalled if the process dies.
-            elapsed = time.time() - start_time
-            if elapsed - last_log_time >= 60:
-                print(f"[Monitor-{instance_id}] Still waiting for HTTP on port {internal_app_port} after {int(elapsed)}s (process alive)...")
-                last_log_time = elapsed
+            if not app_ready:
+                elapsed = time.time() - start_time
+                if elapsed - last_log_time >= 60:
+                    print(f"[Monitor-{instance_id}] Still waiting for HTTP on port {internal_app_port} after {int(elapsed)}s (process alive)...")
+                    last_log_time = elapsed
             time.sleep(MONITOR_POLL_INTERVAL)
-        
+
         except Exception as e:
-            print(f"[Monitor-{instance_id}] An unexpected error occurred: {e}")
+            if not app_ready:
+                print(f"[Monitor-{instance_id}] An unexpected error occurred: {e}")
             time.sleep(MONITOR_POLL_INTERVAL)
-    
-    # Process died while still in "starting" status — mark as stalled
+
+    # Le process est réellement mort (ou n'est jamais devenu prêt).
     print(f"[Monitor-{instance_id}] Process with PID {pid} no longer exists.")
     with SessionLocal() as db:
         # LOT3 (M1): atomic conditional UPDATE — the read-check-write above a
