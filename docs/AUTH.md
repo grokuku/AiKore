@@ -76,6 +76,12 @@ La validation d'origine des WebSockets compare l'en-tête `Origin` à l'hôte de
 
 > Note : les navigateurs ne peuvent pas forger `Origin` ni `X-Forwarded-Host` sur un handshake WebSocket ; ce fallback n'affaiblit donc pas la protection anti drive-by.
 
+### Terminal WS et `customHostname` des instances
+
+Le terminal WebSocket d'une instance est **toujours** construit sur la même origine que la page du dashboard (`window.location.host`, port inclus) — voir `_connectWs` dans `aikore/static/js/tools.js`. Le champ `customHostname` d'une instance (et le port persistant) n'affecte **que** le lien « Open » / l'iframe de vue (`buildInstanceUrl` dans `aikore/static/js/ui.js`), jamais le terminal.
+
+Si vous ouvrez le terminal depuis une page servie sur une origine différente de celle du dashboard (ex. un `customHostname` sans port, ou un port persistant), le `Host` du handshake différera de l'`Origin` et le handshake sera refusé. Dans ce cas, autorisez explicitement cette origine dans `AIKORE_WS_ALLOWED_ORIGINS` (ex. `http://my-app.local`).
+
 ## Healthcheck Docker avec header
 
 Quand l'auth est activée, `/api/status` exige la clé :

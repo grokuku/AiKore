@@ -9,6 +9,17 @@ const ansi_up = new AnsiUp();
 // configured the key is offered as a subprotocol: ['aikore-auth', '<key>'].
 // The server answers with 'aikore-auth' and never echoes the key back.
 function _connectWs(path) {
+    // IMPORTANT (WS origin): the terminal/builder WebSocket MUST use the exact
+    // same origin as the page, including the port. We therefore build the URL
+    // from window.location.host (host + port), NOT window.location.hostname
+    // (host only). Using hostname would drop a non-default port (e.g. :9000)
+    // and produce a Host header that differs from the page Origin, which the
+    // server's cross-origin WS check would reject with a 403.
+    //
+    // The per-instance customHostname (ui.js buildInstanceUrl) is deliberately
+    // NOT used here: it only affects the "Open" link / view iframe, never the
+    // terminal. If a customHostname origin is ever wanted for a WS, it must be
+    // listed in AIKORE_WS_ALLOWED_ORIGINS (see docs/AUTH.md).
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${protocol}//${window.location.host}${path}`;
     const protocols = window.AIKORE_API_KEY ? ['aikore-auth', window.AIKORE_API_KEY] : [];

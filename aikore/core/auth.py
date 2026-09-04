@@ -55,7 +55,25 @@ _WS_ORIGINS_ENV = "AIKORE_WS_ALLOWED_ORIGINS"
 _WS_AUTH_PROTOCOL = "aikore-auth"
 
 # Default ports stripped when comparing authorities (Origin vs Host header).
-_DEFAULT_PORTS = {"http": "80", "https": "443", "ws": "80", "wss": "443"}
+# Both 80 and 443 are treated as insignificant regardless of scheme so the
+# comparison is symmetric: a Host header carries no scheme, so we cannot know
+# which default applies to it. Stripping both on BOTH sides keeps the Origin
+# and Host authorities comparable in every scheme combination (http/ws vs
+# https/wss) and avoids false-positive cross-origin blocks.
+_DEFAULT_PORTS = ("80", "443")
+
+
+def _strip_default_port(authority: str) -> str:
+    """Strip a trailing default port (80 or 443) from a normalized authority.
+
+    A port equal to a scheme's default is insignificant (``example.com:80`` ==
+    ``example.com``). Because a Host header carries no scheme, both 80 and 443
+    are stripped so the comparison stays symmetric with the Origin side.
+    """
+    for port in _DEFAULT_PORTS:
+        if authority.endswith(":" + port):
+            return authority[: -(len(port) + 1)]
+    return authority
 
 
 def _parse_csv(value: str) -> tuple:
@@ -217,34 +235,29 @@ def _credentials_valid(scope: dict) -> bool:
 
 def _split_origin(origin: str):
     """Return the normalized authority (host[:port], default port stripped)
-    of an Origin value such as 'https://example.com:443'. (None, None) if
-    the value cannot be parsed."""
+    of an Origin value such as 'https://example.com:443'. None if the value
+    cannot be parsed."""
     try:
         parts = urlsplit(origin.strip())
     except ValueError:
         return None
-    scheme = (parts.scheme or "").lower()
     authority = parts.netloc.lower()
     if not authority:
         return None
-    default_port = _DEFAULT_PORTS.get(scheme)
-    if default_port and authority.endswith(":" + default_port):
-        authority = authority[: -(len(default_port) + 1)]
-    return authority
+    return _strip_default_port(authority)
 
 
 def _normalize_authority(value: str, scheme: str = "") -> str:
     """Normalize a Host header / bare authority (lowercase, default port
-    stripped for the given scheme)."""
+    stripped). ``scheme`` is accepted for backward compatibility but is no
+    longer needed: both 80 and 443 are stripped so the result is symmetric
+    with the Origin side regardless of the request scheme."""
     authority = (value or "").strip().lower()
     if "://" in authority:
         authority = authority.split("://", 1)[1]
     if "/" in authority:
         authority = authority.split("/", 1)[0]
-    default_port = _DEFAULT_PORTS.get((scheme or "").lower())
-    if default_port and authority.endswith(":" + default_port):
-        authority = authority[: -(len(default_port) + 1)]
-    return authority
+    return _strip_default_port(authority)
 
 
 def _ws_origin_allowed(origin: str, host_headers, scheme: str) -> bool:
@@ -346,7 +359,18 @@ class AuthMiddleware:
                 if h
             ]
             if not _ws_origin_allowed(origin, host_candidates, scope.get("scheme", "ws")):
-                print(f"[AUTH] Blocked cross-origin WS handshake to {path} (Origin: {origin})")
+                # Log the effective Host and X-Forwarded-Host so a cross-origin
+                # block is self-diagnosing: the Origin is set by the browser to
+                # the page's origin, while Host is the authority the browser
+                # actually connected to. A mismatch between the two (e.g. a
+                # customHostname without a port, or a proxy rewriting Host)
+                # is exactly what this log exposes.
+                host = _get_header(scope, "host")
+                xfh = _get_header(scope, "x-forwarded-host")
+                print(
+                    f"[AUTH] Blocked WS handshake to {path} "
+                    f"(Origin: {origin} | Host: {host or '-'} | XFH: {xfh or '-'})"
+                )
                 await _reject_websocket(send)
                 return
 

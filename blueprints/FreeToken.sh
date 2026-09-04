@@ -10,70 +10,94 @@
 ### AIKORE-METADATA-END ###
 
 # ============================================================================
-# FreeToken Desktop blueprint for AiKore
+# FreeToken Desktop blueprint for AiKore -- OFFICIAL PROCESS, PURE FORM
 # ----------------------------------------------------------------------------
-# Instance = FreeToken MoE serving engine (OpenAI/Anthropic-compatible API on
-# loopback) + the OFFICIAL FreeToken Desktop application (Tauri GUI from the
-# FlashML-org/FreeToken-Web release), shown on the persistent KasmVNC desktop.
-# There is deliberately NO Open WebUI (removed): the user asked for the
-# official Desktop app, not a third-party web chat.
+# Official FreeToken Desktop experience in AiKore: the app installs and
+# manages its own engine (official process). Requires Ampere (sm_80+).
+# First model load downloads the engine (~5.5 GB) via the app UI.
 #
-# REQUIRES: NVIDIA Ampere (sm_80) or newer; official FreeToken releases only
-# (no source builds). Install takes ~10-15 min (release wheels + Desktop .deb).
+# WHAT THIS BLUEPRINT DOES (and ONLY this):
+#   1. Guards: NVIDIA GPU with compute capability >= 8.0 (Ampere) and GitHub
+#      reachability (the Desktop .deb is served from github.com).
+#   2. MINIMAL conda environment (python only): the platform expects a venv
+#      for the instance terminal. The ENGINE IS NOT INSTALLED HERE.
+#   3. Fake home (INSTANCE_CONF_DIR/internal_home) + XDG redirection, so the
+#      app's state (.config/freetoken/desktop.json) AND ITS ENGINE VENV
+#      (~/.freetoken/venv, ~5.5 GB) stay isolated and persistent per
+#      instance, without polluting /home/abc.
+#   4. Shared model storage: desktop.json models_dir + FREETOKEN_MODELS_DIR +
+#      HF_HOME all point to ${APP_DIR}/hf (sl_folder -> the shared persistent
+#      /config/models/huggingface), so models downloaded by the app (or by
+#      its engine) land in the shared store, not in a throwaway dir.
+#   5. FreeToken Desktop .deb: rolling "beta" release by default
+#      (DESKTOP_PIN_VERSION to freeze), dpkg -i with dpkg -x fallback, GUI
+#      libraries checked fail-fast BEFORE the download.
+#   6. Launch: wait for the X socket, start the GUI on the KasmVNC display
+#      with the WebKit software-rendering flags, then WAIT on it in the
+#      foreground as a supervisor and tear everything down on EXIT/INT/TERM
+#      (GUI + any residual engine left on the loopback port 1919).
 #
-# HOW THE PIECES FIT TOGETHER
-#   * The .deb (pinned v0.2.0-beta.16) is only the Tauri GUI: it does NOT
-#     contain the engine. If no engine is found, the app runs its bundled
-#     engine/install.sh which installs the release wheels into its own
-#     ~/.freetoken/venv -- a duplicate engine we must avoid. We therefore:
-#       1. install the engine ourselves in the AiKore conda venv (./env),
-#          from the OFFICIAL releases only (route below, sm_80+ required);
-#       2. pre-position the engine where the Desktop looks for it:
-#            - $HOME/.freetoken/venv/bin/ft  (canonical path, FREETOKEN_HOME)
-#            - $HOME/.local/bin/ft           (PATH symlink, as install.sh does)
-#            - $HOME/.config/environment.d/50-freetoken.conf (official marker)
-#            - export FREETOKEN_FT_BIN for the GUI session (the app logs
-#              "[ok] FREETOKEN_FT_BIN set for this session: <path>")
-#         -> the app reports the engine as installed and NEVER runs its own
-#            installer (which would create a duplicate engine venv).
-#   * ENGINE LIFECYCLE IS HYBRID (blueprint pre-launch + supervised restart):
-#     the blueprint PRE-LAUNCHES `ft serve` (default model FREETOKEN_MODEL) on
-#     the loopback port BEFORE the GUI and health-waits until it is reachable
-#     (run-1 topology). The engine is then SUPERVISED with RESTART (not
-#     teardown): if `ft serve` dies, the supervisor restarts it with backoff
-#     (5/15/30 s, 3 attempts max). Before each attempt it checks whether the
-#     port was taken over by something else (e.g. the Desktop app launching
-#     its own engine via FREETOKEN_FT_BIN); if so it stands down gracefully
-#     and never fights over the port. If the engine stays dead after 3
-#     attempts AND the port is free, it logs a final engine failure but does
-#     NOT destroy the instance -- the GUI remains usable. 1919 is the
-#     FreeToken + Desktop default port and should NOT be changed via FT_PORT
-#     unless you accept the Desktop not finding the engine automatically.
-#   * Desktop install: the blueprint runs as the unprivileged 'abc' user
-#     (svc-app/run: s6-setuidgid abc), so `dpkg -i` is not possible; the .deb
-#     is extracted with `dpkg -x` into a local prefix under APP_DIR + wrapper.
-#     The GUI libs (libgtk-3-0, libwebkit2gtk-4.1-0, libayatana-appindicator3-1)
-#     are baked into the image by the Dockerfile (apt is not usable as abc).
-#     (Tauri resource dir /usr/lib/"FreeToken Desktop" is re-linked when
-#     possible; the in-app engine installer is neutralized anyway, so a
-#     missing resource dir only costs the bundled installer, never the GUI.)
-#   * "Update engine" BLUE BANNER (engineInstall.updateAvailable):
-#       - Its button runs Rust `engine_install`, which executes the bundled
-#         engine/install.sh. We replace that script with a no-op (step 5b) so
-#         clicking can never install a duplicate engine over the
-#         blueprint-managed one.
-#   * models_dir ALIGNMENT: desktop.json models_dir + FREETOKEN_MODELS_DIR both
-#     point to ${APP_DIR}/hf (sl_folder -> shared /config/models/huggingface),
-#     the same store HF_HOME uses, so the app and the engine share model data.
-#   * Requires NVIDIA Ampere (sm_80) or newer; official FreeToken releases
-#     only (no source builds). GPU detection:
-#       - sm_80+ : pip freetoken==0.1.2 + pinned prebuilt kernel-cache wheel
-#         (sha256 a401e8d0...c120a4f). Install takes ~10-15 min.
-#       - < 8.0  : hard exit.
-#   * FREETOKEN_DISABLE_JIT=1 (prebuilt kernel cache only, no JIT).
-#   * Model storage: HF_HOME -> /config/models/huggingface (sl_folder) so the
-#     Desktop's HF downloads (hf-hub honors HF_HOME) are shared and persistent.
-#     FREETOKEN_MODELS_DIR points at the instance conf dir (persisted).
+# WHAT THE APP DOES ITSELF (official process -- the blueprint must NOT
+# interfere, and no longer does):
+#   * On first model load, the Desktop runs its BUNDLED engine installer
+#     (engine/install.sh shipped inside the .deb), which creates
+#     ~/.freetoken/venv (i.e. internal_home/.freetoken/venv, ~5.5 GB,
+#     persistent) and installs the official engine from the app's own
+#     release channel. Engine logs are visible in the app's "Logs" tab.
+#   * The app then starts/stops/supervises its engine (`ft serve`) on
+#     127.0.0.1:1919 itself.
+#   * Consequently this blueprint deliberately does NOT:
+#       - export FREETOKEN_FT_BIN (would make the app skip its own install),
+#       - create ~/.freetoken/venv/bin/ft or ~/.local/bin/ft symlinks,
+#       - write ~/.config/environment.d/50-freetoken.conf,
+#       - pip-install any freetoken wheel (no kernel-cache wheel either),
+#       - pre-launch `ft serve`, health-wait it, or supervise/restart it,
+#       - neutralize the bundled engine/install.sh (it is left EXACTLY as
+#         shipped -- the app NEEDS it for the official self-install).
+#     Any of the above would prevent the app from performing its official
+#     engine install. A one-shot migration (section 4b) cleans these
+#     artifacts if they were left behind by an older AiKore version.
+#
+# OPTIONAL HEADLESS USAGE (manual, NOT automated by this blueprint):
+#   FREETOKEN_MODEL / freetoken_serve_args are intentionally unused: the
+#   Desktop owns the engine lifecycle. If you ever want to drive the engine
+#   manually from the instance terminal (after the app has installed it
+#   once), you can serve a model headless:
+#       FREETOKEN_MODEL="Qwen/Qwen3-0.6B"
+#       ${INSTANCE_CONF_DIR}/internal_home/.freetoken/venv/bin/ft serve \
+#           --model "${FREETOKEN_MODEL}" --host 127.0.0.1 --port 1919
+#
+# DESKTOP INSTALL MODES (section 6):
+#   * DEFAULT (DESKTOP_PIN_VERSION empty): "always latest" rolling beta. The
+#     .deb is fetched from the MOVING "beta" release tag, so every new beta
+#     FlashML cuts is picked up automatically. Because the Desktop and the
+#     engine are released independently, a brand-new Desktop build is NOT
+#     guaranteed to be tested against the engine builds it installs itself;
+#     a WARNING is logged whenever the build changes since the last run.
+#   * PINNED (DESKTOP_PIN_VERSION=<tag>): the .deb is fetched from the
+#     immutable versioned tag v<tag>. The version stays frozen forever. An
+#     optional DESKTOP_DEB_SHA256 enables strict integrity verification
+#     (mismatch -> hard exit); if left empty the version is accepted with a
+#     warning (still frozen, just not sha-verified).
+#
+# RE-PIN PROCEDURE (to adopt a newer Desktop build in PINNED mode):
+#   1. List the versioned releases and pick the newest tag:
+#        curl -fsSL https://api.github.com/repos/FlashML-org/FreeToken-Web/releases \
+#          | jq -r '.[].tag_name' | grep -v '^beta$' | head -n1
+#   2. Download that tag's .deb and compute its real sha256 + version:
+#        curl -fsSL -o /tmp/freetoken-desktop-amd64.deb \
+#          "https://github.com/FlashML-org/FreeToken-Web/releases/download/<TAG>/freetoken-desktop-amd64.deb"
+#        sha256sum /tmp/freetoken-desktop-amd64.deb
+#        dpkg-deb -f /tmp/freetoken-desktop-amd64.deb Version
+#   3. Set DESKTOP_PIN_VERSION=<TAG> (without the leading 'v') and, optionally,
+#      DESKTOP_DEB_SHA256=<sha256> below.
+#   4. Sanity-check the internal structure still matches what we rely on:
+#      the binary at usr/bin/freetoken-desktop and the bundled engine
+#      installer at usr/lib/"FreeToken Desktop"/engine/install.sh (the app
+#      runs that installer itself on first model load -- it must stay
+#      pristine). If either moved, adapt the paths in install_desktop_app
+#      (they WARN and continue instead of failing, so a moved path degrades
+#      gracefully).
 #
 # PROCESS MODEL (persistent/KasmVNC mode)
 #   AiKore launches scripts/kasm_launcher.sh, which:
@@ -83,15 +107,14 @@
 #   The process manager monitors Xvnc (http on persistent_port marks the
 #   instance "started"; an optional firefox kiosk is opened on that port by
 #   the monitor thread). So there is NO foreground web process here: the
-#   blueprint launches the engine, then the GUI, in the background and WAITS
-#   on them in the foreground as a supervisor (it does NOT `exec` the GUI).
-#   The engine is pre-launched by the blueprint and supervised with restart
-#   (see above). On Stop the manager killpg's the whole group; this script's
-#   TERM/EXIT trap then kills the GUI and the supervised engine (escalating
-#   to SIGKILL) and, defensively, any residual `ft serve` on the loopback
-#   port, so the port is always released even if the GUI/engine ignore
-#   SIGTERM. Closing the GUI window stops the app and triggers the teardown
-#   (engine killed, port 1919 reclaimed) via the EXIT trap.
+#   blueprint launches the GUI in the background and WAITS on it in the
+#   foreground as a supervisor (it does NOT `exec` the GUI). On Stop the
+#   manager killpg's the whole group; this script's TERM/EXIT trap kills the
+#   GUI and, defensively, any residual engine bound to the loopback port
+#   (1919 is the FreeToken + Desktop default port: do not change FT_PORT
+#   unless you accept the Desktop not finding its engine). Closing the GUI
+#   window exits the supervisor and triggers the same teardown via the EXIT
+#   trap.
 #
 # PLATFORM NOTES (documentation only, not handled here)
 #   * Persistent UI: the platform does NOT read the blueprint's
@@ -99,10 +122,6 @@
 #     (eventHandlers.js forces it to false), so the user must tick
 #     "Persistent UI" manually at instance creation for the KasmVNC desktop
 #     to be shown.
-#   * environment.d: the ~/.config/environment.d/50-freetoken.conf marker is
-#     inert without a systemd user session (none here). The engine handoff is
-#     actually carried by FREETOKEN_FT_BIN (exported for the GUI session) and
-#     the absolute symlinks, which survive restarts.
 # ============================================================================
 
 set -e
@@ -110,7 +129,11 @@ set -e
 source /opt/sd-install/functions.sh
 source /opt/sd-install/versions.env
 
-# --- Load custom instance variables (may set FT_PORT, FREETOKEN_MODEL, ...) ---
+# --- Load custom instance variables ---
+# NOTE: unlike older AiKore versions, FREETOKEN_FT_BIN / FREETOKEN_MODEL /
+# freetoken_serve_args have NO effect on the blueprint anymore (official
+# process: the app manages its engine). FT_PORT is only used to reclaim the
+# loopback port defensively (see section 7).
 if [ -f "${INSTANCE_CONF_DIR}/aikore_vars.env" ]; then
     echo "--- Loading custom environment variables ---"
     source "${INSTANCE_CONF_DIR}/aikore_vars.env"
@@ -134,80 +157,70 @@ mkdir -p "${INSTANCE_OUTPUT_DIR}"
 APP_DIR="${INSTANCE_CONF_DIR}/freetoken"
 VENV_DIR="${INSTANCE_CONF_DIR}/env"
 
-# Internal FreeToken API port (loopback only). 1919 is the FreeToken engine
-# default AND the port FreeToken Desktop expects: do not override unless you
-# accept the Desktop not finding the blueprint-started engine automatically.
+# Internal FreeToken engine port (loopback only), used for the defensive
+# reclaim/cleanup below. 1919 is the FreeToken + Desktop default port and
+# should NOT be changed unless you accept the Desktop not finding its engine.
 FT_PORT="${FT_PORT:-1919}"
 
-# Default model (HF repo ID or local path). The Desktop downloads it on first
-# load (not at install); it is also the model used by the pre-launched
-# `ft serve` (section 6).
-FREETOKEN_MODEL="${FREETOKEN_MODEL:-Qwen/Qwen3-0.6B}"
-
-# Health-wait timeout for the pre-launched engine (seconds). The engine must
-# become reachable on the loopback port before the GUI is launched.
-FREETOKEN_HEALTH_TIMEOUT="${FREETOKEN_HEALTH_TIMEOUT:-900}"
-
-# Pinned versions (engine)
-FREETOKEN_VERSION="0.1.2"
-FREE_TOKEN_WHEEL="freetoken==${FREETOKEN_VERSION}"
-KERNEL_CACHE_WHEEL_URL="https://github.com/FlashML-org/FreeToken/releases/download/v${FREETOKEN_VERSION}/freetoken_kernel_cache-${FREETOKEN_VERSION}%2Bcu130-py3-none-linux_x86_64.whl"
-KERNEL_CACHE_WHEEL_SHA256="a401e8d0fb80405e99e120f20c43b207662110b2ba7a3b93c84e04887c120a4f"
-
-# Desktop download mode (TWO MODES, see also the header above):
-#   * DEFAULT (DESKTOP_PIN_VERSION empty): "always latest" rolling beta. The
-#     .deb is fetched from the MOVING "beta" release tag, so every new beta
-#     FlashML cuts is picked up automatically. Because the Desktop and the
-#     engine are released independently, a brand-new Desktop build is NOT
-#     guaranteed to be tested against the blueprint-managed engine; the
-#     blueprint therefore logs a WARNING whenever the build changes since the
-#     last run (see section 5). To freeze a version, set DESKTOP_PIN_VERSION.
-#   * PINNED (DESKTOP_PIN_VERSION=<tag>): the .deb is fetched from the
-#     immutable versioned tag v<tag>. The version stays frozen forever. An
-#     optional DESKTOP_DEB_SHA256 enables strict integrity verification
-#     (mismatch -> hard exit); if left empty the version is accepted with a
-#     warning (still frozen, just not sha-verified).
-#
-# RE-PIN PROCEDURE (to adopt a newer Desktop build in PINNED mode):
-#   1. List the versioned releases and pick the newest tag:
-#        curl -fsSL https://api.github.com/repos/FlashML-org/FreeToken-Web/releases \
-#          | jq -r '.[].tag_name' | grep -v '^beta$' | head -n1
-#   2. Download that tag's .deb and compute its real sha256 + version:
-#        curl -fsSL -o /tmp/freetoken-desktop-amd64.deb \
-#          "https://github.com/FlashML-org/FreeToken-Web/releases/download/<TAG>/freetoken-desktop-amd64.deb"
-#        sha256sum /tmp/freetoken-desktop-amd64.deb
-#        dpkg-deb -f /tmp/freetoken-desktop-amd64.deb Version
-#   3. Set DESKTOP_PIN_VERSION=<TAG> (without the leading 'v') and, optionally,
-#      DESKTOP_DEB_SHA256=<sha256> below.
-#   4. Sanity-check the internal structure still matches our patches (see
-#      section 5b): the engine installer must be at
-#      usr/lib/"FreeToken Desktop"/engine/install.sh and the binary at
-#      usr/bin/freetoken-desktop. If either moved, adapt the paths in
-#      install_desktop_app / neutralize_engine_installer (they now WARN and
-#      continue instead of failing, so a moved path degrades gracefully).
+# Desktop download mode (TWO MODES, see the header above):
+#   * rolling (DESKTOP_PIN_VERSION empty): always-latest "beta" tag.
+#   * pinned (DESKTOP_PIN_VERSION=<tag>): immutable versioned tag v<tag>;
+#     strict sha256 check when DESKTOP_DEB_SHA256 is set, warning-only
+#     otherwise. See the RE-PIN PROCEDURE in the header.
 DESKTOP_PIN_VERSION="${DESKTOP_PIN_VERSION:-}"
 DESKTOP_DEB_SHA256="${DESKTOP_DEB_SHA256:-}"
 DESKTOP_DEB_VERSION="${DESKTOP_DEB_VERSION:-}"
 DESKTOP_PACKAGE="free-token-desktop"
 
-# Marker written after the FreeToken runtime is installed (records GPU arch used).
-# Placed inside ${VENV_DIR}: clean_env removes only the venv on a "Rebuild
-# Environment" (see functions.sh), so this marker is carried away with it and a
-# rebuilt (empty) env is never wrongly treated as already installed.
-FT_INSTALL_MARKER="${VENV_DIR}/.freetoken_installed"
+# ============================================================================
+# 1. GPU guard: FreeToken requires an Ampere (sm_80) or newer GPU
+# ----------------------------------------------------------------------------
+# The official FreeToken engine only supports compute capability >= 8.0.
+# Fail fast with a clean message instead of letting the user discover it
+# inside the app after a multi-GB engine download.
+# ============================================================================
+check_gpu() {
+    local cap major minor capnum
+    if command -v nvidia-smi >/dev/null 2>&1; then
+        cap="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | tr -d '[:space:]')"
+    fi
+    if [ -z "${cap}" ]; then
+        echo "=============================================================="
+        echo "ERROR: No NVIDIA GPU detected (nvidia-smi unavailable or empty)."
+        echo "FreeToken requires an Ampere (RTX 30) or newer GPU"
+        echo "(compute capability >= 8.0)."
+        echo "=============================================================="
+        exit 1
+    fi
+
+    major="${cap%%.*}"
+    minor="${cap##*.}"
+    capnum=$((10#${major} * 10 + 10#${minor}))
+    echo "--- Detected GPU compute capability: ${cap} (sm_${cap}) ---"
+
+    if [ "${capnum}" -lt 80 ]; then
+        echo "=============================================================="
+        echo "ERROR: FreeToken requires an Ampere (RTX 30) or newer GPU"
+        echo "(compute capability >= 8.0). Found: ${cap}"
+        echo "The engine cannot serve on this GPU, so the instance is"
+        echo "stopped here (nothing was downloaded)."
+        echo "=============================================================="
+        exit 1
+    fi
+}
+check_gpu
 
 # ============================================================================
-# 0. GitHub connectivity guard
+# 2. GitHub connectivity guard
 # ----------------------------------------------------------------------------
 # Fail fast with a clear message if GitHub is unreachable instead of a cryptic
-# crash mid-download: the release downloads below (engine kernel-cache wheel,
-# Desktop .deb) are served from github.com / codeload.github.com.
+# crash mid-download: the Desktop .deb release download below is served from
+# github.com (assets redirect via objects.githubusercontent.com, release
+# archives come from codeload.github.com).
 # ============================================================================
 
 check_github_connectivity() {
     echo "--- Checking GitHub connectivity ---"
-    # Both hosts serve parts of the release downloads (kernel-cache wheel,
-    # Desktop .deb). Test both.
     if ! curl -fsI --max-time 10 https://codeload.github.com/ >/dev/null 2>&1; then
         echo "=============================================================="
         echo "ERROR: GitHub is inaccessible from this container."
@@ -221,8 +234,8 @@ check_github_connectivity() {
     if ! curl -fsI --max-time 10 https://github.com/ >/dev/null 2>&1; then
         echo "=============================================================="
         echo "ERROR: github.com is inaccessible from this container."
-        echo "The FreeToken release downloads (kernel-cache wheel, Desktop .deb)"
-        echo "are served from github.com and cannot be reached."
+        echo "The FreeToken Desktop .deb release download is served from"
+        echo "github.com and cannot be reached."
         echo "Configure a proxy (HTTPS_PROXY / HTTP_PROXY) or fix the network,"
         echo "then restart the instance."
         echo "=============================================================="
@@ -234,28 +247,14 @@ check_github_connectivity() {
 check_github_connectivity
 
 # ============================================================================
-# 1. Isolated HOME (the "fake home" pattern, same strategy as LMStudio)
+# 3. Minimal Conda environment (python only)
 # ----------------------------------------------------------------------------
-# FreeToken Desktop persists state in $HOME (config: .config/freetoken/, engine
-# home: .freetoken/, tool symlinks: .local/bin/, caches: .cache/). Redirecting
-# HOME into INSTANCE_CONF_DIR keeps every instance isolated and persistent
-# without polluting /home/abc. XDG_* vars are re-pointed too: the app (Rust
-# `dirs`/Tauri + WebKitGTK) honors them and they default to $HOME only when
-# unset -- the image sets XDG_CONFIG_HOME=/home/abc globally.
+# The platform expects a venv in the instance (terminal integration, "Rebuild
+# Environment", ...). The FreeToken ENGINE IS NOT INSTALLED HERE: the Desktop
+# app installs its own engine in its own venv (official process). This env is
+# just a usable python for the instance terminal and helper scripts.
 # ============================================================================
-FAKE_HOME="${INSTANCE_CONF_DIR}/internal_home"
-mkdir -p "${FAKE_HOME}"
-export HOME="${FAKE_HOME}"
-export XDG_CONFIG_HOME="${FAKE_HOME}/.config"
-export XDG_DATA_HOME="${FAKE_HOME}/.local/share"
-export XDG_CACHE_HOME="${FAKE_HOME}/.cache"
-mkdir -p "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
-echo "Instance Home Directory set to: ${FAKE_HOME}"
-
-# ============================================================================
-# 2. Conda environment
-# ============================================================================
-echo "--- Setting up Conda environment ---"
+echo "--- Setting up minimal Conda environment (python only; NO engine here) ---"
 conda clean -ya
 clean_env "${VENV_DIR}"
 
@@ -272,148 +271,83 @@ if [ ! -f "${VENV_DIR}/bin/pip" ]; then
 fi
 
 # ============================================================================
-# 2b. GUI system libraries (fail-fast BEFORE the heavy engine build)
+# 4. Isolated HOME (the "fake home" pattern, same strategy as LMStudio)
 # ----------------------------------------------------------------------------
-# The Desktop is a Tauri GUI: it needs libgtk-3, libwebkit2gtk-4.1 and the
-# ayatana appindicator libs at runtime. These are baked into the image by the
-# Dockerfile. The blueprint runs as the unprivileged 'abc' user
-# (svc-app/run: s6-setuidgid abc), so apt is NOT usable at runtime; if the
-# image is obsolete and libwebkit2gtk-4.1 is missing, we fail fast here --
-# BEFORE the engine install (~10-15 min) -- instead of discovering a dead
-# GUI at the end.
+# FreeToken Desktop persists state in $HOME (config: .config/freetoken/,
+# engine home + ITS OWN ENGINE VENV: .freetoken/venv (~5.5 GB), tool
+# symlinks: .local/bin/, caches: .cache/). Redirecting HOME into
+# INSTANCE_CONF_DIR keeps every instance isolated and persistent without
+# polluting /home/abc, and makes the app's self-installed engine persist
+# across restarts. XDG_* vars are re-pointed too: the app (Rust `dirs`/Tauri
+# + WebKitGTK) honors them and they default to $HOME only when unset -- the
+# image sets XDG_CONFIG_HOME=/home/abc globally.
 # ============================================================================
-ensure_gui_libraries() {
-    local missing=()
-    ldconfig -p 2>/dev/null | grep -q "libgtk-3.so.0" || missing+=(libgtk-3-0)
-    ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1.so.0" || missing+=(libwebkit2gtk-4.1-0)
-    ldconfig -p 2>/dev/null | grep -q "libayatana-appindicator3.so.1" || missing+=(libayatana-appindicator3-1)
-
-    if [ "${#missing[@]}" -gt 0 ]; then
-        echo "--- Missing GUI libraries: ${missing[*]} ---"
-        # The blueprint runs as 'abc', so apt is a no-op in practice; keep the
-        # root-only attempt for completeness (e.g. manual root runs).
-        if [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
-            echo "--- Installing via apt-get (no-install-recommends) ---"
-            apt-get update -y || true
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}" || true
-        fi
-        # Hard requirement for the Tauri GUI (WebKitGTK).
-        if ! ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1.so.0"; then
-            echo "=============================================================="
-            echo "ERROR: libwebkit2gtk-4.1.so.0 is missing from this image."
-            echo "The FreeToken Desktop GUI (Tauri/WebKitGTK) cannot start."
-            echo "This image is OBSOLETE: rebuild it with the updated Dockerfile"
-            echo "(adds libgtk-3-0, libwebkit2gtk-4.1-0, libayatana-appindicator3-1)"
-            echo "via the CI GitHub workflow, then restart the instance."
-            echo "=============================================================="
-            exit 1
-        fi
-        echo "[WARN] Some optional GUI libraries are missing (${missing[*]});"
-        echo "[WARN] the engine will still run, but the Desktop may lack tray/"
-        echo "[WARN] indicator support. Rebuild the image to get them."
-    fi
-}
-
-ensure_gui_libraries
+FAKE_HOME="${INSTANCE_CONF_DIR}/internal_home"
+mkdir -p "${FAKE_HOME}"
+export HOME="${FAKE_HOME}"
+export XDG_CONFIG_HOME="${FAKE_HOME}/.config"
+export XDG_DATA_HOME="${FAKE_HOME}/.local/share"
+export XDG_CACHE_HOME="${FAKE_HOME}/.cache"
+mkdir -p "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
+echo "Instance Home Directory set to: ${FAKE_HOME}"
 
 # ============================================================================
-# 3. GPU detection + FreeToken engine install (idempotent: skipped if installed)
-# ============================================================================
-detect_gpu_compute_cap() {
-    if command -v nvidia-smi >/dev/null 2>&1; then
-        nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | tr -d '[:space:]'
-    fi
-}
-
-install_freetoken() {
-    local cap
-    cap="$(detect_gpu_compute_cap || true)"
-    if [ -z "${cap}" ]; then
-        echo "=============================================================="
-        echo "ERROR: No NVIDIA GPU detected (nvidia-smi unavailable or empty)."
-        echo "FreeToken requires an Ampere (RTX 30) or newer GPU"
-        echo "(compute capability >= 8.0)."
-        echo "=============================================================="
-        exit 1
-    fi
-
-    local major="${cap%%.*}"
-    local minor="${cap##*.}"
-    local capnum=$((10#${major} * 10 + 10#${minor}))
-    echo "--- Detected GPU compute capability: ${cap} (capnum ${capnum}) ---"
-
-    if [ "${capnum}" -ge 80 ]; then
-        echo "--- GPU supports sm_80+ : installing prebuilt FreeToken ${FREETOKEN_VERSION} ---"
-        pip install "${FREE_TOKEN_WHEEL}"
-        echo "--- Installing prebuilt kernel-cache wheel (pinned) ---"
-        local kc_wheel="/tmp/freetoken_kernel_cache-${FREETOKEN_VERSION}+cu130-py3-none-linux_x86_64.whl"
-        wget -q --show-progress -O "${kc_wheel}" "${KERNEL_CACHE_WHEEL_URL}"
-        echo "${KERNEL_CACHE_WHEEL_SHA256}  ${kc_wheel}" | sha256sum -c -
-        pip install "${kc_wheel}"
-    else
-        echo "=============================================================="
-        echo "ERROR: FreeToken requires an Ampere (RTX 30) or newer GPU"
-        echo "(compute capability >= 8.0). Found: ${cap}"
-        echo "The Desktop GUI would still start, but no engine can serve on"
-        echo "this GPU, so the instance is stopped here."
-        echo "=============================================================="
-        exit 1
-    fi
-
-    echo "${cap}" > "${FT_INSTALL_MARKER}"
-}
-
-if [ -f "${FT_INSTALL_MARKER}" ] && [ -d "${VENV_DIR}" ] && command -v ft >/dev/null 2>&1; then
-    echo "--- FreeToken already installed (marker present, ft on PATH), skipping install ---"
-    cat "${FT_INSTALL_MARKER}"
-else
-    echo "--- FreeToken not installed yet (or environment rebuilt), installing ---"
-    install_freetoken
-fi
-
-# ============================================================================
-# 3b. Hand the engine over to FreeToken Desktop (neutralize its auto-install)
+# 4b. Migration cleanup: remove handoff artifacts from OLD AiKore versions
 # ----------------------------------------------------------------------------
-# The Desktop treats the engine as installed when it can resolve an `ft`
-# binary. We wire ALL the mechanisms it knows about (reverse-engineered from
-# the 0.2.0-beta.16 binary + the bundled engine/install.sh):
-#   1. FREETOKEN_FT_BIN env var for the GUI session (explicit, most reliable);
-#   2. $FREETOKEN_HOME/venv/bin/ft  (canonical install path of install.sh);
-#   3. ~/.local/bin/ft on PATH (install.sh's symlink);
-#   4. ~/.config/environment.d/50-freetoken.conf (official marker file).
-# With all four in place the app reports the engine as installed and its
-# in-app installer (which would create a duplicate engine venv in the fake
-# home) is never triggered. The symlinks are absolute -> they survive
-# across instance restarts; they are re-created here on every run so a
-# "Rebuild Environment" (venv wiped) heals them automatically.
+# Older versions of this blueprint pre-installed the engine themselves and
+# "handed it over" to the app (FREETOKEN_FT_BIN marker, ft symlinks,
+# environment.d marker, no-op engine/install.sh). With the official process
+# any leftover of that scheme would make the app believe an engine is
+# already installed and SKIP its own official install. Clean them up
+# (idempotent, no-op on fresh instances).
 # ============================================================================
-echo "--- Wiring FreeToken Desktop to the blueprint-managed engine ---"
-FT_HOME_DIR="${FAKE_HOME}/.freetoken"
-mkdir -p "${FT_HOME_DIR}/venv/bin" "${FAKE_HOME}/.local/bin" "${FAKE_HOME}/.config/environment.d"
-ln -sfn "${VENV_DIR}/bin/ft" "${FT_HOME_DIR}/venv/bin/ft"
-ln -sfn "${VENV_DIR}/bin/ft" "${FAKE_HOME}/.local/bin/ft"
-printf 'FREETOKEN_FT_BIN=%s\n' "${VENV_DIR}/bin/ft" > "${FAKE_HOME}/.config/environment.d/50-freetoken.conf"
-# Session-level env for the GUI (and any ft the Desktop spawns):
-export FREETOKEN_FT_BIN="${VENV_DIR}/bin/ft"
-export FREETOKEN_DISABLE_JIT=1
+migrate_remove_engine_handoff() {
+    local debroot="${APP_DIR}/debroot"
+    echo "--- Checking for legacy engine-handoff artifacts (old AiKore scheme) ---"
+    # 1. Session env: never hand an ft binary to the app.
+    if [ -n "${FREETOKEN_FT_BIN:-}" ]; then
+        echo "--- Unsetting legacy FREETOKEN_FT_BIN (${FREETOKEN_FT_BIN}) ---"
+        unset FREETOKEN_FT_BIN
+    fi
+    # 2. environment.d marker (inert without systemd, but remove it anyway).
+    rm -f "${XDG_CONFIG_HOME}/environment.d/50-freetoken.conf" 2>/dev/null || true
+    # 3. ft symlinks pointing at the old blueprint-managed venv. Only remove
+    #    SYMLINKS: a real ft binary would be the app's own official install.
+    if [ -L "${FAKE_HOME}/.freetoken/venv/bin/ft" ]; then
+        echo "--- Removing legacy symlink ${FAKE_HOME}/.freetoken/venv/bin/ft ---"
+        rm -f "${FAKE_HOME}/.freetoken/venv/bin/ft"
+    fi
+    if [ -L "${FAKE_HOME}/.local/bin/ft" ]; then
+        echo "--- Removing legacy symlink ${FAKE_HOME}/.local/bin/ft ---"
+        rm -f "${FAKE_HOME}/.local/bin/ft"
+    fi
+    # 4. Old no-op engine installer (AiKore-marked): wipe the extracted tree
+    #    so the app gets a PRISTINE bundled installer (the .deb is kept, a
+    #    fresh dpkg -x below restores the original install.sh).
+    if [ -f "${debroot}/usr/lib/FreeToken Desktop/engine/install.sh" ] && \
+       grep -q "AiKore" "${debroot}/usr/lib/FreeToken Desktop/engine/install.sh" 2>/dev/null; then
+        echo "--- Legacy no-op engine installer detected; wiping ${debroot} for a pristine re-extract ---"
+        rm -rf "${debroot}"
+    fi
+}
+migrate_remove_engine_handoff
 
 # ============================================================================
-# 4. Shared model storage (HF_HOME -> /config/models/huggingface)
+# 4c. Shared model storage (desktop.json models_dir + HF_HOME -> shared HF)
+# ----------------------------------------------------------------------------
+# Model storage: HF_HOME -> /config/models/huggingface (sl_folder) so the
+# Desktop's HF downloads (hf-hub honors HF_HOME) are shared and persistent.
+# We ALIGN the Desktop's own models_dir (desktop.json) and the engine-side
+# FREETOKEN_MODELS_DIR to the SAME shared store (${APP_DIR}/hf via
+# sl_folder), so models downloaded by the app or its engine can never
+# diverge. The Desktop keeps its registry in the fake home's
+# .config/freetoken/desktop.json (field 'models_dir').
 # ============================================================================
 echo "--- Setting up shared Hugging Face model storage ---"
 mkdir -p "${APP_DIR}/hf"
 sl_folder "${APP_DIR}" "hf" "/config/models" "huggingface"
 export HF_HOME="${APP_DIR}/hf"
 export HF_HUB_DISABLE_TELEMETRY=1
-
-# Where the Desktop stores converted/downloaded models (FTW checkpoints), and
-# where the engine stores its HF downloads. We ALIGN them to the SAME shared
-# /config/models/huggingface store (${APP_DIR}/hf via sl_folder) so the app and
-# the engine can never diverge. The Desktop keeps its own registry in the fake
-# home's .config/freetoken/desktop.json; the field is literally 'models_dir'
-# (confirmed in the 0.2.0-beta.16 binary: desktop.json holds models_dir,
-# daemon_url/port/token, hf_endpoint, ...). We honour BOTH the env var the Rust
-# runtime reads (FREETOKEN_MODELS_DIR) and desktop.json, both -> ${APP_DIR}/hf.
 export FREETOKEN_MODELS_DIR="${APP_DIR}/hf"
 
 # ----------------------------------------------------------------------------
@@ -444,7 +378,51 @@ PY
 write_desktop_config
 
 # ============================================================================
-# 5. FreeToken Desktop app (.deb, rolling beta by default / pinned optional)
+# 5. GUI system libraries (fail-fast BEFORE downloading the Desktop .deb)
+# ----------------------------------------------------------------------------
+# The Desktop is a Tauri GUI: it needs libgtk-3, libwebkit2gtk-4.1 and the
+# ayatana appindicator libs at runtime. These are baked into the image by the
+# Dockerfile. The blueprint runs as the unprivileged 'abc' user
+# (svc-app/run: s6-setuidgid abc), so apt is NOT usable at runtime; if the
+# image is obsolete and libwebkit2gtk-4.1 is missing, we fail fast here --
+# BEFORE the .deb download -- instead of discovering a dead GUI at the end.
+# ============================================================================
+ensure_gui_libraries() {
+    local missing=()
+    ldconfig -p 2>/dev/null | grep -q "libgtk-3.so.0" || missing+=(libgtk-3-0)
+    ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1.so.0" || missing+=(libwebkit2gtk-4.1-0)
+    ldconfig -p 2>/dev/null | grep -q "libayatana-appindicator3.so.1" || missing+=(libayatana-appindicator3-1)
+
+    if [ "${#missing[@]}" -gt 0 ]; then
+        echo "--- Missing GUI libraries: ${missing[*]} ---"
+        # The blueprint runs as 'abc', so apt is a no-op in practice; keep the
+        # root-only attempt for completeness (e.g. manual root runs).
+        if [ "$(id -u)" = "0" ] && command -v apt-get >/dev/null 2>&1; then
+            echo "--- Installing via apt-get (no-install-recommends) ---"
+            apt-get update -y || true
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}" || true
+        fi
+        # Hard requirement for the Tauri GUI (WebKitGTK).
+        if ! ldconfig -p 2>/dev/null | grep -q "libwebkit2gtk-4.1.so.0"; then
+            echo "=============================================================="
+            echo "ERROR: libwebkit2gtk-4.1.so.0 is missing from this image."
+            echo "The FreeToken Desktop GUI (Tauri/WebKitGTK) cannot start."
+            echo "This image is OBSOLETE: rebuild it with the updated Dockerfile"
+            echo "(adds libgtk-3-0, libwebkit2gtk-4.1-0, libayatana-appindicator3-1)"
+            echo "via the CI GitHub workflow, then restart the instance."
+            echo "=============================================================="
+            exit 1
+        fi
+        echo "[WARN] Some optional GUI libraries are missing (${missing[*]});"
+        echo "[WARN] the Desktop may lack tray/indicator support."
+        echo "[WARN] Rebuild the image to get them."
+    fi
+}
+
+ensure_gui_libraries
+
+# ============================================================================
+# 6. FreeToken Desktop app (.deb, rolling beta by default / pinned optional)
 # ----------------------------------------------------------------------------
 # The Desktop is a Tauri GUI: it needs libgtk-3, libwebkit2gtk-4.1 and the
 # ayatana appindicator libs at runtime. These are baked into the image by the
@@ -452,8 +430,11 @@ write_desktop_config
 # usable at runtime; ensure_gui_libraries above fail-fasts if the image is
 # obsolete). The .deb itself is installed with dpkg -i (installs to /usr/bin);
 # as 'abc' that will fail, so we fall back to dpkg -x into a local prefix and
-# wrap the binary (Tauri bundles its web assets inside the binary, so only the
-# bundled engine installer resource is lost -- which we neutralize anyway).
+# wrap the binary (Tauri bundles its web assets inside the binary, so only
+# absolute paths are lost; Tauri resolves its resource dir relative to the
+# binary, so the bundled engine/install.sh stays reachable from the local
+# prefix too). NOTE: the bundled engine/install.sh is LEFT PRISTINE -- the
+# app runs it itself on first model load (official self-install).
 # ============================================================================
 # Download + verify the Desktop .deb and set DESKTOP_DEB_VERSION / DESKTOP_DEB_SHA256
 # to the ACTUAL downloaded build. Two modes (see header):
@@ -617,7 +598,7 @@ install_desktop_app() {
     chmod +x "${bin}" 2>/dev/null || true
     echo "${DESKTOP_DEB_VERSION}" > "${debroot}/.installed_version"
     # Menu/icons integration inside the isolated HOME.
-    mkdir -p "${XDG_DATA_HOME}/applications"
+    mkdir -p "${XDG_DATA_HOME}/applications" "${XDG_DATA_HOME}/icons"
     # The .desktop's Exec points at /usr/bin/freetoken-desktop, which does not
     # exist in the dpkg -x fallback; rewrite it to the local binary so the menu
     # entry actually launches the GUI.
@@ -633,8 +614,9 @@ install_desktop_app() {
     else
         echo "[WARN] Desktop icons dir not found; icon copy skipped."
     fi
-    # If we happen to be root, link the Tauri resource dir so the (already
-    # neutralized) in-app engine installer would still be findable.
+    # If we happen to be root, link the Tauri resource dir (which contains the
+    # bundled engine/install.sh the app needs for its official self-install)
+    # so the app finds it at the absolute path it expects.
     if [ "$(id -u)" = "0" ]; then
         ln -sfn "${debroot}/usr/lib/FreeToken Desktop" "/usr/lib/FreeToken Desktop" 2>/dev/null || true
     fi
@@ -645,81 +627,23 @@ install_desktop_app() {
 
 echo "--- Setting up FreeToken Desktop GUI ---"
 if ! install_desktop_app; then
-    echo "ERROR: FreeToken Desktop could not be installed. The engine would run,"
-    echo "but without the requested GUI the instance is stopped here."
+    echo "ERROR: FreeToken Desktop could not be installed. The instance is"
+    echo "stopped here (without the GUI there is no usable FreeToken)."
     exit 1
 fi
 
 # ============================================================================
-# 5b. Neutralize the in-app engine installer ("Update engine"/"Install engine")
+# 7. Reclaim an orphaned engine on the loopback port (defensive)
 # ----------------------------------------------------------------------------
-# The Desktop shows a blue banner "A newer FreeToken engine build is available"
-# with an "Update engine" button (frontend key engineInstall.updateAvailable ->
-# Rust command `engine_install` -> runs the bundled engine/install.sh). If the
-# user clicked it, the bundled installer would create a second engine venv in
-# the fake home, duplicating (and possibly shadowing) the blueprint-managed
-# engine. We therefore replace the bundled installer (extracted by
-# dpkg -x into ${debroot}) with a no-op that only logs. Even if the banner is
-# shown and the button is clicked, nothing harmful can happen. Idempotent: the
-# no-op carries an "AiKore" marker so a re-run (or a fresh dpkg -x after a
-# rebuild) re-applies cleanly.
+# If a previous run (or a crashed Stop) left an engine alive, the loopback
+# port is still bound. Detect it, kill the orphan with a clear message, then
+# let the app start its own engine cleanly. Re-attaching to an unknown orphan
+# is fragile (its model/state are not ours), so we always reclaim. This is
+# pure residual safety: normally the previous teardown already freed the port.
 # ============================================================================
-neutralize_engine_installer() {
-    local debroot="${APP_DIR}/debroot"
-    local engine_dir="${debroot}/usr/lib/FreeToken Desktop/engine"
-    if [ ! -d "${engine_dir}" ]; then
-        echo "[WARN] Desktop engine resource dir not found; skipping installer neutralization."
-        return 0
-    fi
-    if [ -f "${engine_dir}/install.sh" ] && grep -q "AiKore" "${engine_dir}/install.sh" 2>/dev/null; then
-        echo "--- engine installers already neutralized (no-op present), skipping ---"
-        return 0
-    fi
-    echo "--- Neutralizing FreeToken Desktop engine installer (Update/Install -> no-op) ---"
-    cat > "${engine_dir}/install.sh" <<'SH'
-#!/usr/bin/env bash
-# AiKore no-op: the FreeToken engine is managed by the AiKore blueprint
-# (official v0.1.2 wheel + pinned kernel-cache, FREETOKEN_DISABLE_JIT=1).
-# This intercepts "Update engine" / "Install engine" / "Reinstall engine" so
-# the Desktop can never install a duplicate engine over the managed one.
-echo "$(date -u +%FT%TZ) [freetoken-desktop] engine install/update requested but blocked by AiKore (engine managed by blueprint: official v0.1.2)." >> /tmp/freetoken_engine_install.log
-exit 0
-SH
-    chmod +x "${engine_dir}/install.sh"
-    # Windows-only bundle; make it inert too (not used on this Linux image).
-    echo "# AiKore no-op; see engine/install.sh" > "${engine_dir}/install.ps1"
-    echo "--- engine installers neutralized ---"
-}
-neutralize_engine_installer
-
-# ============================================================================
-# 6. Engine lifecycle: HYBRID (blueprint pre-launch + supervised restart)
-# ----------------------------------------------------------------------------
-# The blueprint PRE-LAUNCHES `ft serve` (default model FREETOKEN_MODEL) on the
-# loopback port BEFORE the GUI, exactly like the run that worked, and health-
-# waits until the engine is reachable. The engine is then SUPERVISED with
-# RESTART (not teardown): if `ft serve` dies, the supervisor restarts it with
-# backoff (5/15/30 s, 3 attempts max). Before each attempt it checks whether
-# the port was taken over by something else (e.g. the Desktop app launching
-# its own engine via FREETOKEN_FT_BIN); if so it stands down gracefully and
-# never fights over the port. If the engine stays dead after 3 attempts AND
-# the port is free, the supervisor logs a final engine failure but does NOT
-# destroy the instance -- the GUI remains usable.
-#
-# The Desktop app is wired to the same engine via the 4 handoff mechanisms
-# (section 3b): FREETOKEN_FT_BIN, $FREETOKEN_HOME/venv/bin/ft, ~/.local/bin/ft
-# and environment.d/50-freetoken.conf. Because the blueprint already owns the
-# port, the app detects "engine already running" and attaches to it instead of
-# spawning a duplicate.
-# ============================================================================
-
-# --- Reclaim an orphaned engine on the loopback port (defensive) ---
-# If a previous Stop left an engine alive, the port is still bound. Detect it,
-# kill the orphan with a clear message, then start fresh. Re-attaching to an
-# unknown orphan is fragile (its model/state are not ours), so we always
-# reclaim.
 free_ft_port() {
     if python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', ${FT_PORT})); s.close()" 2>/dev/null; then
+        echo "--- Port ${FT_PORT} is free (no orphaned engine). ---"
         return 0
     fi
     echo "=============================================================="
@@ -727,7 +651,7 @@ free_ft_port() {
     echo "a previous run that survived the last Stop). Reclaiming it..."
     echo "=============================================================="
     local pids=""
-    pids="$(ss -tlnp 2>/dev/null | awk -v p=":${FT_PORT} " '$0 ~ p { for(i=1;i<=NF;i++) if($i ~ /^pid=/) { gsub(/pid=/,"",$i); gsub(/,.*/,"",$i); print $i } }' | sort -u)"
+    pids="$(ss -tlnp 2>/dev/null | awk -v p=":${FT_PORT} " '$0 ~ p { for(i=1;i<=NF;i++) if($i ~ /^pid=/) { gsub(/pid=/,"",$i); gsub(/,.*/,"",$i); print $i } }' | sort -u || true)"
     if [ -z "${pids}" ]; then
         pids="$(fuser "${FT_PORT}/tcp" 2>/dev/null || true)"
     fi
@@ -746,96 +670,40 @@ free_ft_port() {
 }
 free_ft_port
 
-# --- Instance diagnostics log directory ---
+# --- Instance diagnostics log directory (GUI output) ---
 LOGS_DIR="${INSTANCE_CONF_DIR}/logs"
 mkdir -p "${LOGS_DIR}"
-FT_SERVE_LOG="${LOGS_DIR}/ft-serve.log"
 GUI_LOG="${LOGS_DIR}/freetoken-desktop.log"
 
-# --- Port helper: returns 0 when the loopback port is free (bind succeeds) ---
-port_free() {
-    python3 -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', ${FT_PORT})); s.close()" 2>/dev/null
-}
-
-# --- Start the engine (background, output appended to ft-serve.log) ---
-start_engine() {
-    echo "$(date -u +%FT%TZ) [supervisor] starting ft serve --model ${FREETOKEN_MODEL} --host 127.0.0.1 --port ${FT_PORT}"
-    "${VENV_DIR}/bin/ft" serve --model "${FREETOKEN_MODEL}" --host 127.0.0.1 --port "${FT_PORT}" >> "${FT_SERVE_LOG}" 2>&1 &
-    ENGINE_PID=$!
-    engine_dead_handled=0
-    echo "$(date -u +%FT%TZ) [supervisor] FreeToken engine PID: ${ENGINE_PID}"
-}
-
-# --- Health-wait: block until the engine is reachable on the loopback port ---
-wait_engine_healthy() {
-    local deadline=$(( $(date +%s) + FREETOKEN_HEALTH_TIMEOUT ))
-    echo "--- Waiting for FreeToken engine to become healthy on 127.0.0.1:${FT_PORT} (timeout ${FREETOKEN_HEALTH_TIMEOUT}s) ---"
-    while [ "$(date +%s)" -lt "${deadline}" ]; do
-        if ! kill -0 "${ENGINE_PID}" 2>/dev/null; then
-            echo "ERROR: FreeToken engine process died during startup."
-            return 1
-        fi
-        if python3 -c "import socket; s=socket.create_connection(('127.0.0.1', ${FT_PORT}), timeout=2); s.close()" 2>/dev/null; then
-            echo "--- FreeToken engine is healthy on 127.0.0.1:${FT_PORT} ---"
-            return 0
-        fi
-        sleep 2
-    done
-    echo "ERROR: FreeToken engine did not become healthy within ${FREETOKEN_HEALTH_TIMEOUT}s."
-    return 1
-}
-
-# --- Copy the most recent Desktop internal logs for autodiagnosis ---
-copy_app_logs() {
-    echo "--- Copying recent FreeToken Desktop internal logs for autodiagnosis ---"
-    local dirs=("${FAKE_HOME}/.config/freetoken" "${FAKE_HOME}/.freetoken")
-    local d newest
-    for d in "${dirs[@]}"; do
-        if [ -d "${d}" ]; then
-            newest="$(find "${d}" -maxdepth 2 -name '*.log' -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-)"
-            if [ -n "${newest}" ] && [ -f "${newest}" ]; then
-                echo "--- Last 50 lines of ${newest} ---"
-                tail -n 50 "${newest}" 2>/dev/null || true
-            fi
-        fi
-    done
-}
-
-# --- Supervisor teardown (no `exec` of the GUI) ---
+# ============================================================================
+# 8. Teardown handler: kill the GUI + any residual engine on the loopback port
+# ----------------------------------------------------------------------------
 # This script stays alive as the supervisor: it launches the GUI in the
 # background and waits on it in the foreground. On any exit or signal
 # (TERM/INT from the manager's killpg, or the GUI closing) it kills the GUI
-# and the supervised engine, escalating to SIGKILL after a short grace period.
-# It also defensively kills any residual `ft serve` on the loopback port so the
-# port is ALWAYS released even if the GUI/engine ignore SIGTERM.
+# and, defensively, any residual engine process the Desktop daemon may have
+# left bound to the loopback port, so the port is ALWAYS released even if the
+# GUI/engine ignore SIGTERM. The engine itself is app-managed: we do not own
+# it, we only free its port on the way out.
+# ============================================================================
 cleanup() {
-    echo "--- FreeToken teardown: stopping GUI (PID ${GUI_PID:-none}) and engine (PID ${ENGINE_PID:-none}) on port ${FT_PORT} ---"
+    echo "--- FreeToken teardown: stopping GUI (PID ${GUI_PID:-none}), reclaiming port ${FT_PORT} ---"
     if [ -n "${GUI_PID:-}" ]; then
         kill "${GUI_PID}" 2>/dev/null || true
     fi
-    if [ -n "${ENGINE_PID:-}" ]; then
-        kill "${ENGINE_PID}" 2>/dev/null || true
-    fi
-    # Kill any residual `ft serve` the Desktop daemon may have left running.
     local engine_pids=""
-    if [ -f "${FAKE_HOME}/.freetoken/engine.pid" ]; then
-        engine_pids="$(cat "${FAKE_HOME}/.freetoken/engine.pid" 2>/dev/null || true)"
-    fi
-    if [ -z "${engine_pids}" ]; then
-        engine_pids="$(ss -tlnp 2>/dev/null | awk -v p=":${FT_PORT} " '$0 ~ p { for(i=1;i<=NF;i++) if($i ~ /^pid=/) { gsub(/pid=/,"",$i); gsub(/,.*/,"",$i); print $i } }' | sort -u)"
-    fi
+    engine_pids="$(ss -tlnp 2>/dev/null | awk -v p=":${FT_PORT} " '$0 ~ p { for(i=1;i<=NF;i++) if($i ~ /^pid=/) { gsub(/pid=/,"",$i); gsub(/,.*/,"",$i); print $i } }' | sort -u || true)"
     if [ -z "${engine_pids}" ]; then
         engine_pids="$(fuser "${FT_PORT}/tcp" 2>/dev/null || true)"
     fi
     if [ -n "${engine_pids}" ]; then
-        echo "--- Stopping residual engine process(es): ${engine_pids} ---"
+        echo "--- Stopping residual engine process(es) on port ${FT_PORT}: ${engine_pids} ---"
         kill ${engine_pids} 2>/dev/null || true
     fi
     local i=0
     while [ "${i}" -lt 10 ]; do
         local alive=0
         if [ -n "${GUI_PID:-}" ] && kill -0 "${GUI_PID}" 2>/dev/null; then alive=1; fi
-        if [ -n "${ENGINE_PID:-}" ] && kill -0 "${ENGINE_PID}" 2>/dev/null; then alive=1; fi
         if [ -n "${engine_pids}" ]; then
             for ep in ${engine_pids}; do
                 if kill -0 "${ep}" 2>/dev/null; then alive=1; fi
@@ -846,19 +714,19 @@ cleanup() {
         i=$((i+1))
     done
     if [ -n "${GUI_PID:-}" ]; then kill -KILL "${GUI_PID}" 2>/dev/null || true; fi
-    if [ -n "${ENGINE_PID:-}" ]; then kill -KILL "${ENGINE_PID}" 2>/dev/null || true; fi
     if [ -n "${engine_pids}" ]; then kill -KILL ${engine_pids} 2>/dev/null || true; fi
+    echo "--- Teardown complete: GUI stopped, port ${FT_PORT} released. ---"
 }
 trap cleanup EXIT SIGINT SIGTERM
 
 # ============================================================================
-# 7. Pre-launch engine, then launch the GUI, then supervise both
+# 9. Wait for the X socket, then launch the GUI (foreground supervision)
 # ----------------------------------------------------------------------------
 # DISPLAY is allocated by the process manager and owned by the Xvnc started by
-# kasm_launcher.sh (persistent mode). Wait for the X socket, then pre-launch
-# the engine and health-wait, then launch the GUI in the background and
-# supervise both in the foreground. WebKitGTK software-rendering flags are set
-# because KasmVNC runs a plain Xvnc with no GPU-accelerated GL.
+# kasm_launcher.sh (persistent mode). Wait for the X socket, then launch the
+# GUI in the background and supervise it in the foreground. WebKitGTK
+# software-rendering flags are set because KasmVNC runs a plain Xvnc with no
+# GPU-accelerated GL.
 # ============================================================================
 export DISPLAY="${DISPLAY:-:1}"
 SOCKET_FILE="/tmp/.X11-unix/X${DISPLAY#:}"
@@ -880,32 +748,41 @@ export WEBKIT_DISABLE_DMABUF_RENDERER=1
 export WEBKIT_DISABLE_COMPOSITING_MODE=1
 export GDK_BACKEND=x11
 
-# --- Pre-launch the engine and health-wait BEFORE the GUI (run-1 topology) ---
-start_engine
-if ! wait_engine_healthy; then
-    echo "ERROR: FreeToken engine failed to become healthy. The GUI will not be launched."
-    exit 1
-fi
-
 # --- Launch the FreeToken Desktop GUI (output appended to the instance log) ---
 echo "--- Launching FreeToken Desktop GUI: ${DESKTOP_BIN} ---"
 "${DESKTOP_BIN}" >> "${GUI_LOG}" 2>&1 &
 GUI_PID=$!
 echo "FreeToken Desktop GUI PID: ${GUI_PID}"
 
-# --- Supervisor loop: monitor GUI + engine ---
-# The supervisor stays alive (no exec) so its EXIT/TERM traps keep working.
-# If the GUI dies, log its exit code, copy the app's internal logs for
-# autodiagnosis, then teardown (cleanup kills the engine and reclaims 1919).
-# If the engine dies, restart it with backoff (5/15/30 s, 3 attempts max),
-# standing down if the port is taken over by the Desktop app's own engine.
-restart_attempts=0
-backoff=(5 15 30)
-engine_standing_down=0
-engine_dead_handled=0
+# --- Final log: the engine lifecycle belongs to the app (official process) ---
+echo "=============================================================="
+echo " FreeToken Desktop is starting on the KasmVNC display (${DISPLAY})."
+echo " The engine is NOT installed by this blueprint: it will be installed"
+echo " on first model load inside the app (see its Logs tab)."
+echo "=============================================================="
 
+# --- Copy the most recent Desktop internal logs for autodiagnosis ---
+copy_app_logs() {
+    echo "--- Copying recent FreeToken Desktop internal logs for autodiagnosis ---"
+    local dirs=("${FAKE_HOME}/.config/freetoken" "${FAKE_HOME}/.freetoken")
+    local d newest
+    for d in "${dirs[@]}"; do
+        if [ -d "${d}" ]; then
+            newest="$(find "${d}" -maxdepth 2 -name '*.log' -type f -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-)"
+            if [ -n "${newest}" ] && [ -f "${newest}" ]; then
+                echo "--- Last 50 lines of ${newest} ---"
+                tail -n 50 "${newest}" 2>/dev/null || true
+            fi
+        fi
+    done
+}
+
+# --- Supervisor loop: wait on the GUI in the foreground (no exec) ---
+# The supervisor stays alive (no exec) so its EXIT/TERM traps keep working.
+# If the GUI dies (user closed the window or it crashed), log its exit code,
+# copy the app's internal logs for autodiagnosis, then exit: the EXIT trap
+# reclaims the loopback port and the manager sees the instance as stopped.
 while true; do
-    # GUI died -> teardown
     if ! kill -0 "${GUI_PID}" 2>/dev/null; then
         set +e
         wait "${GUI_PID}"
@@ -915,29 +792,8 @@ while true; do
         copy_app_logs
         break
     fi
-
-    # Engine died -> supervised restart (handle each death exactly once)
-    if ! kill -0 "${ENGINE_PID}" 2>/dev/null; then
-        if [ "${engine_dead_handled}" = "0" ]; then
-            engine_dead_handled=1
-            wait "${ENGINE_PID}" 2>/dev/null || true
-            echo "$(date -u +%FT%TZ) [supervisor] FreeToken engine (PID ${ENGINE_PID}) died."
-            if [ "${engine_standing_down}" = "1" ]; then
-                echo "$(date -u +%FT%TZ) [supervisor] engine standing down; not restarting."
-            elif [ "${restart_attempts}" -ge 3 ]; then
-                echo "$(date -u +%FT%TZ) [supervisor] engine failed after 3 restart attempts; leaving it down (GUI remains usable)."
-                engine_standing_down=1
-            elif ! port_free; then
-                echo "$(date -u +%FT%TZ) [supervisor] engine port now managed by Desktop app, standing down."
-                engine_standing_down=1
-            else
-                sleep "${backoff[restart_attempts]}"
-                restart_attempts=$((restart_attempts+1))
-                echo "$(date -u +%FT%TZ) [supervisor] restarting engine (attempt ${restart_attempts}/3)..."
-                start_engine
-            fi
-        fi
-    fi
-
     sleep 1
 done
+
+echo "--- FreeToken Desktop closed. ---"
+exit 0
