@@ -1,6 +1,6 @@
 import { state, DOM } from './state.js';
 import { fetchInstances, fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSystemStats, fetchAvailablePythonVersions, fetchCudaVersions } from './api.js';
-import { renderInstanceRow, updateSystemStats, checkRowForChanges, buildInstanceUrl, showToast } from './ui.js';
+import { renderInstanceRow, updateSystemStats, checkRowForChanges, buildInstanceUrl, showToast, refreshAllGpuCells } from './ui.js';
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
 import { showWelcomeScreen, showBuilderView, renderBuilderStatus } from './tools.js';
@@ -208,6 +208,11 @@ async function initializeApp() {
             state.systemInfo = systemInfo;
             state.availableBlueprints = blueprints;
             state.availablePorts = ports.available_ports;
+
+            // Authoritative GPU list is now known: (re)populate the instance GPU
+            // checkboxes immediately instead of waiting for the next table render
+            // (the table rendered before /api/system/info answered).
+            try { refreshAllGpuCells(); } catch (e) { console.warn('GPU repopulate failed:', e); }
 
             // One refresh so the freshly loaded dropdown/blueprint/GPU data
             // shows up without waiting for the next poll tick.

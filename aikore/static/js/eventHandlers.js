@@ -2,7 +2,7 @@ import { state, DOM } from './state.js';
 import * as api from './api.js';
 import { showToolsMenu, hideToolsMenu } from './modals.js';
 import { openEditor, openTerminal, showVersionCheckView, openInstanceView, showLogViewer, showInstanceWheelsManager } from './tools.js';
-import { renderInstanceRow, buildInstanceUrl, showToast } from './ui.js';
+import { renderInstanceRow, buildInstanceUrl, showToast, resolveGpuIds } from './ui.js';
 import { fetchAndRenderInstances } from './main.js';
 
 export function setupMainEventListeners() {
@@ -95,7 +95,7 @@ export function setupMainEventListeners() {
                     changes.output_path = { old: row.dataset.originalOutputPath || '', new: outputPathField.value };
                     hasOutputPathChange = true;
                 }
-                const selectedGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(',');
+                const selectedGpuIds = resolveGpuIds(row);
                 if (selectedGpuIds !== row.dataset.originalGpuIds) {
                     changes.gpu_ids = { old: row.dataset.originalGpuIds, new: selectedGpuIds };
                 }
@@ -197,7 +197,7 @@ export function setupMainEventListeners() {
                     name: row.querySelector('input[data-field="name"]').value,
                     base_blueprint: bpSelect.disabled ? undefined : bpSelect.value,
                     output_path: outPathInput.disabled ? undefined : (outPathInput.value || null),
-                    gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
+                    gpu_ids: resolveGpuIds(row),
                     autostart: row.querySelector('input[data-field="autostart"]').checked,
                     persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
                     hostname: row.querySelector('input[data-field="hostname"]').value || null,
@@ -261,7 +261,7 @@ export function setupMainEventListeners() {
                         name: row.querySelector('input[data-field="name"]').value,
                         base_blueprint: row.querySelector('[data-field="base_blueprint"]').value,
                         output_path: row.querySelector('input[data-field="output_path"]').value || null,
-                        gpu_ids: Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked')).map(cb => cb.value).join(','),
+                        gpu_ids: resolveGpuIds(row),
                         autostart: row.querySelector('input[data-field="autostart"]').checked,
                         persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
                         hostname: row.querySelector('input[data-field="hostname"]').value || null,

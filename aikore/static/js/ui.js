@@ -285,6 +285,100 @@ function normalizeStr(str) {
     return (str === null || str === undefined) ? '' : String(str);
 }
 
+// --- GPU list helpers -------------------------------------------------------
+// The GPU list driving the instance GPU checkboxes lives in state.systemInfo
+// (/api/system/info). During the progressive boot that payload may not have
+// arrived when the instance table is first rendered, so we also fall back to
+// the cached /api/system/stats payload (the source of the monitoring panel,
+// which already proved the GPUs are present). Returns an array (possibly empty).
+function getGpuList() {
+    const sysGpus = state.systemInfo && Array.isArray(state.systemInfo.gpus)
+        ? state.systemInfo.gpus
+        : null;
+    if (sysGpus && sysGpus.length > 0) return sysGpus;
+
+    const statGpus = state.systemStats && Array.isArray(state.systemStats.gpus)
+        ? state.systemStats.gpus
+        : null;
+    if (statGpus && statGpus.length > 0) return statGpus;
+
+    // /api/system/info answered with a GPU count but no array detail — fabricate
+    // the expected count so checkboxes render.
+    if (state.systemInfo && state.systemInfo.gpu_count) {
+        return new Array(state.systemInfo.gpu_count).fill({});
+    }
+
+    return [];
+}
+
+function getGpuCount() {
+    return getGpuList().length;
+}
+
+// Safely compute the gpu_ids the user effectively has on a row. Guards against
+// wiping an existing assignment when the GPU list hasn't loaded yet (so the
+// checkboxes simply don't exist to be checked): in that case the original,
+// DB-persisted assignment is preserved instead of being replaced by "".
+export function resolveGpuIds(row) {
+    const selected = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked'))
+        .map(cb => cb.value)
+        .join(','); // Already sorted by DOM order (0, 1, 2)
+    if (selected !== '') return selected;
+
+    const original = (row.dataset.originalGpuIds || '').split(',').filter(Boolean).join(',');
+    const listLoaded = getGpuCount() > 0;
+    if (original && !listLoaded) {
+        // GPU list not revealed yet — the empty selection is not a real user
+        // decision (no checkboxes could be rendered), so keep the assignment.
+        return original;
+    }
+    return selected; // '' is only honored once the GPU list is actually present
+}
+
+// Rebuild every instance row's GPU checkboxes from the latest GPU list, while
+// preserving whatever the user has currently ticked. Safe to run at any time
+// (cheap, no-op when nothing changed).
+export function refreshAllGpuCells() {
+    const gpuCount = getGpuCount();
+    if (gpuCount === state.lastGpuCount && state.gpuDataLoaded) return;
+
+    const rows = document.querySelectorAll('#instances-table tr');
+    rows.forEach(row => {
+        const cell = row.querySelector('.gpu-checkbox-container');
+        if (!cell) return;
+
+        const instanceId = row.dataset.id;
+        // Preserve current ticked GPUs across a rebuild.
+        const selected = Array.from(cell.querySelectorAll('input[name^="gpu_id_"]:checked'))
+            .map(cb => Number(cb.value));
+        // Also restore the DB-persisted assignment in case nothing is ticked yet.
+        const assignedGpus = normalizeGpuIds(row.dataset.originalGpuIds || '').split(',').filter(Boolean);
+
+        const minCount = assignedGpus.reduce((m, id) => Math.max(m, parseInt(id, 10) + 1), 0);
+        const count = Math.max(gpuCount, minCount);
+
+        cell.innerHTML = '';
+        for (let i = 0; i < count; i++) {
+            const label = document.createElement('label');
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.name = `gpu_id_${instanceId || 'new'}_${i}`;
+            checkbox.value = i;
+            checkbox.checked = selected.includes(i) || assignedGpus.includes(String(i));
+            label.appendChild(checkbox);
+            label.appendChild(document.createTextNode(` ${i}`));
+            cell.appendChild(label);
+        }
+        if (count === 0) cell.textContent = 'N/A';
+
+        checkRowForChanges(row);
+    });
+
+    state.lastGpuCount = gpuCount;
+    state.gpuDataLoaded = true;
+}
+
+
 export function checkRowForChanges(row) {
     let changed = false;
 
@@ -300,9 +394,7 @@ export function checkRowForChanges(row) {
     if (outputPathField && !outputPathField.disabled && normalizeStr(outputPathField.value) !== row.dataset.originalOutputPath) changed = true;
 
     // GPU Logic: Get checked boxes, normalize them, compare with normalized original
-    const currentGpuIds = Array.from(row.querySelectorAll('input[name^="gpu_id_"]:checked'))
-        .map(cb => cb.value)
-        .join(','); // Already sorted by DOM order (0, 1, 2)
+    const currentGpuIds = resolveGpuIds(row);
     
     if (normalizeGpuIds(currentGpuIds) !== row.dataset.originalGpuIds) changed = true;
 
@@ -684,7 +776,12 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     const gpuContainer = document.createElement('div');
     gpuContainer.className = 'gpu-checkbox-container';
     const assignedGpus = normalizeGpuIds(instance.gpu_ids).split(',').filter(id => id);
-    const gpuCount = (state.systemInfo.gpus && Array.isArray(state.systemInfo.gpus)) ? state.systemInfo.gpus.length : (state.systemInfo.gpu_count || 0);
+    // The GPU list may not be loaded yet during the progressive boot (the table
+    // renders before /api/system/info answers). Always account for the GPUs the
+    // instance is already assigned to so the field is never silently wiped empty.
+    const gpuListCount = getGpuCount();
+    const minCount = assignedGpus.reduce((m, id) => Math.max(m, parseInt(id, 10) + 1), 0);
+    const gpuCount = Math.max(gpuListCount, minCount);
 
     for (let i = 0; i < gpuCount; i++) {
         const label = document.createElement('label');
@@ -865,6 +962,10 @@ function formatBytes(bytes, decimals = 2) {
 
 export async function updateSystemStats(stats) {
     if (!stats) return;
+    state.systemStats = stats;
+    // GPU cells degrade to /api/system/stats when /api/system/info is slow.
+    // No-op once the cells are already populated (cheap guard in the function).
+    refreshAllGpuCells();
     DOM.cpuProgress.style.width = `${stats.cpu_percent}%`;
     DOM.cpuPercentText.textContent = `${stats.cpu_percent.toFixed(1)}%`;
     DOM.ramProgress.style.width = `${stats.ram.percent}%`;

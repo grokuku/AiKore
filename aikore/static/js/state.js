@@ -37,6 +37,14 @@ export const state = {
     availableBlueprints: { stock: [], custom: [] },
     availablePorts:[],
     systemInfo: { gpu_count: 0, gpus:[] },
+    // Latest /api/system/stats payload (cached so GPU cells can degrade to it
+    // when /api/system/info has not answered yet during the progressive boot).
+    systemStats: null,
+    // Becomes true once the GPU list has been revealed from any source; guards
+    // against repeatedly rebuilding the GPU checkboxes on every stats poll.
+    gpuDataLoaded: false,
+    // Last GPU count used to build the cells (avoid needless DOM rebuilds).
+    lastGpuCount: -1,
     // --- Custom Versions Configuration ---
     versions: {
         python: ["3.15", "3.14", "3.13", "3.12", "3.11", "3.10"],  // Fallback; replaced by /api/builder/versions/python
