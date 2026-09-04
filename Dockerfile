@@ -47,6 +47,8 @@ RUN for i in 1 2 3; do \
         libgtk-3-0 \
         libwebkit2gtk-4.1-0 \
         libayatana-appindicator3-1 \
+        # FreeToken Desktop engine installer needs python venv/ensurepip
+        python3-venv \
     && rm -rf /var/lib/apt/lists/* && break || sleep 10; \
     done
 

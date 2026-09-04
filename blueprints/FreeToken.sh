@@ -16,6 +16,13 @@
 # manages its own engine (official process). Requires Ampere (sm_80+).
 # First model load downloads the engine (~5.5 GB) via the app UI.
 #
+# IMAGE PREREQUISITES (baked into the Dockerfile):
+#   * GUI libs: libgtk-3-0, libwebkit2gtk-4.1-0, libayatana-appindicator3-1
+#     (Tauri/WebKitGTK Desktop GUI).
+#   * python3-venv (ensurepip): the Desktop's bundled engine installer creates
+#     ~/.freetoken/venv with the SYSTEM python. Without python3-venv the venv
+#     is created but bin/ comes out EMPTY and the engine never installs.
+#
 # WHAT THIS BLUEPRINT DOES (and ONLY this):
 #   1. Guards: NVIDIA GPU with compute capability >= 8.0 (Ampere) and GitHub
 #      reachability (the Desktop .deb is served from github.com).
@@ -290,6 +297,33 @@ export XDG_DATA_HOME="${FAKE_HOME}/.local/share"
 export XDG_CACHE_HOME="${FAKE_HOME}/.cache"
 mkdir -p "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}"
 echo "Instance Home Directory set to: ${FAKE_HOME}"
+
+# ============================================================================
+# 4a. Self-healing: remove a broken partial engine venv
+# ----------------------------------------------------------------------------
+# The FreeToken Desktop engine installer creates ~/.freetoken/venv (i.e.
+# internal_home/.freetoken/venv) using the SYSTEM python. Older images lacked
+# python3-venv/ensurepip, so the venv was created but bin/ came out EMPTY
+# (no bin/ft, no bin/python) and the engine never installed. Now that the
+# image ships python3-venv, the app can reinstall cleanly -- but only if we
+# first remove the broken partial venv. Tolerant: if the internal home (or
+# the venv) does not exist yet, this is a silent no-op.
+# ============================================================================
+INTERNAL_HOME="${FAKE_HOME}"
+self_heal_broken_engine_venv() {
+    local venv="${INTERNAL_HOME}/.freetoken/venv"
+    if [ ! -d "${venv}" ]; then
+        return 0
+    fi
+    if [ -x "${venv}/bin/ft" ] || [ -x "${venv}/bin/python" ]; then
+        echo "--- Engine venv present and complete (${venv}), keeping it. ---"
+        return 0
+    fi
+    echo "--- broken partial engine install detected, removing for clean reinstall by the app ---"
+    rm -rf "${venv}"
+    echo "--- Removed broken engine venv ${venv}; the app will recreate it cleanly. ---"
+}
+self_heal_broken_engine_venv
 
 # ============================================================================
 # 4b. Migration cleanup: remove handoff artifacts from OLD AiKore versions
