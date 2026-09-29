@@ -226,6 +226,26 @@ async function initializeApp() {
         }
     })();
 
+    // --- ADD ICONS TO STATIC BUTTONS ---
+    const staticButtons = [
+        { selector: '.add-new-btn', icon: 'plus' },
+        { selector: '#btn-open-builder', icon: 'gear' },
+        { selector: '.context-item[data-action="terminal"]', icon: 'terminal' },
+        { selector: '.context-item[data-action="script"]', icon: 'pencil' },
+        { selector: '.context-item[data-action="manage-wheels"]', icon: 'folder' },
+        { selector: '.context-item[data-action="version-check"]', icon: 'info' },
+        { selector: '.context-item[data-action="rebuild-env"]', icon: 'refresh' },
+        { selector: '.context-item[data-action="clone"]', icon: 'copy' },
+        { selector: '.context-item[data-action="instantiate"]', icon: 'plus' },
+    ];
+
+    staticButtons.forEach(({ selector, icon }) => {
+        const btn = document.querySelector(selector);
+        if (btn) {
+            btn.innerHTML = `${HolafIcons.render(icon, { size: 14 })} ${btn.textContent.trim()}`;
+        }
+    });
+
     // --- INJECT BUILDER BUTTON ---
     const buttons = document.querySelectorAll('button');
     let addBtn = null;

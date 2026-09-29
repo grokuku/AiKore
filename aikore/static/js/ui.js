@@ -2,39 +2,12 @@ import { state, DOM } from './state.js';
 import { fetchTorchVersions } from './api.js'; // --- NEW IMPORT ---
 
 export function showToast(message, type = 'success') {
-    const toastContainer = document.getElementById('toast-container');
-    if (!toastContainer) return;
-
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    
-    // Create content wrapper
-    const content = document.createElement('span');
-    content.textContent = message;
-    toast.appendChild(content);
-
-    // Create close button
-    const closeBtn = document.createElement('span');
-    closeBtn.className = 'toast-close';
-    closeBtn.innerHTML = '&times;';
-    closeBtn.onclick = () => {
-        toast.remove();
-    };
-    toast.appendChild(closeBtn);
-
-    toastContainer.appendChild(toast);
-
-    setTimeout(() => {
-        toast.classList.add('show');
-    }, 10);
-
-    // Extended timeout to 20 seconds
-    setTimeout(() => {
-        if (toast.parentNode) {
-            toast.classList.remove('show');
-            toast.addEventListener('transitionend', () => toast.remove());
-        }
-    }, 20000);
+    // Use HolafToast brique for professional notifications
+    HolafToast.show({
+        message,
+        type: type === 'error' ? 'error' : (type === 'warning' ? 'warning' : (type === 'info' ? 'info' : 'success')),
+        duration: 10000 // 10 seconds
+    });
 }
 
 function createBlueprintSelect(selectedValue = '') {
@@ -613,7 +586,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     const handleCell = row.insertCell();
     if (!isNew && !isSatellite) {
         handleCell.classList.add('drag-handle');
-        handleCell.innerHTML = '&#x2630;';
+        handleCell.innerHTML = HolafIcons.render('layout', { size: 16 });
     } else {
         handleCell.style.textAlign = 'center';
         handleCell.innerHTML = '';
@@ -891,12 +864,12 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         const isStopped = instance.status === 'stopped';
         
         actionsCell.innerHTML = `
-            <button class="action-btn" data-action="start" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>Start</button>
-            <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>Stop</button>
-            <button class="action-btn" data-action="logs" data-id="${instance.id}">Logs</button>
-            <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">Tools</button>
-            <button class="action-btn" data-action="delete" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>Delete</button>
-            <button class="action-btn" data-action="view" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>View</button>
+            <button class="action-btn" data-action="start" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>${HolafIcons.render('play', {size: 14})} Start</button>
+            <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>${HolafIcons.render('pause', {size: 14})} Stop</button>
+            <button class="action-btn" data-action="logs" data-id="${instance.id}">${HolafIcons.render('terminal', {size: 14})} Logs</button>
+            <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">${HolafIcons.render('gear', {size: 14})} Tools</button>
+            <button class="action-btn" data-action="delete" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>${HolafIcons.render('trash', {size: 14})} Delete</button>
+            <button class="action-btn" data-action="view" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>${HolafIcons.render('eye', {size: 14})} View</button>
             <a href="${openHref}" class="action-btn ${openHref === '#' ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
     }
 

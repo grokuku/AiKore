@@ -1,6 +1,6 @@
 import { state, DOM } from './state.js';
 import * as api from './api.js';
-import { showToolsMenu, hideToolsMenu } from './modals.js';
+import { showToolsMenu, hideToolsMenu, openDeleteModal, openRebuildModal, openRestartConfirmModal, openSaveBlueprintModal, openUpdateConfirmModal } from './modals.js';
 import { openEditor, openTerminal, showVersionCheckView, openInstanceView, showLogViewer, showInstanceWheelsManager } from './tools.js';
 import { renderInstanceRow, buildInstanceUrl, showToast, resolveGpuIds } from './ui.js';
 import { fetchAndRenderInstances } from './main.js';
@@ -55,8 +55,7 @@ export function setupMainEventListeners() {
             if (dirtyRows.length === 0) return;
 
             state.pendingUpdates =[];
-            const changesContainer = document.getElementById('update-confirm-changes');
-            changesContainer.innerHTML = '';
+            const changes = [];
 
             let requiresRestart = false;
             let hasOutputPathChange = false;
@@ -66,7 +65,7 @@ export function setupMainEventListeners() {
                 const instanceId = row.dataset.id;
                 const status = row.dataset.status;
                 
-                const changes = {};
+                const rowChanges = {};
                 const fieldMap = {
                     name: 'Name',
                     base_blueprint: 'Blueprint',
@@ -84,70 +83,64 @@ export function setupMainEventListeners() {
 
                 const nameField = row.querySelector('input[data-field="name"]');
                 if (nameField.value !== row.dataset.originalName) {
-                    changes.name = { old: row.dataset.originalName, new: nameField.value };
+                    rowChanges.name = { old: row.dataset.originalName, new: nameField.value };
                 }
                 const blueprintField = row.querySelector('[data-field="base_blueprint"]');
                 if (blueprintField && !blueprintField.disabled && blueprintField.value !== row.dataset.originalBlueprint) {
-                    changes.base_blueprint = { old: row.dataset.originalBlueprint, new: blueprintField.value };
+                    rowChanges.base_blueprint = { old: row.dataset.originalBlueprint, new: blueprintField.value };
                 }
                 const outputPathField = row.querySelector('input[data-field="output_path"]');
                 if (outputPathField && !outputPathField.disabled && (outputPathField.value || '') !== (row.dataset.originalOutputPath || '')) {
-                    changes.output_path = { old: row.dataset.originalOutputPath || '', new: outputPathField.value };
+                    rowChanges.output_path = { old: row.dataset.originalOutputPath || '', new: outputPathField.value };
                     hasOutputPathChange = true;
                 }
                 const selectedGpuIds = resolveGpuIds(row);
                 if (selectedGpuIds !== row.dataset.originalGpuIds) {
-                    changes.gpu_ids = { old: row.dataset.originalGpuIds, new: selectedGpuIds };
+                    rowChanges.gpu_ids = { old: row.dataset.originalGpuIds, new: selectedGpuIds };
                 }
                 const persistentModeField = row.querySelector('input[data-field="persistent_mode"]');
                 if (persistentModeField && persistentModeField.checked.toString() !== row.dataset.originalPersistentMode) {
-                    changes.persistent_mode = { old: row.dataset.originalPersistentMode, new: persistentModeField.checked ? 'true' : 'false' };
+                    rowChanges.persistent_mode = { old: row.dataset.originalPersistentMode, new: persistentModeField.checked ? 'true' : 'false' };
                 }
                 const useHostnameField = row.querySelector('input[data-field="use_custom_hostname"]');
                 if (useHostnameField && useHostnameField.checked.toString() !== row.dataset.originalUseCustomHostname) {
-                    changes.use_custom_hostname = { old: row.dataset.originalUseCustomHostname, new: useHostnameField.checked ? 'true' : 'false' };
+                    rowChanges.use_custom_hostname = { old: row.dataset.originalUseCustomHostname, new: useHostnameField.checked ? 'true' : 'false' };
                 }
                 const hostnameField = row.querySelector('input[data-field="hostname"]');
                 if (hostnameField && (hostnameField.value || '') !== (row.dataset.originalHostname || '')) {
-                    changes.hostname = { old: row.dataset.originalHostname || '', new: hostnameField.value };
+                    rowChanges.hostname = { old: row.dataset.originalHostname || '', new: hostnameField.value };
                 }
                 const portField = row.querySelector('select[data-field="port"]');
                 if (portField && portField.value !== (row.dataset.originalPort || '')) {
-                    changes.port = { old: row.dataset.originalPort || 'Auto', new: portField.value || 'Auto' };
+                    rowChanges.port = { old: row.dataset.originalPort || 'Auto', new: portField.value || 'Auto' };
                 }
                 const autostartField = row.querySelector('input[data-field="autostart"]');
                 if (autostartField && autostartField.checked.toString() !== row.dataset.originalAutostart) {
-                    changes.autostart = { old: row.dataset.originalAutostart, new: autostartField.checked ? 'true' : 'false' };
+                    rowChanges.autostart = { old: row.dataset.originalAutostart, new: autostartField.checked ? 'true' : 'false' };
                 }
                 
-                // --- NEW: Env fields check ---
                 const pyField = row.querySelector('select[data-field="python_version"]');
                 if (pyField && !pyField.disabled && (pyField.value || '') !== (row.dataset.originalPythonVersion || '')) {
-                    changes.python_version = { old: row.dataset.originalPythonVersion || 'Auto', new: pyField.value || 'Auto' };
+                    rowChanges.python_version = { old: row.dataset.originalPythonVersion || 'Auto', new: pyField.value || 'Auto' };
                 }
                 const cudaField = row.querySelector('select[data-field="cuda_version"]');
                 if (cudaField && !cudaField.disabled && (cudaField.value || '') !== (row.dataset.originalCudaVersion || '')) {
-                    changes.cuda_version = { old: row.dataset.originalCudaVersion || 'Auto', new: cudaField.value || 'Auto' };
+                    rowChanges.cuda_version = { old: row.dataset.originalCudaVersion || 'Auto', new: cudaField.value || 'Auto' };
                 }
                 const torchField = row.querySelector('select[data-field="torch_version"]');
                 if (torchField && !torchField.disabled && (torchField.value || '') !== (row.dataset.originalTorchVersion || '')) {
-                    changes.torch_version = { old: row.dataset.originalTorchVersion || 'Auto', new: torchField.value || 'Auto' };
+                    rowChanges.torch_version = { old: row.dataset.originalTorchVersion || 'Auto', new: torchField.value || 'Auto' };
                 }
 
-                if (Object.keys(changes).length > 0) {
+                if (Object.keys(rowChanges).length > 0) {
                     state.pendingUpdates.push({
                         id: instanceId,
                         row: row,
-                        changes: changes
+                        changes: rowChanges
                     });
 
-                    Object.keys(changes).forEach(key => {
-                        const div = document.createElement('div');
-                        const strong = document.createElement('strong');
-                        strong.textContent = `[${instanceName}] ${fieldMap[key]}:`;
-                        div.appendChild(strong);
-                        div.appendChild(document.createTextNode(` ${changes[key].old} → ${changes[key].new}`));
-                        changesContainer.appendChild(div);
+                    Object.keys(rowChanges).forEach(key => {
+                        changes.push(`[${instanceName}] ${fieldMap[key]}: ${rowChanges[key].old} → ${rowChanges[key].new}`);
                     });
 
                     if (status !== 'stopped') {
@@ -155,24 +148,57 @@ export function setupMainEventListeners() {
                             'name', 'base_blueprint', 'output_path', 'gpu_ids', 
                             'persistent_mode', 'port', 'python_version', 'cuda_version', 'torch_version'
                         ];
-                        const hasCritical = Object.keys(changes).some(k => criticalChanges.includes(k));
+                        const hasCritical = Object.keys(rowChanges).some(k => criticalChanges.includes(k));
                         if (hasCritical) requiresRestart = true;
                     }
                 }
             });
 
-            const restartWarning = document.getElementById('update-restart-warning');
-            restartWarning.style.display = requiresRestart ? 'block' : 'none';
+            openUpdateConfirmModal(changes, async () => {
+                const updates = state.pendingUpdates ||[];
+                let successCount = 0;
+                let errorCount = 0;
 
-            const outputPathWarning = document.getElementById('update-output-path-warning');
-            if (hasOutputPathChange) {
-                outputPathWarning.textContent = `Warning: Changing Output Path does not move existing files.`;
-                outputPathWarning.style.display = 'block';
-            } else {
-                outputPathWarning.style.display = 'none';
-            }
+                for (const update of updates) {
+                    try {
+                        const row = update.row;
+                        const bpSelect = row.querySelector('[data-field="base_blueprint"]');
+                        const outPathInput = row.querySelector('input[data-field="output_path"]');
+                        const pyField = row.querySelector('select[data-field="python_version"]');
+                        const cudaField = row.querySelector('select[data-field="cuda_version"]');
+                        const torchField = row.querySelector('select[data-field="torch_version"]');
 
-            DOM.updateConfirmModal.classList.remove('hidden');
+                        const data = {
+                            name: row.querySelector('input[data-field="name"]').value,
+                            base_blueprint: bpSelect.disabled ? undefined : bpSelect.value,
+                            output_path: outPathInput.disabled ? undefined : (outPathInput.value || null),
+                            gpu_ids: resolveGpuIds(row),
+                            autostart: row.querySelector('input[data-field="autostart"]').checked,
+                            persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
+                            hostname: row.querySelector('input[data-field="hostname"]').value || null,
+                            use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
+                            port: row.querySelector('select[data-field="port"]').value ? parseInt(row.querySelector('select[data-field="port"]').value, 10) : null,
+                            python_version: (pyField && !pyField.disabled) ? (pyField.value || null) : undefined,
+                            cuda_version: (cudaField && !cudaField.disabled) ? (cudaField.value || null) : undefined,
+                            torch_version: (torchField && !torchField.disabled) ? (torchField.value || null) : undefined,
+                        };
+
+                        await api.updateInstance(update.id, data);
+                        row.classList.remove('row-dirty');
+                        successCount++;
+                    } catch (err) {
+                        console.error(`Failed to update instance ${update.id}:`, err);
+                        errorCount++;
+                        showToast(`Failed to update instance ${update.id}: ${err.message}`, 'error');
+                    }
+                }
+
+                if (successCount > 0) showToast(`${successCount} instance(s) updated successfully.`);
+                if (errorCount > 0) showToast(`${errorCount} update(s) failed.`, 'error');
+                
+                document.getElementById('global-save-btn').style.display = 'none';
+                await fetchAndRenderInstances();
+            });
         });
     }
 
@@ -279,9 +305,7 @@ export function setupMainEventListeners() {
                     break;
 
                 case 'delete':
-                    state.instanceToDeleteId = instanceId;
-                    document.getElementById('delete-modal-instance-name').textContent = row.dataset.name;
-                    DOM.deleteModal.classList.remove('hidden');
+                    openDeleteModal(instanceId, row.dataset.name);
                     break;
 
                 case 'logs':
@@ -325,13 +349,7 @@ export function setupMainEventListeners() {
                         showInstanceWheelsManager(id, name);
                         break;
                     case 'rebuild-env':
-                        state.instanceToRebuild = state.currentMenuInstance;
-                        const message = status !== 'stopped'
-                            ? `This will stop and restart the instance '${name}' to rebuild its environment. This can take several minutes.`
-                            : `This will rebuild the environment for '${name}' the next time it starts.`;
-                        document.getElementById('rebuild-modal-instance-name').textContent = name;
-                        document.getElementById('rebuild-modal-message').textContent = message;
-                        DOM.rebuildModal.classList.remove('hidden');
+                        openRebuildModal(state.currentMenuInstance);
                         break;
                     case 'clone':
                         const newCloneName = prompt(`Enter a name for the clone of "${name}":`, `${name}_clone`);
@@ -363,14 +381,7 @@ export function setupMainEventListeners() {
             showToast('No file is currently being edited.', 'error');
             return;
         }
-
-        // Pre-fill the input with the base blueprint name as a suggestion
-        if (baseBlueprint) {
-            DOM.blueprintFilenameInput.value = baseBlueprint.replace('.sh', '_custom.sh');
-        } else {
-            DOM.blueprintFilenameInput.value = '';
-        }
-        DOM.saveBlueprintModal.classList.remove('hidden');
+        openSaveBlueprintModal();
     });
 
     DOM.editorUpdateBtn.addEventListener('click', () => {
@@ -386,8 +397,7 @@ export function setupMainEventListeners() {
         const instanceName = row.dataset.name;
 
         if (status !== 'stopped') {
-            document.getElementById('restart-modal-instance-name').textContent = instanceName;
-            DOM.restartConfirmModal.classList.remove('hidden');
+            openRestartConfirmModal(instanceName);
         } else {
             const { fileType } = state.editorState;
             const content = state.codeEditor.getValue();

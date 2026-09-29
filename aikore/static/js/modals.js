@@ -29,12 +29,7 @@ export function hideToolsMenu() {
 }
 
 export function hideAllModals() {
-    DOM.deleteModal.classList.add('hidden');
-    DOM.overwriteModal.classList.add('hidden');
-    DOM.rebuildModal.classList.add('hidden');
-    DOM.restartConfirmModal.classList.add('hidden');
-    DOM.saveBlueprintModal.classList.add('hidden');
-    DOM.updateConfirmModal.classList.add('hidden');
+    // HolafModal manages its own stack, no need to manually hide hidden classes anymore.
     state.instanceToDeleteId = null;
     state.instanceToRebuild = null;
     state.instanceToUpdate = null;
@@ -45,66 +40,86 @@ async function handleDelete(options) {
     try {
         const result = await api.deleteInstance(state.instanceToDeleteId, options);
         if (result.conflict) {
-            hideAllModals();
-            document.getElementById('overwrite-modal-instance-name').textContent = document.getElementById('delete-modal-instance-name').textContent;
-            DOM.overwriteModal.classList.remove('hidden');
+            // Open Overwrite Confirmation Modal
+            const name = document.getElementById('delete-modal-instance-name')?.textContent || state.currentMenuInstance?.name || '';
+            
+            await HolafModal.open({
+                title: 'Overwrite Confirmation',
+                content: `An instance with the name "${name}" already exists in the trashcan.\n\nDo you want to overwrite it?`,
+                buttons: [
+                    { text: 'Overwrite', type: 'danger', value: true, onClick: () => {} },
+                    { text: 'Cancel', type: 'cancel', value: false }
+                ]
+            }).then(res => {
+                if (res === true) {
+                    handleDelete({ mode: 'trash', overwrite: true });
+                }
+            });
             return;
         }
-        // Clean up any persistent terminal for this instance
         closeTerminalById(state.instanceToDeleteId);
         showToast("Instance moved to trashcan.");
-        hideAllModals();
         await fetchAndRenderInstances();
     } catch (error) {
         showToast(error.message, 'error');
-        hideAllModals();
     }
 }
 
 export function setupModalEventHandlers() {
-    DOM.deleteModal.addEventListener('click', (e) => {
-        const action = e.target.id;
-        if (action === 'delete-btn-cancel') hideAllModals();
-        else if (action === 'delete-btn-trash') handleDelete({ mode: 'trash', overwrite: false });
-        else if (action === 'delete-btn-permanent') handleDelete({ mode: 'permanent', overwrite: false });
-    });
+    // This function is now largely empty or can be removed as we use programmatic modals.
+    // However, to keep compatibility with main.js calling it, we leave it.
+}
 
-    DOM.overwriteModal.addEventListener('click', (e) => {
-        const action = e.target.id;
-        if (action === 'overwrite-btn-cancel') hideAllModals();
-        else if (action === 'overwrite-btn-confirm') handleDelete({ mode: 'trash', overwrite: true });
+// NEW: Programmatic Modal Triggers
+export async function openDeleteModal(instanceId, name) {
+    state.instanceToDeleteId = instanceId;
+    await HolafModal.open({
+        title: `Delete Instance: ${name}`,
+        content: 'Choose a deletion method:',
+        buttons: [
+            { text: 'Permanent Delete', type: 'danger', value: { mode: 'permanent', overwrite: false }, onClick: () => {} },
+            { text: 'Move to Trashcan', type: 'primary', value: { mode: 'trash', overwrite: false }, onClick: () => {} },
+            { text: 'Cancel', type: 'cancel', value: null }
+        ]
+    }).then(res => {
+        if (res) handleDelete(res);
     });
+}
 
-    DOM.rebuildModal.addEventListener('click', async (e) => {
-        const action = e.target.id;
-        if (action === 'rebuild-btn-cancel') {
-            hideAllModals();
-        } else if (action === 'rebuild-btn-confirm') {
-            if (!state.instanceToRebuild) {
-                showToast("Error: Instance context lost. Please try again.", "error");
-                hideAllModals();
-                return;
-            }
-            const { id, name } = state.instanceToRebuild;
-            hideAllModals();
+export async function openRebuildModal(instance) {
+    state.instanceToRebuild = instance;
+    await HolafModal.open({
+        title: `Rebuild Environment: ${instance.name}`,
+        content: 'This will rebuild the environment. Continue?',
+        buttons: [
+            { text: 'Confirm Rebuild', type: 'primary', value: true },
+            { text: 'Cancel', type: 'cancel', value: false }
+        ]
+    }).then(async res => {
+        if (res === true) {
             try {
-                await api.rebuildInstance(id);
-                showToast(`Rebuild process for '${name}' has been successfully initiated.`);
+                await api.rebuildInstance(instance.id);
+                showToast(`Rebuild process for '${instance.name}' has been successfully initiated.`);
                 await fetchAndRenderInstances();
             } catch (error) {
                 showToast(error.message, 'error');
             }
         }
     });
+}
 
-    DOM.restartConfirmModal.addEventListener('click', async (e) => {
-        const action = e.target.id;
-        if (action === 'restart-btn-cancel') {
-            hideAllModals();
-        } else if (action === 'restart-btn-confirm') {
+export async function openRestartConfirmModal(instanceName) {
+    await HolafModal.open({
+        title: 'Instance Restart Required',
+        content: `To apply these script changes, the instance '${instanceName}' must be restarted.\n\nDo you want to save and restart?`,
+        buttons: [
+            { text: 'Save & Restart', type: 'primary', value: true },
+            { text: 'Cancel', type: 'cancel', value: false }
+        ]
+    }).then(async res => {
+        if (res === true) {
             const { instanceId, fileType } = state.editorState;
             const content = state.codeEditor.getValue();
-            hideAllModals();
             
             const button = DOM.editorUpdateBtn;
             button.textContent = 'Updating...';
@@ -123,12 +138,74 @@ export function setupModalEventHandlers() {
             }
         }
     });
+}
 
-    DOM.updateConfirmModal.addEventListener('click', async (e) => {
-        // Only handle the cancel action here to revert UI changes.
-        // The confirm action is handled in eventHandlers.js via the batched pendingUpdates flow.
-        const action = e.target.id;
-        if (action === 'update-confirm-btn-cancel') {
+export async function openSaveBlueprintModal() {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'e.g., my-custom-comfy.sh';
+    input.className = 'holaf-modal-input';
+    input.style.width = '100%';
+
+    await HolafModal.open({
+        title: 'Save as Custom Blueprint',
+        content: 'Enter a filename for the new custom blueprint.',
+        // We can pass a Node as content. We'll wrap it.
+        content: [
+            document.createElement('p'), // spacer
+            input
+        ],
+        buttons: [
+            { text: 'Save Blueprint', type: 'primary', value: true },
+            { text: 'Cancel', type: 'cancel', value: false }
+        ]
+    }).then(async res => {
+        if (res === true) {
+            let filename = input.value.trim();
+            if (!filename) {
+                showToast('Filename cannot be empty.', 'error');
+                return;
+            }
+            if (!filename.endsWith('.sh')) filename += '.sh';
+            
+            const content = state.codeEditor.getValue();
+            try {
+                const savedData = await api.saveCustomBlueprint(filename, content);
+                showToast(`Custom blueprint '${savedData.filename}' saved successfully.`, 'success');
+                const blueprints = await api.fetchAndStoreBlueprints();
+                state.availableBlueprints = blueprints;
+                await fetchAndRenderInstances();
+            } catch (error) {
+                showToast(error.message, 'error');
+            }
+        }
+    });
+}
+
+export async function openUpdateConfirmModal(changes, onConfirm) {
+    const list = document.createElement('div');
+    list.className = 'changes-list';
+    changes.forEach(c => {
+        const item = document.createElement('div');
+        item.textContent = c;
+        list.appendChild(item);
+    });
+
+    await HolafModal.open({
+        title: 'Confirm Global Changes',
+        content: [
+            document.createElement('p'), // dummy
+            list
+        ],
+        buttons: [
+            { text: 'Apply All Changes', type: 'primary', value: true },
+            { text: 'Cancel', type: 'cancel', value: false }
+        ]
+    }).then(res => {
+        if (res === true) {
+            onConfirm();
+        } else {
+            // Revert UI changes as in original code
             if (state.pendingUpdates) {
                 state.pendingUpdates.forEach(update => {
                     const row = update.row;
@@ -144,46 +221,8 @@ export function setupModalEventHandlers() {
                     row.querySelectorAll('input[name^="gpu_id_"]').forEach(cb => {
                         cb.checked = originalGpus.includes(cb.value);
                     });
-        
                     checkRowForChanges(row);
                 });
-            }
-            hideAllModals();
-        }
-        // update-confirm-btn-confirm is handled entirely by eventHandlers.js
-    });
-
-    DOM.saveBlueprintModal.addEventListener('click', async (e) => {
-        const action = e.target.id;
-        if (action === 'save-blueprint-btn-cancel') {
-            hideAllModals();
-        } else if (action === 'save-blueprint-btn-confirm') {
-            let filename = DOM.blueprintFilenameInput.value.trim();
-            if (!filename) {
-                showToast('Filename cannot be empty.', 'error');
-                return;
-            }
-            if (!filename.endsWith('.sh')) {
-                filename += '.sh';
-            }
-            const content = state.codeEditor.getValue();
-            
-            const button = e.target;
-            button.textContent = 'Saving...';
-            button.disabled = true;
-
-            try {
-                const savedData = await api.saveCustomBlueprint(filename, content);
-                hideAllModals();
-                showToast(`Custom blueprint '${savedData.filename}' saved successfully.`, 'success');
-                const blueprints = await api.fetchAndStoreBlueprints();
-                state.availableBlueprints = blueprints;
-                await fetchAndRenderInstances();
-            } catch (error) {
-                showToast(error.message, 'error');
-            } finally {
-                button.textContent = 'Save Blueprint';
-                button.disabled = false;
             }
         }
     });

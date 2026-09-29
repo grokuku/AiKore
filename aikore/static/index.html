@@ -268,6 +268,11 @@
          execution order (each script still runs before the main.js module).
          Versions pinned: split.js was resolved via an unpkg 302 redirect on
          every page load; sortablejs@latest is a floating tag (audit finding). -->
+    <!-- Holaf Lib Briques -->
+    <script src="/static/vendor/holaf-toast.js"></script>
+    <script src="/static/vendor/holaf-modal.js"></script>
+    <script src="/static/vendor/holaf-fetch.js"></script>
+    <script src="/static/vendor/holaf-icons.js"></script>
     <!-- Split.js library -->
     <script src="/static/vendor/split-1.6.5.min.js" integrity="sha384-q2ksSc8z6Q4ZUnxlfZj9AXZLpSdWmD3q/YrId1twTeNHh56fNh98YbJSpppzGUvL" crossorigin="anonymous" defer></script>
     <!-- NEW: Xterm.js library and Fit Addon -->
@@ -285,91 +290,6 @@
     <!-- Our application script -->
     <script src="/static/js/main.js" type="module"></script>
 
-    <!-- Modal for Delete Options -->
-    <div id="delete-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <h2>Delete Instance: <span id="delete-modal-instance-name"></span></h2>
-            <p>Choose a deletion method:</p>
-            <div class="modal-actions">
-                <button id="delete-btn-permanent" class="action-btn danger-btn">Permanent Delete</button>
-                <button id="delete-btn-trash" class="action-btn">Move to Trashcan</button>
-                <button id="delete-btn-cancel" class="action-btn">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal for Overwrite Confirmation -->
-    <div id="overwrite-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <h2>Overwrite Confirmation</h2>
-            <p>An instance with the name "<span id="overwrite-modal-instance-name"></span>" already exists in the trashcan.</p>
-            <p>Do you want to overwrite it?</p>
-            <div class="modal-actions">
-                <button id="overwrite-btn-confirm" class="action-btn danger-btn">Overwrite</button>
-                <button id="overwrite-btn-cancel" class="action-btn">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal for Rebuild Confirmation -->
-    <div id="rebuild-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <h2>Rebuild Environment: <span id="rebuild-modal-instance-name"></span></h2>
-            <p id="rebuild-modal-message">This will rebuild the environment. Continue?</p>
-            <div class="modal-actions">
-                <button id="rebuild-btn-confirm" class="action-btn success-btn">Confirm Rebuild</button>
-                <button id="rebuild-btn-cancel" class="action-btn danger-btn">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- NEW: Modal for Restart Confirmation -->
-    <div id="restart-confirm-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <h2>Instance Restart Required</h2>
-            <p>To apply these script changes, the instance '<span id="restart-modal-instance-name"></span>' must be restarted.</p>
-            <p>Do you want to save and restart?</p>
-            <div class="modal-actions">
-                <button id="restart-btn-confirm" class="action-btn success-btn">Save & Restart</button>
-                <button id="restart-btn-cancel" class="action-btn danger-btn">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- NEW: Modal for Save As Custom Blueprint -->
-    <div id="save-blueprint-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <h2>Save as Custom Blueprint</h2>
-            <p>Enter a filename for the new custom blueprint.</p>
-            <input type="text" id="blueprint-filename-input" placeholder="e.g., my-custom-comfy.sh" class="modal-input">
-            <div class="modal-actions">
-                <button id="save-blueprint-btn-confirm" class="action-btn success-btn">Save Blueprint</button>
-                <button id="save-blueprint-btn-cancel" class="action-btn danger-btn">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- NEW: Modal for Update Confirmation -->
-    <div id="update-confirm-modal" class="modal-overlay hidden">
-        <div class="modal-content">
-            <h2 id="update-confirm-title">Confirm Global Changes</h2>
-            <p id="update-confirm-warning">The following changes will be applied:</p>
-            <p id="update-restart-warning" style="display:none; color: #dc3545; font-weight: bold;">
-                Warning: Some instances are currently running and will require a restart.
-            </p>
-            <p id="update-output-path-warning" style="display: none;"></p>
-            <div id="update-confirm-changes" class="changes-list">
-                <!-- Changes will be populated here -->
-            </div>
-            <div class="modal-actions">
-                <button id="update-confirm-btn-confirm" class="action-btn success-btn">Apply All Changes</button>
-                <button id="update-confirm-btn-cancel" class="action-btn danger-btn">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- NEW: Toast Notification Container -->
-    <div id="toast-container"></div>
 </body>
 
 </html>
