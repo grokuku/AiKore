@@ -1,5 +1,7 @@
 import { state, DOM } from './state.js';
 import { fetchTorchVersions } from './api.js'; // --- NEW IMPORT ---
+import { HolafToast } from '../vendor/holaf-toast.js';
+import { HolafIcons } from '../vendor/holaf-icons.js';
 
 export function showToast(message, type = 'success') {
     // Use HolafToast brique for professional notifications

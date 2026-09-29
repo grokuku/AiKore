@@ -58,26 +58,6 @@
         #global-save-btn:hover {
             background-color: #218838;
         }
-
-        /* Toast Improvements */
-        .toast {
-            min-width: 300px;
-            padding-right: 30px; /* Space for close button */
-            position: relative;
-        }
-        .toast-close {
-            position: absolute;
-            top: 5px;
-            right: 8px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            opacity: 0.7;
-            line-height: 1;
-        }
-        .toast-close:hover {
-            opacity: 1;
-        }
     </style>
 </head>
 
@@ -268,11 +248,11 @@
          execution order (each script still runs before the main.js module).
          Versions pinned: split.js was resolved via an unpkg 302 redirect on
          every page load; sortablejs@latest is a floating tag (audit finding). -->
-    <!-- Holaf Lib Briques -->
-    <script src="/static/vendor/holaf-toast.js"></script>
-    <script src="/static/vendor/holaf-modal.js"></script>
-    <script src="/static/vendor/holaf-fetch.js"></script>
-    <script src="/static/vendor/holaf-icons.js"></script>
+    <!-- Holaf Lib Briques : consommées via IMPORT ESM explicite (`../vendor/...`)
+         dans chaque module (api/ui/modals/main). NE PAS les charger ici en
+         <script src> classique : ce sont des fichiers DUAL dont le `export {}`
+         top-level provoquerait un SyntaxError en script classique, et l'ordre
+         d'exécution ne garantirait pas les globals window.Holaf*. -->
     <!-- Split.js library -->
     <script src="/static/vendor/split-1.6.5.min.js" integrity="sha384-q2ksSc8z6Q4ZUnxlfZj9AXZLpSdWmD3q/YrId1twTeNHh56fNh98YbJSpppzGUvL" crossorigin="anonymous" defer></script>
     <!-- NEW: Xterm.js library and Fit Addon -->

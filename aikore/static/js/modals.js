@@ -3,6 +3,17 @@ import * as api from './api.js';
 import { checkRowForChanges, showToast } from './ui.js';
 import { fetchAndRenderInstances } from './main.js';
 import { exitEditor, closeTerminalById } from './tools.js';
+import { HolafModal } from '../vendor/holaf-modal.js';
+
+// HolafModal.open(opts) retourne un CONTROLLER (pas une Promise) : la valeur du
+// bouton cliqué est livrée via `opts.onClose(value)`. On l'enveloppe dans une
+// Promise pour retrouver l'API `.then()`/`await` auparavant attendue. Échap et
+// le clic sur l'overlay résolvent `null` (≡ annulation, comme le bouton Cancel).
+function openModal(opts) {
+    return new Promise((resolve) => {
+        HolafModal.open({ ...opts, onClose: (result) => resolve(result) });
+    });
+}
 
 export function showToolsMenu(buttonEl) {
     const row = buttonEl.closest('tr');
@@ -32,7 +43,6 @@ export function hideAllModals() {
     // HolafModal manages its own stack, no need to manually hide hidden classes anymore.
     state.instanceToDeleteId = null;
     state.instanceToRebuild = null;
-    state.instanceToUpdate = null;
 }
 
 async function handleDelete(options) {
@@ -41,20 +51,19 @@ async function handleDelete(options) {
         const result = await api.deleteInstance(state.instanceToDeleteId, options);
         if (result.conflict) {
             // Open Overwrite Confirmation Modal
-            const name = document.getElementById('delete-modal-instance-name')?.textContent || state.currentMenuInstance?.name || '';
+            const name = state.currentMenuInstance?.name || '';
             
-            await HolafModal.open({
+            const res = await openModal({
                 title: 'Overwrite Confirmation',
                 content: `An instance with the name "${name}" already exists in the trashcan.\n\nDo you want to overwrite it?`,
                 buttons: [
                     { text: 'Overwrite', type: 'danger', value: true, onClick: () => {} },
                     { text: 'Cancel', type: 'cancel', value: false }
                 ]
-            }).then(res => {
-                if (res === true) {
-                    handleDelete({ mode: 'trash', overwrite: true });
-                }
             });
+            if (res === true) {
+                handleDelete({ mode: 'trash', overwrite: true });
+            }
             return;
         }
         closeTerminalById(state.instanceToDeleteId);
@@ -73,7 +82,7 @@ export function setupModalEventHandlers() {
 // NEW: Programmatic Modal Triggers
 export async function openDeleteModal(instanceId, name) {
     state.instanceToDeleteId = instanceId;
-    await HolafModal.open({
+    const res = await openModal({
         title: `Delete Instance: ${name}`,
         content: 'Choose a deletion method:',
         buttons: [
@@ -81,63 +90,60 @@ export async function openDeleteModal(instanceId, name) {
             { text: 'Move to Trashcan', type: 'primary', value: { mode: 'trash', overwrite: false }, onClick: () => {} },
             { text: 'Cancel', type: 'cancel', value: null }
         ]
-    }).then(res => {
-        if (res) handleDelete(res);
     });
+    if (res) handleDelete(res);
 }
 
 export async function openRebuildModal(instance) {
     state.instanceToRebuild = instance;
-    await HolafModal.open({
+    const res = await openModal({
         title: `Rebuild Environment: ${instance.name}`,
         content: 'This will rebuild the environment. Continue?',
         buttons: [
             { text: 'Confirm Rebuild', type: 'primary', value: true },
             { text: 'Cancel', type: 'cancel', value: false }
         ]
-    }).then(async res => {
-        if (res === true) {
-            try {
-                await api.rebuildInstance(instance.id);
-                showToast(`Rebuild process for '${instance.name}' has been successfully initiated.`);
-                await fetchAndRenderInstances();
-            } catch (error) {
-                showToast(error.message, 'error');
-            }
-        }
     });
+    if (res === true) {
+        try {
+            await api.rebuildInstance(instance.id);
+            showToast(`Rebuild process for '${instance.name}' has been successfully initiated.`);
+            await fetchAndRenderInstances();
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    }
 }
 
 export async function openRestartConfirmModal(instanceName) {
-    await HolafModal.open({
+    const res = await openModal({
         title: 'Instance Restart Required',
         content: `To apply these script changes, the instance '${instanceName}' must be restarted.\n\nDo you want to save and restart?`,
         buttons: [
             { text: 'Save & Restart', type: 'primary', value: true },
             { text: 'Cancel', type: 'cancel', value: false }
         ]
-    }).then(async res => {
-        if (res === true) {
-            const { instanceId, fileType } = state.editorState;
-            const content = state.codeEditor.getValue();
-            
-            const button = DOM.editorUpdateBtn;
-            button.textContent = 'Updating...';
-            button.disabled = true;
-
-            try {
-                await api.updateInstanceScript(instanceId, fileType, content, true);
-                showToast('Instance script updated. Restarting instance...', 'success');
-                exitEditor();
-                await fetchAndRenderInstances();
-            } catch (error) {
-                showToast(`Error updating script: ${error.message}`, 'error');
-            } finally {
-                button.textContent = 'Update Instance';
-                button.disabled = false;
-            }
-        }
     });
+    if (res === true) {
+        const { instanceId, fileType } = state.editorState;
+        const content = state.codeEditor.getValue();
+        
+        const button = DOM.editorUpdateBtn;
+        button.textContent = 'Updating...';
+        button.disabled = true;
+
+        try {
+            await api.updateInstanceScript(instanceId, fileType, content, true);
+            showToast('Instance script updated. Restarting instance...', 'success');
+            exitEditor();
+            await fetchAndRenderInstances();
+        } catch (error) {
+            showToast(`Error updating script: ${error.message}`, 'error');
+        } finally {
+            button.textContent = 'Update Instance';
+            button.disabled = false;
+        }
+    }
 }
 
 export async function openSaveBlueprintModal() {
@@ -146,40 +152,45 @@ export async function openSaveBlueprintModal() {
     input.placeholder = 'e.g., my-custom-comfy.sh';
     input.className = 'holaf-modal-input';
     input.style.width = '100%';
+    // La brique HolafModal focalise le premier [data-holaf-autofocus] au montage.
+    input.setAttribute('data-holaf-autofocus', '1');
 
-    await HolafModal.open({
+    // `content` accepte un Node unique (pas un tableau) : on enveloppe le texte
+    // d'aide ET l'input dans un conteneur pour qu'ils s'affichent ensemble.
+    const wrap = document.createElement('div');
+    const help = document.createElement('p');
+    help.className = 'holaf-modal-message';
+    help.textContent = 'Enter a filename for the new custom blueprint.';
+    wrap.appendChild(help);
+    wrap.appendChild(input);
+
+    const res = await openModal({
         title: 'Save as Custom Blueprint',
-        content: 'Enter a filename for the new custom blueprint.',
-        // We can pass a Node as content. We'll wrap it.
-        content: [
-            document.createElement('p'), // spacer
-            input
-        ],
+        content: wrap,
         buttons: [
             { text: 'Save Blueprint', type: 'primary', value: true },
             { text: 'Cancel', type: 'cancel', value: false }
         ]
-    }).then(async res => {
-        if (res === true) {
-            let filename = input.value.trim();
-            if (!filename) {
-                showToast('Filename cannot be empty.', 'error');
-                return;
-            }
-            if (!filename.endsWith('.sh')) filename += '.sh';
-            
-            const content = state.codeEditor.getValue();
-            try {
-                const savedData = await api.saveCustomBlueprint(filename, content);
-                showToast(`Custom blueprint '${savedData.filename}' saved successfully.`, 'success');
-                const blueprints = await api.fetchAndStoreBlueprints();
-                state.availableBlueprints = blueprints;
-                await fetchAndRenderInstances();
-            } catch (error) {
-                showToast(error.message, 'error');
-            }
-        }
     });
+    if (res === true) {
+        let filename = input.value.trim();
+        if (!filename) {
+            showToast('Filename cannot be empty.', 'error');
+            return;
+        }
+        if (!filename.endsWith('.sh')) filename += '.sh';
+        
+        const content = state.codeEditor.getValue();
+        try {
+            const savedData = await api.saveCustomBlueprint(filename, content);
+            showToast(`Custom blueprint '${savedData.filename}' saved successfully.`, 'success');
+            const blueprints = await api.fetchAndStoreBlueprints();
+            state.availableBlueprints = blueprints;
+            await fetchAndRenderInstances();
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    }
 }
 
 export async function openUpdateConfirmModal(changes, onConfirm) {
@@ -191,39 +202,45 @@ export async function openUpdateConfirmModal(changes, onConfirm) {
         list.appendChild(item);
     });
 
-    await HolafModal.open({
+    // `content` accepte un Node unique (pas un tableau) : on enveloppe l'intro
+    // et la liste des changements dans un conteneur.
+    const wrap = document.createElement('div');
+    const help = document.createElement('p');
+    help.className = 'holaf-modal-message';
+    help.textContent = 'The following changes will be applied:';
+    wrap.appendChild(help);
+    wrap.appendChild(list);
+
+    const res = await openModal({
         title: 'Confirm Global Changes',
-        content: [
-            document.createElement('p'), // dummy
-            list
-        ],
+        content: wrap,
         buttons: [
             { text: 'Apply All Changes', type: 'primary', value: true },
             { text: 'Cancel', type: 'cancel', value: false }
         ]
-    }).then(res => {
-        if (res === true) {
-            onConfirm();
-        } else {
-            // Revert UI changes as in original code
-            if (state.pendingUpdates) {
-                state.pendingUpdates.forEach(update => {
-                    const row = update.row;
-                    if (!row) return;
-                    row.querySelector('input[data-field="name"]').value = row.dataset.originalName;
-                    row.querySelector('[data-field="base_blueprint"]').value = row.dataset.originalBlueprint;
-                    row.querySelector('input[data-field="output_path"]').value = row.dataset.originalOutputPath || '';
-                    row.querySelector('input[data-field="persistent_mode"]').checked = row.dataset.originalPersistentMode === 'true';
-                    row.querySelector('input[data-field="use_custom_hostname"]').checked = row.dataset.originalUseCustomHostname === 'true';
-                    row.querySelector('input[data-field="hostname"]').value = row.dataset.originalHostname || '';
-                    
-                    const originalGpus = (row.dataset.originalGpuIds || '').split(',').filter(id => id);
-                    row.querySelectorAll('input[name^="gpu_id_"]').forEach(cb => {
-                        cb.checked = originalGpus.includes(cb.value);
-                    });
-                    checkRowForChanges(row);
-                });
-            }
-        }
     });
+    if (res === true) {
+        onConfirm();
+    } else {
+        // Revert UI changes as in original code (déclenché sur annulation,
+        // Échap ou clic sur l'overlay — tous résolvent une valeur ≠ true).
+        if (state.pendingUpdates) {
+            state.pendingUpdates.forEach(update => {
+                const row = update.row;
+                if (!row) return;
+                row.querySelector('input[data-field="name"]').value = row.dataset.originalName;
+                row.querySelector('[data-field="base_blueprint"]').value = row.dataset.originalBlueprint;
+                row.querySelector('input[data-field="output_path"]').value = row.dataset.originalOutputPath || '';
+                row.querySelector('input[data-field="persistent_mode"]').checked = row.dataset.originalPersistentMode === 'true';
+                row.querySelector('input[data-field="use_custom_hostname"]').checked = row.dataset.originalUseCustomHostname === 'true';
+                row.querySelector('input[data-field="hostname"]').value = row.dataset.originalHostname || '';
+                
+                const originalGpus = (row.dataset.originalGpuIds || '').split(',').filter(id => id);
+                row.querySelectorAll('input[name^="gpu_id_"]').forEach(cb => {
+                    cb.checked = originalGpus.includes(cb.value);
+                });
+                checkRowForChanges(row);
+            });
+        }
+    }
 }

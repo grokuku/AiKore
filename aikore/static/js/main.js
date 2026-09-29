@@ -4,6 +4,7 @@ import { renderInstanceRow, updateSystemStats, checkRowForChanges, buildInstance
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
 import { showWelcomeScreen, showBuilderView, renderBuilderStatus } from './tools.js';
+import { HolafIcons } from '../vendor/holaf-icons.js';
 
 const INSTANCE_ORDER_KEY = 'aikoreInstanceOrder';
 

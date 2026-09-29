@@ -202,60 +202,6 @@ export function setupMainEventListeners() {
         });
     }
 
-    document.getElementById('update-confirm-btn-confirm').addEventListener('click', async () => {
-        DOM.updateConfirmModal.classList.add('hidden');
-        const updates = state.pendingUpdates ||[];
-        
-        let successCount = 0;
-        let errorCount = 0;
-
-        for (const update of updates) {
-            try {
-                const row = update.row;
-                const bpSelect = row.querySelector('[data-field="base_blueprint"]');
-                const outPathInput = row.querySelector('input[data-field="output_path"]');
-                
-                const pyField = row.querySelector('select[data-field="python_version"]');
-                const cudaField = row.querySelector('select[data-field="cuda_version"]');
-                const torchField = row.querySelector('select[data-field="torch_version"]');
-
-                const data = {
-                    name: row.querySelector('input[data-field="name"]').value,
-                    base_blueprint: bpSelect.disabled ? undefined : bpSelect.value,
-                    output_path: outPathInput.disabled ? undefined : (outPathInput.value || null),
-                    gpu_ids: resolveGpuIds(row),
-                    autostart: row.querySelector('input[data-field="autostart"]').checked,
-                    persistent_mode: row.querySelector('input[data-field="persistent_mode"]').checked,
-                    hostname: row.querySelector('input[data-field="hostname"]').value || null,
-                    use_custom_hostname: row.querySelector('input[data-field="use_custom_hostname"]').checked,
-                    port: row.querySelector('select[data-field="port"]').value ? parseInt(row.querySelector('select[data-field="port"]').value, 10) : null,
-                    // --- NEW: Env variables ---
-                    python_version: (pyField && !pyField.disabled) ? (pyField.value || null) : undefined,
-                    cuda_version: (cudaField && !cudaField.disabled) ? (cudaField.value || null) : undefined,
-                    torch_version: (torchField && !torchField.disabled) ? (torchField.value || null) : undefined,
-                };
-
-                await api.updateInstance(update.id, data);
-                row.classList.remove('row-dirty');
-                successCount++;
-            } catch (err) {
-                console.error(`Failed to update instance ${update.id}:`, err);
-                errorCount++;
-                showToast(`Failed to update instance ${update.id}: ${err.message}`, 'error');
-            }
-        }
-
-        if (successCount > 0) showToast(`${successCount} instance(s) updated successfully.`);
-        if (errorCount > 0) showToast(`${errorCount} update(s) failed.`, 'error');
-        
-        document.getElementById('global-save-btn').style.display = 'none';
-        await fetchAndRenderInstances();
-    });
-
-    document.getElementById('update-confirm-btn-cancel').addEventListener('click', () => {
-        DOM.updateConfirmModal.classList.add('hidden');
-    });
-
     DOM.instancesTable.addEventListener('click', async (event) => {
         const target = event.target.closest('[data-action]');
         if (!target) return;
