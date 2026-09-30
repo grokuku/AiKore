@@ -19,7 +19,9 @@
         color: #e0e0e0;
         padding: 10px 15px;
         text-decoration: none;
-        display: block;
+        display: flex; /* Align icon + label on one line */
+        align-items: center; /* Vertical centering */
+        gap: 8px; /* Space between icon and label */
         background-color: transparent;
         border: none;
         width: 100%;
@@ -27,6 +29,12 @@
         cursor: pointer;
         font-size: 14px;
         font-family: inherit;
+    }
+
+    /* Neutralise the inline baseline of the injected SVG icons */
+    .context-item svg {
+        display: block;
+        flex: none;
     }
     
     .context-item:hover:not(:disabled) {

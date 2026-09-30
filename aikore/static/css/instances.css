@@ -8,6 +8,17 @@
     cursor: pointer;
     font-size: 14px;
     transition: background-color 0.2s ease;
+    display: inline-flex; /* Align icon + label on one line */
+    align-items: center; /* Vertical centering */
+    justify-content: center;
+    gap: 6px; /* Space between icon and label */
+    vertical-align: middle;
+}
+
+/* Neutralise the inline baseline of the injected SVG icons */
+.add-new-btn svg {
+    display: block;
+    flex: none;
 }
 
 .add-new-btn:hover {
@@ -223,11 +234,20 @@ tbody.instance-group tr:last-child td {
     /* Slightly smaller for more buttons */
     text-decoration: none;
     /* For <a> tags */
-    display: inline-block;
-    /* For <a> tags */
+    display: inline-flex; /* Flex container so icon + label share one baseline */
+    align-items: center; /* Vertical centering of icon and label */
+    justify-content: center;
+    gap: 6px; /* Space between icon and label */
+    vertical-align: middle; /* Align adjacent buttons on the same row */
     height: 28px; /* Fixed height for compaction */
-    line-height: 28px; /* Vertical centering */
+    line-height: 1; /* Flex handles centering; avoid baseline drift */
     box-sizing: border-box;
+}
+
+/* Neutralise the inline baseline of the injected SVG icons */
+.action-btn svg {
+    display: block;
+    flex: none;
 }
 
 .action-btn:hover:not(:disabled):not(.disabled) {
@@ -247,6 +267,8 @@ tbody.instance-group tr:last-child td {
     display: flex;
     justify-content: flex-end;
     align-items: center;
+    vertical-align: middle; /* Keep the whole button row on one line */
+    white-space: nowrap;
     gap: 5px;
     padding: 3px 5px;
     /* Match row cell padding */

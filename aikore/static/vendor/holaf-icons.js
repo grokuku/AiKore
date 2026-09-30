@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════
- * Holaf UI — Brique HolafIcons · version 0.1.1
+ * Holaf UI — Brique HolafIcons · version 0.1.2
  * ─────────────────────────────────────────────────────────────────────────────
  * Set d'icônes SVG en trait (style « feather »), ZÉRO CSS (aucune feuille
  * n'est injectée) : chaque icône utilise `stroke="currentColor"` et lèse à
@@ -25,7 +25,7 @@
 const HolafIcons = (function () {
     "use strict";
 
-    const VERSION = "0.1.1";
+    const VERSION = "0.1.2";
 
     const NS = "http://www.w3.org/2000/svg";
 
@@ -122,6 +122,10 @@ const HolafIcons = (function () {
         pause:
             '<rect x="6" y="4" width="4" height="16"></rect>' +
             '<rect x="14" y="4" width="4" height="16"></rect>',
+
+        // Arrêt / stop (carré).
+        stop:
+            '<rect x="5" y="5" width="14" height="14" rx="2" ry="2"></rect>',
 
         // Flèche droite.
         "arrow-right":

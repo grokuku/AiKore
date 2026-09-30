@@ -867,7 +867,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
         
         actionsCell.innerHTML = `
             <button class="action-btn" data-action="start" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>${HolafIcons.render('play', {size: 14})} Start</button>
-            <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>${HolafIcons.render('pause', {size: 14})} Stop</button>
+            <button class="action-btn" data-action="stop" data-id="${instance.id}" ${isStopped ? 'disabled' : ''}>${HolafIcons.render('stop', {size: 14})} Stop</button>
             <button class="action-btn" data-action="logs" data-id="${instance.id}">${HolafIcons.render('terminal', {size: 14})} Logs</button>
             <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">${HolafIcons.render('gear', {size: 14})} Tools</button>
             <button class="action-btn" data-action="delete" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>${HolafIcons.render('trash', {size: 14})} Delete</button>
