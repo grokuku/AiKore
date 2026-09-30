@@ -70,7 +70,7 @@ aikore.example.com {
 La validation d'origine des WebSockets compare l'en-tête `Origin` à l'hôte de la requête. Derrière un reverse proxy, celui-ci doit donc transmettre l'hôte public d'origine :
 
 - **Caddy 2** : préserve le `Host` d'origine par défaut (`reverse_proxy`) — rien à faire.
-- **nginx** : ajouter `proxy_set_header Host $host;` dans le bloc `location`, sinon nginx transmet le nom upstream et tous les handshakes WS seront bloqués en cross-origin.
+- **nginx** : ajouter `proxy_set_header Host $http_host;` (et non `$host`) dans le bloc `location` : `$http_host` conserve le port demandé par le client, alors que `$host` le supprime — sur un port non standard (ex. `:9000`), l'`Origin` (`http://<host>:9000`) ne correspondrait plus au `Host` transmis et tous les handshakes WS seraient bloqués en cross-origin. Ajouter aussi `proxy_set_header X-Forwarded-Host $http_host;` si le proxy ne peut pas préserver `Host`.
 - **Fallback** : si un proxy ne peut pas préserver `Host`, AiKore accepte aussi une correspondance entre `Origin` et l'en-tête `X-Forwarded-Host` (chaîne multi-proxy gérée).
 - **Dernier recours** : lister explicitement l'origine publique dans `AIKORE_WS_ALLOWED_ORIGINS` (ex. `https://aikore.example.com`).
 
