@@ -11,15 +11,21 @@
  * aikore-dark : l'app reste correctement colorée même sans JS.
  *
  * TROIS NIVEAUX :
- *   1. :root                — mappes tokens + valeurs communes (fallbacks).
- *   2. [data-mode="dark"|"light"] — littéraux dépendant du mode (états,
- *      terminaux, voiles, neutres) ; l'attribut est posé par js/themes.js.
- *   3. [data-theme="aikore-*"] — overrides d'identité de la famille aikore
- *      (SECONDARY violet, text-strong, terminal, log-error, editor-text).
- *   4. @supports color-mix  — dérivés calculés, avec replis sûrs ci-dessus.
+ *   1. :root                — mappes tokens + replis littéraux (aikore-dark).
+ *   2. [data-mode="dark"|"light"] — littéraux propres au MODE (voiles,
+ *      terminaux xterm, statuts) + REPLIS DÉRIVÉS des tokens du thème actif.
+ *   3. @supports color-mix  — dérivations GÉNÉRIQUES des rôles de
+ *      surface/chrome/neutres à partir des tokens --holaf-* du thème actif.
+ *   4. [data-theme="aikore-*"] — littéraux d'IDENTITÉ de la famille aikore
+ *      uniquement (violet #6F42C1, encre forte, terminal/éditeur).
  *
- * PALETTES : valeurs validées aikore-dark / aikore-light uniquement ; les
- * valeurs intermédiaires sont dérivées par color-mix() ou explicitement
+ * RÈGLE D'OR (correctif « thèmes sombres inertes ») : AUCUN littéral de la
+ * palette navy aikore-dark ne doit vivre dans [data-mode] ni dans :root pour
+ * un rôle de surface/chrome — sinon tous les thèmes sombres sont figés. Ces
+ * littéraux n'existent que dans les blocs [data-theme="aikore-*"] (niveau 4).
+ *
+ * PALETTES : valeurs validées aikore-dark / aikore-light ; les valeurs
+ * intermédiaires sont dérivées par color-mix() (niveau 3) ou explicitement
  * justifiées en commentaire.
  * ═════════════════════════════════════════════════════════════════════════ */
 
@@ -139,17 +145,40 @@
     --ak-building-bg: #E67E22;       /* bouton Build Module en cours de build */
 }
 
-/* ─── 2. Littéraux dépendant du mode (posés par themes.js) ───────────────── */
+/* ─── 2. Littéraux dépendant du mode (posés par themes.js) ─────────────────
+ * CORRECTIF « thèmes sombres inertes » : ce bloc ne contient PLUS de littéraux
+ * de la palette navy aikore-dark. La cause du bug était que [data-mode="dark"]
+ * (placé après :root, même spécificité) écrasait la dérivation et figeait TOUS
+ * les thèmes sombres (indigo/slate/emerald/midnight/amber) sur la palette
+ * aikore-dark : le tableau gardait le même bleu. Désormais :
+ *   • SURFACES / CHROME / NEUTRES : replis DÉRIVÉS des tokens du thème actif
+ *     (var(--ak-*) ← --holaf-*), raffinés par color-mix en section 3.
+ *   • TERMINAUX / ÉDITEUR : liés au MODE (fond xterm #111111 posé par
+ *     tools.js, identique pour toutes les familles) → identité de mode.
+ *   • STATUTS : couleurs sémantiques universelles (démarré/erreur/…) : elles
+ *     signifient un ÉTAT, pas une famille → constantes de mode.
+ * Seuls les littéraux d'IDENTITÉ sans équivalent token (violet d'identité,
+ * terminal/éditeur aikore) sont confinés aux blocs [data-theme="aikore-*"]
+ * (section 4) — jamais subis par les familles holaf.                       */
 :root[data-mode="dark"] {
-    --ak-text-strong: #FFFFFF;
+    /* Encre forte : repli dérivé (color-mix en section 3). */
+    --ak-text-strong: var(--ak-text, #E0E0E0);
     --ak-menu-bg: var(--holaf-border, #3B3B6B);
+
+    /* Voiles / ombres : propres au mode, sans couleur de famille. */
     --ak-veil: rgba(6, 6, 16, 0.62);
     --ak-shadow-strong: 0 12px 40px rgba(0, 0, 0, 0.5);
-    --ak-satellite-bg: rgba(0, 0, 0, 0.2);
+
+    /* Terminaux / éditeur : couplés au thème xterm & CodeMirror de tools.js
+       (fond #111111 en sombre, #FFF en clair et CodeMirror « darcula ») →
+       identité de MODE, partagée par toutes les familles sombres. */
     --ak-terminal-bg: #111111;
     --ak-tool-bg: #111111;
     --ak-log-error: #FF6B6B;
     --ak-editor-text: #00FF41;
+
+    /* Statuts sémantiques : signal d'état universel, constant d'un thème à
+       l'autre (contrastes validés). L'encre blanche est justifiée sur aplat. */
     --ak-success-strong: #1E8336; /* started — contraste validé */
     --ak-stalled: #FD7E14;        /* installing / stalled — contraste validé */
     --ak-on-stalled: #212529;
@@ -157,16 +186,32 @@
     --ak-info-strong: #17A2B8;
     --ak-on-info-strong: #04262B;
     --ak-on-warning: #212529;
-    --ak-btn-neutral-bg: #4A4A70;
-    --ak-btn-neutral-fg: #FFFFFF;
-    --ak-switch-bg: #444444;
+
+    /* Chrome dérivé du thème actif : replis var() (color-mix en section 3).
+       Aucun littéral navy ici : sinon les autres familles sombres l'héritent. */
+    --ak-satellite-bg: var(--ak-hover, rgba(44, 44, 84, 0.7));
+    --ak-panel-soft: var(--ak-panel-alt, #2C2C54);
+    --ak-input: var(--ak-panel-alt, #2C2C54);
+    --ak-panel-monitoring: var(--ak-panel, #2A2A4A);
+    --ak-panel-group: var(--ak-panel-alt, #2C2C54);
+    --ak-menu-hover: var(--ak-border, #3B3B6B);
+    --ak-menu-group-bg: var(--ak-border, #3B3B6B);
+    --ak-inset-bg: var(--ak-panel-alt, #2C2C54);
+    --ak-tool-panel: var(--ak-panel-alt, #2C2C54);
+    --ak-tool-input-bg: var(--ak-panel-alt, #2C2C54);
+    --ak-border-faint: var(--ak-border, #3B3B6B);
+    --ak-btn-neutral-bg: var(--ak-border, #3B3B6B);
+    --ak-btn-neutral-fg: var(--ak-text-strong, #FFFFFF);
+    --ak-switch-bg: var(--ak-border, #3B3B6B);
+    --ak-veil-hover: rgba(255, 255, 255, 0.1);
+    --ak-text-metric: var(--ak-text-muted, #B8B8CC);
+    --ak-text-dim: var(--ak-text-muted, #B8B8CC);
+    --ak-text-soft: var(--ak-text-muted, #B8B8CC);
+    --ak-text-disabled: var(--ak-text-muted, #B8B8CC);
+    --ak-text-ghost: var(--ak-text-muted, #B8B8CC);
     --ak-focus-ring: rgba(111, 66, 193, 0.3);
     --ak-warn-soft: rgba(255, 193, 7, 0.1);
     --ak-warn-border: rgba(255, 193, 7, 0.3);
-    /* Replis color-mix (valeurs actuelles constatées en dark) */
-    --ak-panel-soft: #1E1E3F;
-    --ak-input: #1E1E3F;
-    --ak-panel-monitoring: #252545;
 }
 
 :root[data-mode="light"] {
@@ -251,36 +296,59 @@
 }
 
 /* ─── 3. Dérivés color-mix (navigateurs modernes) ─────────────────────────── */
-/* Les replis sûrs sont définis ci-dessus ([data-mode]) ; ce bloc les remplace
-   par des dérivés calculés à partir des tokens du thème actif. */
+/* Les replis sûrs sont définis ci-dessus (:root / [data-mode]) ; ce bloc les
+   remplace par des dérivés calculés à partir des tokens DU THÈME ACTIF.
+   IMPORTANT (correctif) : les dérivés COMMUNS vivent dans :root[data-mode]
+   sans distinction sombre/clair, et AUCUN d'eux ne doit être réécrit par un
+   littéral dans [data-mode="dark"] — sinon toutes les familles sombres
+   seraient figées. Les seules différences par mode sont text-strong (encre),
+   panel-group (creusé) et les neutres propres au mode clair.               */
 @supports (color: color-mix(in srgb, #000000, #FFFFFF)) {
+    /* Dérivations COMMUNES aux deux modes (suivent la famille sélectionnée). */
     :root[data-mode] {
         --ak-warn-soft: color-mix(in srgb, var(--ak-warning) 12%, transparent);
         --ak-warn-border: color-mix(in srgb, var(--ak-warning) 35%, transparent);
         --ak-focus-ring: color-mix(in srgb, var(--ak-secondary) 30%, transparent);
-    }
-    :root[data-mode="dark"] {
-        --ak-text-strong: color-mix(in srgb, var(--ak-text) 70%, #FFFFFF);
-    }
-    /* Les fonds « creusés » et le voile satellite gardent leurs littéraux dark
-       historiques (#1E1E3F / #252545 / rgba(0,0,0,0.2) — identité aikore-dark
-       exigée) : le dérivé calculé ne remplace que les replis light. */
-    :root[data-mode="light"] {
-        --ak-text-strong: color-mix(in srgb, var(--ak-text) 70%, #000000);
-        --ak-btn-neutral-bg: color-mix(in srgb, var(--ak-border) 65%, var(--ak-panel-alt));
-        --ak-switch-bg: color-mix(in srgb, var(--ak-border) 70%, var(--ak-panel-alt));
         --ak-panel-soft: color-mix(in srgb, var(--ak-panel-alt) 45%, var(--ak-bg));
         --ak-input: color-mix(in srgb, var(--ak-panel-alt) 45%, var(--ak-bg));
         --ak-panel-monitoring: color-mix(in srgb, var(--ak-panel) 80%, var(--ak-bg));
         --ak-satellite-bg: color-mix(in srgb, var(--ak-text) 6%, transparent);
+        --ak-menu-hover: color-mix(in srgb, var(--ak-border) 40%, var(--ak-panel-alt));
+        --ak-menu-group-bg: color-mix(in srgb, var(--ak-border) 30%, var(--ak-panel-alt));
+        --ak-btn-neutral-bg: color-mix(in srgb, var(--ak-border) 65%, var(--ak-panel-alt));
+        --ak-switch-bg: color-mix(in srgb, var(--ak-border) 70%, var(--ak-panel-alt));
         --ak-text-metric: color-mix(in srgb, var(--ak-text) 72%, var(--ak-bg));
         --ak-text-dim: color-mix(in srgb, var(--ak-text) 78%, var(--ak-bg));
         --ak-text-soft: color-mix(in srgb, var(--ak-text) 68%, var(--ak-bg));
         --ak-text-disabled: color-mix(in srgb, var(--ak-text) 55%, var(--ak-bg));
         --ak-text-ghost: color-mix(in srgb, var(--ak-text) 45%, var(--ak-bg));
         --ak-veil-hover: color-mix(in srgb, var(--ak-text) 6%, transparent);
-        --ak-menu-hover: color-mix(in srgb, var(--ak-border) 40%, var(--ak-panel-alt));
-        --ak-menu-group-bg: color-mix(in srgb, var(--ak-border) 30%, var(--ak-panel-alt));
+        --ak-inset-bg: color-mix(in srgb, var(--ak-panel-alt) 45%, var(--ak-bg));
+        --ak-tool-panel: var(--ak-panel-alt);
+        --ak-tool-input-bg: color-mix(in srgb, var(--ak-panel-alt) 45%, var(--ak-bg));
+        --ak-border-faint: var(--ak-border);
+        /* Les packs hôte aikore fournissent explicitement ces dérivées --holaf-*,
+           mais les FAMILLES holaf ne les posent pas : sans repli calculé, elles
+           retombaient sur les littéraux aikore (bleu/violet figés). On les
+           dérive du thème actif ; le var(--holaf-*) prioritaire garde aikore
+           strictement inchangé. */
+        --ak-accent-soft: var(--holaf-accent-soft, color-mix(in srgb, var(--ak-accent) 16%, transparent));
+        --ak-accent-glow: var(--holaf-accent-glow, color-mix(in srgb, var(--ak-accent) 50%, transparent));
+        --ak-danger-soft: var(--holaf-danger-soft, color-mix(in srgb, var(--ak-danger) 12%, transparent));
+        --ak-success-soft: var(--holaf-ok-soft, color-mix(in srgb, var(--ak-success) 10%, transparent));
+        --ak-border-muted: var(--holaf-border-muted, color-mix(in srgb, var(--ak-border) 45%, transparent));
+        --ak-hover: var(--holaf-surface-hover, color-mix(in srgb, var(--ak-panel-alt) 70%, transparent));
+        --ak-text-faint: var(--holaf-text-faint, var(--ak-text-muted));
+    }
+    /* Spécifiques au mode sombre : encre forte + fond « creusé » groupe. */
+    :root[data-mode="dark"] {
+        --ak-text-strong: color-mix(in srgb, var(--ak-text) 70%, #FFFFFF);
+        --ak-panel-group: color-mix(in srgb, var(--ak-panel-alt) 55%, var(--ak-panel));
+    }
+    /* Spécifiques au mode clair : encre forte + neutres clairs. */
+    :root[data-mode="light"] {
+        --ak-text-strong: color-mix(in srgb, var(--ak-text) 70%, #000000);
+        --ak-panel-group: var(--ak-panel-soft);
         --ak-disabled-bg: color-mix(in srgb, var(--ak-text) 6%, transparent);
         --ak-btn-light-bg: color-mix(in srgb, var(--ak-border) 35%, var(--ak-panel-alt));
         --ak-success-hover: color-mix(in srgb, var(--ak-success) 85%, var(--ak-text-strong));
@@ -288,12 +356,16 @@
 }
 
 /* ─── 4. Overrides d'identité aikore ─────────────────────────────────────── */
-/* Valeurs propres à la famille « aikore » (pack hôte, cf. js/themes.js).
-   Placés après le @supports : à spécificité égale, l'ordre les fait gagner. */
+/* CONFINEMENT DES LITTÉRAUX D'IDENTITÉ (correctif) : ne vivent ici QUE les
+   valeurs propres à la famille « aikore » (pack hôte, cf. js/themes.js) —
+   violet d'identité #6F42C1, encre forte, et les couleurs terminal/éditeur
+   sans équivalent token. Placées APRÈS le @supports, à spécificité égale
+   elles gagnent par l'ordre. Les familles holaf (indigo/slate/emerald/…) ne
+   les subissent donc JAMAIS : leurs rôles dérivent de --holaf-*.           */
 :root[data-theme="aikore-dark"] {
     --ak-secondary: #6F42C1; /* violet d'identité (groupes, outils, builder) */
     --ak-on-secondary: #FFFFFF;
-    --ak-text-strong: #FFFFFF;
+    --ak-text-strong: #FFFFFF; /* encre forte : blanc franc propre à aikore */
     --ak-terminal-bg: #111111;
     --ak-tool-bg: #111111;
     --ak-log-error: #FF6B6B;

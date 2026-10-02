@@ -303,6 +303,10 @@ tbody.instance-group tr:last-child td {
 [data-action="script"],
 [data-action="parameters"],[data-action="tools_menu"] {
     background-color: var(--ak-secondary);
+    /* Encre « on-secondary » : indispensable pour les familles holaf dont
+       l'accent est clair (emerald/amber) — sans elle, --ak-on-color (blanc)
+       tombait à ~1.9:1 sur l'accent. */
+    color: var(--ak-on-secondary);
 }
 
 [data-action="open"],

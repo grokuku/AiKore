@@ -96,6 +96,9 @@
 
 #editor-save-custom-btn {
     background-color: var(--ak-secondary);
+    /* Encre « on-secondary » : suit l'accent du thème (les familles holaf
+       claires emerald/amber tombent à ~1.9:1 avec l'encre blanche héritée). */
+    color: var(--ak-on-secondary);
 }
 
 /* --- CODEMIRROR STYLES --- */
@@ -476,7 +479,9 @@
 
 #builder-logs-header {
     font-size: 0.8rem;
-    color: var(--ak-text-ghost);
+    /* --ak-text-faint plutôt que --ak-text-ghost : le fantôme (45 % texte)
+       tombait à ~2.9:1 sur fond clair, sous le seuil WCAG 4.5:1. */
+    color: var(--ak-text-faint);
     margin-bottom: 0.2rem;
 }
 

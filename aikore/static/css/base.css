@@ -175,7 +175,10 @@
     
     .zoom-label {
         font-size: 11px;
-        color: var(--ak-text-soft);
+        /* --ak-text-muted (token lisible ≥ 4.5:1) plutôt que --ak-text-soft :
+           cette dernière tombait à ~4.2:1 sur les surfaces teintées des
+           familles light (emerald/amber). */
+        color: var(--ak-text-muted);
         min-width: 32px;
         text-align: center;
         user-select: none;
