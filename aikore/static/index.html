@@ -5,6 +5,30 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AiKore Dashboard</title>
+    <!-- Anti-FOUC du thème : exécuté AU PARSING, avant les CSS et les scripts
+         defer/module → le premier paint a déjà le bon mode. Lit le thème
+         persisté et pose data-theme/data-mode sur <html> ; les replis
+         littéraux du mode clair vivent dans theme.css ([data-mode="light"])
+         et couvrent la fenêtre où holaf-tokens.js (defer, non render-blocking)
+         n'a pas encore posé les tokens --holaf-*.
+         Ne duplique PAS le catalogue des packs : seul le MODE est déduit du
+         suffixe « -dark »/« -light » (convention des 12 thèmes) ; au boot,
+         themes.js (initTheme) re-valide le nom complet et corrige un éventuel
+         nom inconnu. try/catch : localStorage peut jeter (mode privé). -->
+    <script>
+        (function () {
+            try {
+                var saved = localStorage.getItem('aikoreTheme');
+                if (!saved || !/^[a-z0-9-]+-(dark|light)$/.test(saved)) return;
+                var root = document.documentElement;
+                root.setAttribute('data-theme', saved);
+                root.setAttribute('data-mode', /-light$/.test(saved) ? 'light' : 'dark');
+            } catch (e) { /* stockage indisponible — replis CSS par défaut */ }
+        })();
+    </script>
+    <!-- Theme layer: semantic --ak-* variables (maps HolafTokens --holaf-*),
+         loaded FIRST so the app CSS can consume it (refactor lot). -->
+    <link rel="stylesheet" href="/static/css/theme.css">
     <link rel="stylesheet" href="/static/css/base.css">
     <link rel="stylesheet" href="/static/css/instances.css">
     <link rel="stylesheet" href="/static/css/modals.css">
@@ -22,6 +46,17 @@
     <link rel="stylesheet" href="/static/vendor/codemirror-5.65.16.min.css" integrity="sha384-zaeBlB/vwYsDRSlFajnDd7OydJ0cWk+c2OWybl3eSUf6hW2EbhlCsQPqKr3gkznT" crossorigin="anonymous" />
     <link rel="stylesheet" href="/static/vendor/codemirror-darcula-5.65.16.min.css" integrity="sha384-O7baQ60DV8PF9lmTWsCobbRqqwybdAMd27xf3MCGJPyaiJOUgqR5MD/l2KvMVqan" crossorigin="anonymous" />
 
+    <!-- Holaf Lib — brique FONDATION (tokens de page --holaf-*).
+         EXCEPTION à la règle « briques holaf importées en ESM » (cf. le
+         commentaire en fin de <body>) : holaf-tokens 0.3.0 est CLASSIC-ONLY,
+         il n'a AUCUN export top-level (un import ESM ne fournirait rien ; un
+         export {} le casserait en script classique). API via window.HolafTokens.
+         `defer` : ne bloque pas le parsing (même doctrine que le FIX(perf)
+         ansi_up/CDN ci-dessous) ; l'ordre documentaire garantit son exécution
+         AVANT les autres scripts defer et AVANT main.js (module, defer par
+         défaut) — js/themes.js s'appuie sur cette garantie. -->
+    <script src="/static/vendor/holaf-tokens.js" defer></script>
+
     <style>
         /* Satellite Tree Visuals */
         .name-cell-wrapper {
@@ -34,8 +69,8 @@
             display: inline-block;
             width: 15px;
             height: 25px; /* Adjust based on row height */
-            border-bottom: 2px solid #555;
-            border-left: 2px solid #555;
+            border-bottom: 2px solid var(--ak-text-ghost);
+            border-left: 2px solid var(--ak-text-ghost);
             margin-right: 8px;
             margin-top: -14px; /* Lift the L shape to connect to parent */
             opacity: 0.6;
@@ -43,20 +78,20 @@
 
         /* Row "Dirty" State (Modified but not saved) */
         tr.row-dirty td {
-            background-color: rgba(255, 193, 7, 0.1) !important; /* Subtle yellow tint */
-            border-top: 1px solid rgba(255, 193, 7, 0.3);
-            border-bottom: 1px solid rgba(255, 193, 7, 0.3);
+            background-color: var(--ak-warn-soft) !important; /* Subtle yellow tint */
+            border-top: 1px solid var(--ak-warn-border);
+            border-bottom: 1px solid var(--ak-warn-border);
         }
 
         /* Global Save Button */
         #global-save-btn {
             margin-left: 10px;
-            background-color: #28a745; /* Green */
-            color: white;
+            background-color: var(--ak-success); /* Green */
+            color: var(--ak-on-color);
             display: none; /* Hidden by default until changes exist */
         }
         #global-save-btn:hover {
-            background-color: #218838;
+            background-color: var(--ak-success-hover);
         }
     </style>
 </head>
@@ -78,6 +113,16 @@
                             <span class="zoom-label" data-pane="instance">100%</span>
                             <button class="zoom-btn zoom-in" data-pane="instance" title="Zoom in">+</button>
                         </div>
+                        <!-- Theme selector : libellé/icône/état remplis par
+                             js/themeSelector.js au boot (le HTML ne porte
+                             qu'un squelette neutre, sans thème en dur). -->
+                        <button id="theme-select-trigger" class="theme-select-trigger" type="button"
+                            aria-haspopup="listbox" aria-expanded="false" title="Theme"
+                            aria-label="Choose theme">
+                            <span id="theme-select-icon" class="theme-select-icon" aria-hidden="true"></span>
+                            <span id="theme-select-label" class="theme-select-label">Theme</span>
+                            <span class="theme-select-arrow" aria-hidden="true"></span>
+                        </button>
                         <button class="add-new-btn">Add New Instance</button>
                         <button id="global-save-btn" class="action-btn">Save Changes (<span id="dirty-count">0</span>)</button>
                     </div>
@@ -252,7 +297,9 @@
          dans chaque module (api/ui/modals/main). NE PAS les charger ici en
          <script src> classique : ce sont des fichiers DUAL dont le `export {}`
          top-level provoquerait un SyntaxError en script classique, et l'ordre
-         d'exécution ne garantirait pas les globals window.Holaf*. -->
+         d'exécution ne garantirait pas les globals window.Holaf*.
+         SEULE EXCEPTION : holaf-tokens.js (fondation, classic-only SANS export)
+         — chargée en <script defer> dans le <head>. -->
     <!-- Split.js library -->
     <script src="/static/vendor/split-1.6.5.min.js" integrity="sha384-q2ksSc8z6Q4ZUnxlfZj9AXZLpSdWmD3q/YrId1twTeNHh56fNh98YbJSpppzGUvL" crossorigin="anonymous" defer></script>
     <!-- NEW: Xterm.js library and Fit Addon -->

@@ -3,7 +3,7 @@
 .close-btn {
     background: none;
     border: none;
-    color: #e0e0e0;
+    color: var(--ak-text);
     font-size: 2rem;
     font-weight: bold;
     cursor: pointer;
@@ -11,17 +11,25 @@
     line-height: 1;
     transition: color 0.2s ease;
     margin-left: 1rem;
+    display: inline-flex; /* Center the injected × icon (was a text glyph) */
+    align-items: center;
+    justify-content: center;
+}
+
+.close-btn svg {
+    display: block;
+    flex: none;
 }
 
 .close-btn:hover {
-    color: #ff6b6b;
+    color: var(--ak-log-error);
 }
 
 /* --- LOGS / TERMINAL / EDITOR (Shared Styles) --- */
 .terminal-style {
-    background-color: #111;
+    background-color: var(--ak-terminal-bg);
     font-family: 'Courier New', Courier, monospace;
-    color: #e0e0e0;
+    color: var(--ak-text);
     padding: 1rem;
     height: 100%;
     box-sizing: border-box;
@@ -40,7 +48,7 @@
 }
 
 .log-error {
-    color: #ff6b6b;
+    color: var(--ak-log-error);
 }
 
 /* --- LOG VIEWER --- */
@@ -54,7 +62,7 @@
     flex-direction: column;
     height: 100%;
     flex-grow: 1;
-    background-color: #111;
+    background-color: var(--ak-tool-bg);
 }
 
 #file-editor-textarea {
@@ -62,9 +70,9 @@
     width: 100%;
     padding: 1rem;
     box-sizing: border-box;
-    background-color: #111;
+    background-color: var(--ak-tool-bg);
     border: none;
-    color: #00ff41;
+    color: var(--ak-editor-text);
     font-family: 'Courier New', Courier, monospace;
     font-size: 14px;
     resize: none;
@@ -77,17 +85,17 @@
     justify-content: flex-end;
     gap: 10px;
     padding: 1rem;
-    border-top: 1px solid #3b3b6b;
+    border-top: 1px solid var(--ak-border);
     flex-shrink: 0;
-    background-color: #2c2c54;
+    background-color: var(--ak-panel-alt);
 }
 
 #editor-update-btn {
-    background-color: #28a745;
+    background-color: var(--ak-success);
 }
 
 #editor-save-custom-btn {
-    background-color: #6f42c1;
+    background-color: var(--ak-secondary);
 }
 
 /* --- CODEMIRROR STYLES --- */
@@ -100,7 +108,7 @@
 }
 
 .cm-s-darcula {
-    background-color: #111;
+    background-color: var(--ak-tool-bg);
 }
 
 
@@ -127,7 +135,7 @@
     flex-grow: 1;
     width: 100%;
     min-height: 0;
-    background-color: #111;
+    background-color: var(--ak-terminal-bg);
     padding: 0;
     box-sizing: border-box;
     display: flex;
@@ -166,15 +174,15 @@
 #version-check-container .terminal-style h3 {
     margin: 0 0 0.5rem 0;
     padding: 0.5rem 1rem;
-    background-color: #252545;
-    border-bottom: 1px solid #3b3b6b;
+    background-color: var(--ak-panel-monitoring);
+    border-bottom: 1px solid var(--ak-border);
 }
 
 #version-check-container .terminal-style pre {
     flex: 1;
     overflow: auto;
     padding: 0.5rem 1rem;
-    background-color: #111;
+    background-color: var(--ak-terminal-bg);
 }
 
 /* --- BUILDER TOOL --- */
@@ -183,7 +191,7 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
-    background-color: #111;
+    background-color: var(--ak-tool-bg);
     overflow: hidden;
 }
 
@@ -191,14 +199,14 @@
     display: flex;
     flex-direction: row;
     height: 50%;
-    border-bottom: 2px solid #3b3b6b;
+    border-bottom: 2px solid var(--ak-border);
     min-height: 200px;
     box-sizing: border-box;
 }
 
 /* Split.js Gutter Style */
 .gutter {
-    background-color: #2c2c54;
+    background-color: var(--ak-panel-alt);
     background-repeat: no-repeat;
     background-position: 50%;
 }
@@ -216,18 +224,18 @@
     grid-auto-rows: min-content;
     gap: 1rem;
     overflow-y: auto;
-    background-color: #111;
+    background-color: var(--ak-tool-bg);
     width: 650px;
     /* Fixed width to accommodate all columns and labels cleanly */
     flex-shrink: 0;
-    border-right: 2px solid #3b3b6b;
+    border-right: 2px solid var(--ak-border);
     box-sizing: border-box;
 }
 
 #builder-options h3 {
     margin-top: 0;
-    color: #fff;
-    border-bottom: 1px solid #555;
+    color: var(--ak-text-strong);
+    border-bottom: 1px solid var(--ak-border-faint);
     padding-bottom: 0.5rem;
 }
 
@@ -238,16 +246,16 @@
 }
 
 .builder-field label {
-    color: #aaa;
+    color: var(--ak-text-soft);
     font-size: 0.9rem;
     font-weight: bold;
 }
 
 .builder-field select,
 .builder-field input[type="text"] {
-    background-color: #222;
-    border: 1px solid #444;
-    color: #fff;
+    background-color: var(--ak-tool-input-bg);
+    border: 1px solid var(--ak-border-faint);
+    color: var(--ak-text-strong);
     padding: 0.5rem;
     border-radius: 4px;
     height: 35px;
@@ -261,10 +269,17 @@
 }
 
 .builder-info-link {
-    color: #4da6ff;
+    color: var(--ak-accent);
     text-decoration: none;
     font-size: 0.8rem;
     margin-left: 0.5rem;
+    display: inline-flex; /* Align the external-link icon on the label line */
+    align-items: center;
+    vertical-align: middle;
+}
+
+.builder-info-link svg {
+    display: block;
 }
 
 .builder-info-link:hover {
@@ -280,8 +295,8 @@
 
 #btn-start-build {
     width: 100%;
-    background-color: #28a745;
-    color: white;
+    background-color: var(--ak-success);
+    color: var(--ak-on-color);
     padding: 0;
     height: 35px;
     /* Match input heights perfectly */
@@ -291,14 +306,23 @@
     font-size: 1.1rem;
     border-radius: 4px;
     transition: background 0.2s;
+    display: inline-flex; /* Icon + label centered */
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+#btn-start-build svg {
+    display: block;
+    flex: none;
 }
 
 #btn-start-build:hover {
-    background-color: #218838;
+    background-color: var(--ak-success-hover);
 }
 
 #btn-start-build:disabled {
-    background-color: #444;
+    background-color: var(--ak-btn-neutral-bg);
     cursor: not-allowed;
 }
 
@@ -308,7 +332,7 @@
     /* Take remaining space */
     display: flex;
     flex-direction: column;
-    background-color: #1a1a1a;
+    background-color: var(--ak-tool-panel);
     overflow: hidden;
     /* Contain the table scroll */
 }
@@ -331,7 +355,7 @@
 
 .wheels-table th,
 .wheels-table td {
-    border: 1px solid #444;
+    border: 1px solid var(--ak-border-faint);
     /* Grid lines */
     padding: 0.5rem;
     white-space: nowrap;
@@ -340,8 +364,8 @@
 }
 
 .wheels-table th {
-    background-color: #252545;
-    color: #ddd;
+    background-color: var(--ak-panel-monitoring);
+    color: var(--ak-text);
     text-align: left;
     position: sticky;
     /* Sticky header */
@@ -397,7 +421,7 @@
 /* Act */
 
 .wheels-table tr:hover {
-    background-color: #2a2a2a;
+    background-color: var(--ak-inset-bg);
 }
 
 .wheel-actions {
@@ -415,16 +439,20 @@
     transition: opacity 0.2s;
 }
 
+.btn-icon svg {
+    display: block;
+}
+
 .btn-icon:hover {
     opacity: 1;
 }
 
 .btn-delete {
-    color: #ff6b6b;
+    color: var(--ak-log-error);
 }
 
 .btn-download {
-    color: #4da6ff;
+    color: var(--ak-accent);
 }
 
 /* Builder Logs (Bottom) */
@@ -432,14 +460,16 @@
     height: 50%;
     /* Bottom half */
     padding: 0.5rem;
-    background-color: #000;
+    /* Couplé au thème xterm du builder (tools.js : XTERM_DARK/LIGHT_THEME) :
+       sombre = #000 (inchangé), clair = #FFF — évite la cassure conteneur. */
+    background-color: var(--ak-builder-log-bg);
     display: flex;
     flex-direction: column;
 }
 
 #builder-logs-header {
     font-size: 0.8rem;
-    color: #666;
+    color: var(--ak-text-ghost);
     margin-bottom: 0.2rem;
 }
 
@@ -462,7 +492,7 @@
 
 .resizer:hover,
 .resizing {
-    background-color: #4da6ff;
+    background-color: var(--ak-accent);
 }
 
 /* --- INSTANCE WHEELS MANAGER --- */
@@ -470,7 +500,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
-    background-color: #111;
+    background-color: var(--ak-tool-bg);
     overflow: hidden;
 }
 
@@ -479,25 +509,40 @@
     justify-content: space-between;
     align-items: center;
     padding: 1rem;
-    background-color: #2c2c54;
-    border-bottom: 2px solid #3b3b6b;
+    background-color: var(--ak-panel-alt);
+    border-bottom: 2px solid var(--ak-border);
 }
 
 .toolbar-info {
-    color: #ddd;
+    color: var(--ak-text);
     font-size: 0.9rem;
 }
 
 .toolbar-info code {
-    background: #111;
+    background: var(--ak-tool-bg);
     padding: 0.2rem 0.4rem;
     border-radius: 3px;
-    color: #4da6ff;
+    color: var(--ak-accent);
 }
 
 .toolbar-actions {
     display: flex;
     gap: 0.5rem;
+}
+
+/* Toolbar buttons (Refresh / APPLY CHANGES) host SVG icons */
+.toolbar-actions .btn-secondary,
+.toolbar-actions .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.toolbar-actions .btn-secondary svg,
+.toolbar-actions .btn-primary svg {
+    display: block;
+    flex: none;
 }
 
 .wheels-manager-columns {
@@ -513,8 +558,8 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    background-color: #1a1a1a;
-    border: 1px solid #444;
+    background-color: var(--ak-tool-panel);
+    border: 1px solid var(--ak-border-faint);
     border-radius: 4px;
     overflow: hidden;
 }
@@ -522,10 +567,10 @@
 .wheels-column h3 {
     margin: 0;
     padding: 0.75rem;
-    background-color: #252545;
-    color: #fff;
+    background-color: var(--ak-panel-monitoring);
+    color: var(--ak-text-strong);
     font-size: 1rem;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid var(--ak-border-faint);
     text-align: center;
 }
 
@@ -544,7 +589,7 @@
 
 .manager-table th,
 .manager-table td {
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid var(--ak-border-faint);
     padding: 0.5rem;
     white-space: nowrap;
     overflow: hidden;
@@ -552,15 +597,15 @@
 }
 
 .manager-table th {
-    background-color: #222;
+    background-color: var(--ak-tool-input-bg);
     position: sticky;
     top: 0;
     z-index: 1;
-    color: #aaa;
+    color: var(--ak-text-soft);
 }
 
 .manager-table tr:hover {
-    background-color: #2a2a2a;
+    background-color: var(--ak-inset-bg);
 }
 
 .manager-table th:nth-child(1) {
@@ -600,17 +645,17 @@
 }
 
 .btn-action.install {
-    color: #28a745;
+    color: var(--ak-success);
 }
 
 .btn-action.install:hover {
-    background-color: rgba(40, 167, 69, 0.2);
+    background-color: var(--ak-success-soft);
 }
 
 .btn-action.remove {
-    color: #dc3545;
+    color: var(--ak-danger);
 }
 
 .btn-action.remove:hover {
-    background-color: rgba(220, 53, 69, 0.2);
+    background-color: var(--ak-danger-soft);
 }

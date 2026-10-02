@@ -12,6 +12,17 @@ export function showToast(message, type = 'success') {
     });
 }
 
+/**
+ * Rewrites a button label, optionally prefixed with a HolafIcons icon.
+ * Use instead of `btn.textContent = ...` on buttons whose icon is injected at
+ * boot (main.js static pass): a plain textContent assignment strips the SVG.
+ */
+export function setButtonLabel(btn, label, iconName = null) {
+    if (!btn) return;
+    const prefix = iconName ? `${HolafIcons.render(iconName, { size: 14 })} ` : '';
+    btn.innerHTML = prefix + label;
+}
+
 function createBlueprintSelect(selectedValue = '') {
     // --- Custom dropdown that shows blueprint name + category (right-aligned, darker) ---
     // Uses fixed positioning on body to escape overflow clipping and survive re-renders.
@@ -33,7 +44,7 @@ function createBlueprintSelect(selectedValue = '') {
 
     const arrow = document.createElement('span');
     arrow.className = 'bp-select-arrow';
-    arrow.textContent = '\u25BC';
+    arrow.innerHTML = HolafIcons.render('chevron-down', { size: 12 });
     header.appendChild(arrow);
 
     // Dropdown panel (will be moved to document.body when open)
@@ -857,8 +868,8 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     actionsCell.classList.add('actions-column');
     if (isNew) {
         actionsCell.innerHTML = `
-            <button class="action-btn" data-action="save" data-id="new" disabled>Create</button>
-            <button class="action-btn" data-action="cancel_new">Cancel</button>
+            <button class="action-btn" data-action="save" data-id="new" disabled>${HolafIcons.render('check', { size: 14 })} Create</button>
+            <button class="action-btn" data-action="cancel_new">${HolafIcons.render('x', { size: 14 })} Cancel</button>
             <span class="action-btn-placeholder"></span>`;
     } else {
         const openHref = buildInstanceUrl(row, false);
@@ -872,7 +883,7 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
             <button class="action-btn" data-action="tools_menu" data-id="${instance.id}">${HolafIcons.render('gear', {size: 14})} Tools</button>
             <button class="action-btn" data-action="delete" data-id="${instance.id}" ${!isStopped ? 'disabled' : ''}>${HolafIcons.render('trash', {size: 14})} Delete</button>
             <button class="action-btn" data-action="view" data-id="${instance.id}" ${!isStarted ? 'disabled' : ''}>${HolafIcons.render('eye', {size: 14})} View</button>
-            <a href="${openHref}" class="action-btn ${openHref === '#' ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">Open</a>`;
+            <a href="${openHref}" class="action-btn ${openHref === '#' ? 'disabled' : ''}" data-action="open" data-id="${instance.id}" target="_blank">${HolafIcons.render('external-link', { size: 14 })} Open</a>`;
     }
 
     const allFields = row.querySelectorAll('input, select, .blueprint-select');
@@ -957,6 +968,6 @@ export async function updateSystemStats(stats) {
             DOM.gpuStatsContainer.appendChild(gpuEl);
         });
     } else {
-        DOM.gpuStatsContainer.innerHTML = '<p style="text-align:center;color:#aaa;">No NVIDIA GPUs detected.</p>';
+        DOM.gpuStatsContainer.innerHTML = '<p style="text-align:center;color:var(--ak-text-soft);">No NVIDIA GPUs detected.</p>';
     }
 }

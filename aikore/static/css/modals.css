@@ -1,71 +1,15 @@
-/* --- MODAL STYLES --- */
-
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.7);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 2000;
-}
-
-.modal-content {
-    background-color: #2c2c54;
-    padding: 2rem;
-    border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    border: 1px solid #3b3b6b;
-    min-width: 400px;
-    text-align: center;
-}
-
-.modal-content h2 {
-    margin-top: 0;
-    color: #ffffff;
-}
-
-.modal-actions {
-    margin-top: 1.5rem;
-    display: flex;
-    justify-content: center;
-    gap: 1rem;
-}
-
-.success-btn {
-    background-color: #28a745;
-}
-
-.danger-btn {
-    background-color: #dc3545;
-}
-
-.warning-btn {
-    background-color: #ffc107;
-    color: #333;
-}
-
-/* --- NEW: Input field for modals --- */
-.modal-input {
-    width: 100%;
-    padding: 10px;
-    margin-top: 1rem;
-    background-color: #1e1e3f;
-    border: 1px solid #3b3b6b;
-    color: #e0e0e0;
-    border-radius: 6px;
-    box-sizing: border-box;
-    font-size: 14px;
-    text-align: center;
-    user-select: text;
-}
+/* --- MODAL STYLES ---
+   Les anciennes classes de modales locales (.modal-overlay, .modal-content,
+   .modal-actions, .success-btn, .danger-btn, .warning-btn, .modal-input) ont
+   été supprimées : depuis HolafModal, les modales sont créées par la brique
+   avec les classes .holaf-modal-* et les boutons passent par ses variants.
+   Preuve : aucune référence dans le dépôt (js/html/py) ni dans le DOM live
+   (vérifié en headless). Seule .changes-list reste utilisée par l'app
+   (js/modals.js — openUpdateConfirmModal). */
 
 .changes-list {
-    background-color: #2a2a2a;
-    border: 1px solid #444;
+    background-color: var(--ak-inset-bg);
+    border: 1px solid var(--ak-border-faint);
     border-radius: 4px;
     padding: 10px 15px;
     margin-top: 15px;

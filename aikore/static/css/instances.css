@@ -1,7 +1,7 @@
 /* --- INSTANCE MANAGER --- */
 .add-new-btn {
-    background-color: #007bff;
-    color: white;
+    background-color: var(--ak-accent);
+    color: var(--ak-accent-text);
     padding: 5px 12px; /* Compacted */
     border: none;
     border-radius: 6px;
@@ -22,7 +22,7 @@
 }
 
 .add-new-btn:hover {
-    background-color: #0056b3;
+    background-color: var(--ak-accent-hover);
 }
 
 .instances-table {
@@ -36,23 +36,23 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    background-color: #2a2a4a;
+    background-color: var(--ak-panel);
     /* Match pane background for solid effect */
 }
 
 /* Add space below header for visual separation */
 .instances-table thead tr {
-    border-bottom: var(--global-gutter-size) solid #2a2a4a;
+    border-bottom: var(--global-gutter-size) solid var(--ak-panel);
 }
 
 .instances-table th {
     padding: 6px 10px; /* Reduced from 12px 15px */
     text-align: left;
-    color: #e0e0e0;
+    color: var(--ak-text);
     font-weight: 500;
     white-space: nowrap;
-    background-color: #1e1e3f;
-    border-bottom: var(--global-gutter-size) solid #2a2a4a; /* Gutter effect */
+    background-color: var(--ak-input);
+    border-bottom: var(--global-gutter-size) solid var(--ak-panel); /* Gutter effect */
     font-size: 13px;
 }
 
@@ -75,8 +75,8 @@
 /* Each family (parent + satellites) is wrapped in a tbody.instance-group */
 
 tbody.instance-group {
-    background-color: #2e2e50; /* Slightly distinct background */
-    border-left: 4px solid #6f42c1; /* Strong visual indicator of grouping (purple) */
+    background-color: var(--ak-panel-group); /* Slightly distinct background */
+    border-left: 4px solid var(--ak-secondary); /* Strong visual indicator of grouping (purple) */
 }
 
 /* SPACER REMOVED to compact vertically as requested */
@@ -84,15 +84,15 @@ tbody.instance-group::before {
     content: '';
     display: block;
     height: 0; /* Reduced to 0 for maximum compaction */
-    background-color: #2a2a4a;
+    background-color: var(--ak-panel);
 }
 
 tbody.instance-group tr:first-child td {
-    border-top: 1px solid #3b3b6b;
+    border-top: 1px solid var(--ak-border);
 }
 
 tbody.instance-group tr:last-child td {
-    border-bottom: 1px solid #3b3b6b;
+    border-bottom: 1px solid var(--ak-border);
 }
 
 /* Ensure cells inside the group align nicely */
@@ -123,9 +123,9 @@ tbody.instance-group tr:last-child td {
 .instances-table select {
     width: 100%;
     padding: 4px 10px; /* Reduced from 10px */
-    background-color: #1e1e3f;
-    border: 1px solid #3b3b6b;
-    color: #e0e0e0;
+    background-color: var(--ak-input);
+    border: 1px solid var(--ak-border);
+    color: var(--ak-text);
     border-radius: 6px;
     box-sizing: border-box;
     font-size: 14px;
@@ -137,10 +137,10 @@ tbody.instance-group tr:last-child td {
 /* Visual feedback for disabled inputs (Satellite fields) */
 .instances-table input[type="text"]:disabled,
 .instances-table select:disabled {
-    background-color: rgba(0, 0, 0, 0.3);
-    color: #888;
+    background-color: var(--ak-disabled-bg);
+    color: var(--ak-text-disabled);
     cursor: not-allowed;
-    border: 1px dashed #444;
+    border: 1px dashed var(--ak-border-faint);
     font-style: italic;
 }
 
@@ -166,40 +166,40 @@ tbody.instance-group tr:last-child td {
 }
 
 .status-stopped {
-    background-color: #6c757d;
-    color: white;
+    background-color: var(--ak-stopped);
+    color: var(--ak-on-stopped);
 }
 
 /* Bootstrap Secondary Grey */
 .status-starting {
-    background-color: #ffc107;
-    color: #212529;
+    background-color: var(--ak-warning);
+    color: var(--ak-on-warning);
 }
 
 /* Bootstrap Warning Yellow */
 .status-stalled {
-    background-color: #fd7e14;
-    color: white;
+    background-color: var(--ak-stalled);
+    color: var(--ak-on-stalled);
 }
 
 /* Bootstrap Orange */
 .status-started {
-    background-color: #28a745;
-    color: white;
+    background-color: var(--ak-success-strong);
+    color: var(--ak-on-success);
 }
 
 /* Bootstrap Success Green */
 .status-error {
-    background-color: #8b0000;
-    color: #ffcccc;
-    border: 1px solid #dc3545;
+    background-color: var(--ak-danger-deep-bg);
+    color: var(--ak-danger-deep-fg);
+    border: 1px solid var(--ak-danger);
 }
 
 /* NEW STATUS FOR BACKGROUND CLONING */
 .status-installing {
-    background-color: #17a2b8;
+    background-color: var(--ak-info);
     /* Cyan */
-    color: white;
+    color: var(--ak-on-info-strong);
     animation: pulse-install 1.5s infinite;
     cursor: wait;
 }
@@ -224,7 +224,7 @@ tbody.instance-group tr:last-child td {
 .action-btn {
     padding: 0 12px; /* No vertical padding, rely on height/line-height */
     border: none;
-    color: #ffffff;
+    color: var(--ak-on-color);
     cursor: pointer;
     border-radius: 6px;
     white-space: nowrap;
@@ -277,37 +277,37 @@ tbody.instance-group tr:last-child td {
 /* BUTTON COLORS */
 [data-action="start"],
 [data-action="save"],[data-action="update"] {
-    background-color: #28a745;
+    background-color: var(--ak-success);
 }
 
 [data-action="stop"] {
-    background-color: #ffc107;
-    color: #333;
+    background-color: var(--ak-warning);
+    color: var(--ak-on-warning);
 }
 
 [data-action="delete"] {
-    background-color: #dc3545;
+    background-color: var(--ak-danger);
 }[data-action="logs"] {
-    background-color: #17a2b8;
+    background-color: var(--ak-info);
 }
 
 [data-action="script"],
 [data-action="parameters"],[data-action="tools_menu"] {
-    background-color: #6f42c1;
+    background-color: var(--ak-secondary);
 }
 
 [data-action="open"],
 [data-action="view"] {
-    background-color: #4a4a70;
+    background-color: var(--ak-btn-neutral-bg);
 }[data-action="cancel_new"] {
-    background-color: #f8f9fa;
+    background-color: var(--ak-btn-light-bg);
     /* Light grey */
-    color: #212529;
+    color: var(--ak-btn-light-fg);
     /* Dark text */
 }
 
 .action-btn:not([data-action]) {
-    background-color: #4a4a70;
+    background-color: var(--ak-btn-neutral-bg);
 }
 
 /* Drag and Drop Handle */
@@ -319,19 +319,19 @@ tbody.instance-group tr:last-child td {
 .drag-handle {
     cursor: grab;
     text-align: center;
-    color: #888;
+    color: var(--ak-text-disabled);
     font-size: 1.2rem;
     vertical-align: middle;
 }
 
 .drag-handle:hover {
-    color: #e0e0e0;
+    color: var(--ak-text);
 }
 
 /* SortableJS helper classes */
 .sortable-ghost {
     opacity: 0.4;
-    background-color: #4a4a70;
+    background-color: var(--ak-btn-neutral-bg);
 }
 
 .sortable-drag .drag-handle {
@@ -340,11 +340,11 @@ tbody.instance-group tr:last-child td {
 
 /* --- SATELLITE INSTANCE STYLES --- */
 .satellite-instance {
-    background-color: rgba(0, 0, 0, 0.2); /* Darker internal background for satellites */
+    background-color: var(--ak-satellite-bg); /* Darker internal background for satellites */
 }
 
 .satellite-instance .drag-handle {
-    color: #666;
+    color: var(--ak-text-ghost);
     cursor: default;
     visibility: hidden;
     /* NEW: Hide non-functional drag handle */
@@ -359,8 +359,8 @@ tbody.instance-group tr:last-child td {
     display: inline-block;
     width: 15px;
     height: 25px; /* Reduced height to match compact row */
-    border-bottom: 2px solid #666;
-    border-left: 2px solid #666;
+    border-bottom: 2px solid var(--ak-text-ghost);
+    border-left: 2px solid var(--ak-text-ghost);
     margin-right: 10px;
     margin-bottom: 8px; /* Adjusted alignment */
     opacity: 0.8;
@@ -380,14 +380,14 @@ select.compact-env-select {
     font-size: 12px;
     height: 24px; /* Even smaller than the 28px standard to fit visually */
     border-radius: 4px;
-    background-color: #1e1e3f;
-    border: 1px solid #3b3b6b;
-    color: #e0e0e0;
+    background-color: var(--ak-input);
+    border: 1px solid var(--ak-border);
+    color: var(--ak-text);
 }
 
 select.compact-env-select:focus {
     outline: none;
-    border-color: #6f42c1;
+    border-color: var(--ak-secondary);
 }
 
 select.compact-env-select:disabled {
@@ -409,10 +409,10 @@ select.compact-env-select:disabled {
     justify-content: space-between;
     height: 28px;
     padding: 4px 10px;
-    background-color: #1e1e3f;
-    border: 1px solid #3b3b6b;
+    background-color: var(--ak-input);
+    border: 1px solid var(--ak-border);
     border-radius: 6px;
-    color: #e0e0e0;
+    color: var(--ak-text);
     font-size: 14px;
     cursor: pointer;
     user-select: none;
@@ -423,21 +423,21 @@ select.compact-env-select:disabled {
 }
 
 .bp-select-header:hover {
-    border-color: #6f42c1;
+    border-color: var(--ak-secondary);
 }
 
 .blueprint-select.open .bp-select-header {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-    border-color: #6f42c1;
-    box-shadow: 0 0 0 2px rgba(111, 66, 193, 0.3);
+    border-color: var(--ak-secondary);
+    box-shadow: 0 0 0 2px var(--ak-focus-ring);
 }
 
 .blueprint-select.disabled .bp-select-header {
-    background-color: rgba(0, 0, 0, 0.3);
-    color: #888;
+    background-color: var(--ak-disabled-bg);
+    color: var(--ak-text-disabled);
     cursor: not-allowed;
-    border: 1px dashed #444;
+    border: 1px dashed var(--ak-border-faint);
     font-style: italic;
 }
 
@@ -451,8 +451,12 @@ select.compact-env-select:disabled {
     flex-shrink: 0;
     margin-left: 6px;
     font-size: 10px;
-    color: #888;
+    color: var(--ak-text-disabled);
     transition: transform 0.15s ease;
+}
+
+.bp-select-arrow svg {
+    display: block;
 }
 
 .blueprint-select.open .bp-select-arrow {
@@ -476,21 +480,21 @@ select.compact-env-select:disabled {
     position: fixed;
     z-index: 9999;
     overflow-y: auto;
-    background-color: #1e1e3f;
-    border: 1px solid #6f42c1;
+    background-color: var(--ak-input);
+    border: 1px solid var(--ak-secondary);
     border-top: none;
     border-radius: 0 0 6px 6px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    box-shadow: var(--ak-shadow-strong);
 }
 
 .bp-group-label {
     padding: 8px 14px 4px;
     font-size: 11px;
     font-weight: bold;
-    color: #888;
+    color: var(--ak-text-disabled);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    background-color: #161630;
+    background-color: var(--ak-menu-group-bg);
     position: sticky;
     top: 0;
     z-index: 1;
@@ -503,18 +507,18 @@ select.compact-env-select:disabled {
     padding: 6px 14px;
     cursor: pointer;
     font-size: 13px;
-    color: #e0e0e0;
+    color: var(--ak-text);
     transition: background-color 0.1s;
 }
 
 .bp-option.hover,
 .bp-option:hover {
-    background-color: #2a2a50;
+    background-color: var(--ak-hover);
 }
 
 .bp-option.selected {
-    background-color: #3b3b6b;
-    color: #fff;
+    background-color: var(--ak-menu-bg);
+    color: var(--ak-text-strong);
 }
 
 .bp-option-name {
@@ -529,15 +533,15 @@ select.compact-env-select:disabled {
     margin-left: auto;
     padding-left: 12px;
     font-size: 11px;
-    color: #666;
+    color: var(--ak-text-ghost);
     white-space: nowrap;
     text-align: right;
 }
 
 .bp-option.selected .bp-option-category {
-    color: #999;
+    color: var(--ak-text-faint);
 }
 
 .bp-option-group + .bp-option-group {
-    border-top: 1px solid #2a2a50;
+    border-top: 1px solid var(--ak-border-muted);
 }

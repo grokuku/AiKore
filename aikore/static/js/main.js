@@ -5,6 +5,8 @@ import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
 import { showWelcomeScreen, showBuilderView, renderBuilderStatus } from './tools.js';
 import { HolafIcons } from '../vendor/holaf-icons.js';
+import { initTheme } from './themes.js';
+import { initThemeSelector } from './themeSelector.js';
 
 const INSTANCE_ORDER_KEY = 'aikoreInstanceOrder';
 
@@ -165,6 +167,19 @@ async function refreshInstancesSafe() {
 }
 
 async function initializeApp() {
+    // --- THEME BOOT -------------------------------------------------------
+    // Enregistre les packs hôte aikore (tokens + modal + toast), applique le
+    // thème sauvegardé (localStorage['aikoreTheme']) ou aikore-dark, et pose
+    // data-theme/data-mode sur <html> (le CSS s'y accroche). Les scripts defer
+    // (holaf-tokens.js) sont exécutés avant DOMContentLoaded : l'API
+    // window.HolafTokens est disponible ici. Le script inline du <head>
+    // (anti-FOUC) a déjà posé les mêmes attributs au parsing ; initTheme les
+    // repose à l'identique — aucun re-render contradictoire.
+    initTheme();
+    // Sélecteur de thème du header Instances : lit getCurrentTheme() → le
+    // libellé/icône reflètent le thème restauré dès le boot.
+    initThemeSelector();
+
     // --- FIRST RENDER (progressive display) -------------------------------
     // The instances table is rendered as soon as /api/instances answers.
     // It used to wait for the full init block below (system info / blueprints
@@ -228,9 +243,15 @@ async function initializeApp() {
     })();
 
     // --- ADD ICONS TO STATIC BUTTONS ---
+    // Runs once at boot on the buttons already present in index.html.
+    // `replace: true` swaps a placeholder glyph (the × close button, the +
+    // zoom buttons); otherwise the icon is PREPENDED, which keeps live children
+    // intact — #global-save-btn notably wraps <span id="dirty-count"> that
+    // updateGlobalSaveButton() keeps updating (flattening it would break them).
+    // The builder button (#btn-open-builder) does not exist yet at this point:
+    // it is injected below and gets its gear icon at creation time.
     const staticButtons = [
         { selector: '.add-new-btn', icon: 'plus' },
-        { selector: '#btn-open-builder', icon: 'gear' },
         { selector: '.context-item[data-action="terminal"]', icon: 'terminal' },
         { selector: '.context-item[data-action="script"]', icon: 'pencil' },
         { selector: '.context-item[data-action="manage-wheels"]', icon: 'folder' },
@@ -238,13 +259,25 @@ async function initializeApp() {
         { selector: '.context-item[data-action="rebuild-env"]', icon: 'refresh' },
         { selector: '.context-item[data-action="clone"]', icon: 'copy' },
         { selector: '.context-item[data-action="instantiate"]', icon: 'plus' },
+        { selector: '.context-item[data-action="output_viewer"]', icon: 'eye' },
+        { selector: '#global-save-btn', icon: 'check' },
+        { selector: '#tools-close-btn', icon: 'x', size: 20, replace: true },
+        { selector: '#editor-save-custom-btn', icon: 'file-text' },
+        { selector: '#editor-update-btn', icon: 'refresh' },
+        { selector: '.zoom-btn.zoom-in', icon: 'plus', replace: true },
     ];
 
-    staticButtons.forEach(({ selector, icon }) => {
-        const btn = document.querySelector(selector);
-        if (btn) {
-            btn.innerHTML = `${HolafIcons.render(icon, { size: 14 })} ${btn.textContent.trim()}`;
-        }
+    staticButtons.forEach(({ selector, icon, size = 14, replace = false }) => {
+        document.querySelectorAll(selector).forEach(btn => {
+            // Idempotence: never inject a second SVG into the same button.
+            if (btn.querySelector('svg')) return;
+            const svg = HolafIcons.render(icon, { size });
+            if (replace) btn.innerHTML = svg;
+            // The trailing space is only a fallback inset for non-flex hosts;
+            // flex buttons (.action-btn, .add-new-btn, .context-item) drop it
+            // and rely on their own `gap`.
+            else btn.insertAdjacentHTML('afterbegin', `${svg} `);
+        });
     });
 
     // --- INJECT BUILDER BUTTON ---
@@ -261,10 +294,13 @@ async function initializeApp() {
         const buildBtn = document.createElement('button');
         buildBtn.className = addBtn.className;
         buildBtn.id = 'btn-open-builder';
-        buildBtn.textContent = "Build Module";
+        // Icon applied at creation: this button is injected after the static
+        // icons pass above. tools.js renderBuilderStatus() rewrites this label
+        // from the stats poll and re-applies the same gear icon.
+        buildBtn.innerHTML = `${HolafIcons.render('gear', { size: 14 })} Build Module`;
         buildBtn.style.marginRight = "10px";
-        buildBtn.style.backgroundColor = "#6f42c1";
-        buildBtn.style.borderColor = "#6f42c1";
+        buildBtn.style.backgroundColor = "var(--ak-secondary)";
+        buildBtn.style.borderColor = "var(--ak-secondary)";
 
         buildBtn.onclick = () => {
             showBuilderView();

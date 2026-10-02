@@ -1,6 +1,6 @@
 import { state, DOM } from './state.js';
 import * as api from './api.js';
-import { checkRowForChanges, showToast } from './ui.js';
+import { checkRowForChanges, showToast, setButtonLabel } from './ui.js';
 import { fetchAndRenderInstances } from './main.js';
 import { exitEditor, closeTerminalById } from './tools.js';
 import { HolafModal } from '../vendor/holaf-modal.js';
@@ -129,7 +129,7 @@ export async function openRestartConfirmModal(instanceName) {
         const content = state.codeEditor.getValue();
         
         const button = DOM.editorUpdateBtn;
-        button.textContent = 'Updating...';
+        setButtonLabel(button, 'Updating...');
         button.disabled = true;
 
         try {
@@ -140,7 +140,7 @@ export async function openRestartConfirmModal(instanceName) {
         } catch (error) {
             showToast(`Error updating script: ${error.message}`, 'error');
         } finally {
-            button.textContent = 'Update Instance';
+            setButtonLabel(button, 'Update Instance', 'refresh');
             button.disabled = false;
         }
     }

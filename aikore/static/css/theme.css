@@ -1,0 +1,307 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * AiKore — theme.css : COUCHE SÉMANTIQUE --ak-*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Chargé EN PREMIER dans index.html (avant base.css). Ce fichier ne définit
+ * QUE des variables CSS : aucune règle de rendu (les CSS d'app —
+ * base/components/instances/modals/tools — consomment ces rôles).
+ *
+ * SOURCE : les tokens --holaf-* posés sur :root par la brique FONDATION
+ * /static/vendor/holaf-tokens.js (v0.3.0, chargée en <script defer>).
+ * Chaque rôle est mappé sur un token avec FALLBACK littéral = palette
+ * aikore-dark : l'app reste correctement colorée même sans JS.
+ *
+ * TROIS NIVEAUX :
+ *   1. :root                — mappes tokens + valeurs communes (fallbacks).
+ *   2. [data-mode="dark"|"light"] — littéraux dépendant du mode (états,
+ *      terminaux, voiles, neutres) ; l'attribut est posé par js/themes.js.
+ *   3. [data-theme="aikore-*"] — overrides d'identité de la famille aikore
+ *      (SECONDARY violet, text-strong, terminal, log-error, editor-text).
+ *   4. @supports color-mix  — dérivés calculés, avec replis sûrs ci-dessus.
+ *
+ * PALETTES : valeurs validées aikore-dark / aikore-light uniquement ; les
+ * valeurs intermédiaires sont dérivées par color-mix() ou explicitement
+ * justifiées en commentaire.
+ * ═════════════════════════════════════════════════════════════════════════ */
+
+/* ─── 1. Mappes tokens + valeurs communes (fallbacks aikore-dark) ────────── */
+:root {
+    /* Surfaces */
+    --ak-bg: var(--holaf-surface, #1A1A2E);
+    --ak-panel: var(--holaf-surface-elev, #2A2A4A);
+    --ak-panel-alt: var(--holaf-surface-raised, #2C2C54);
+    /* panel-soft / input : fonds « creusés » (thead, champs, pistes de barres).
+       Repli sûr = panel-alt ; le vrai dérivé color-mix est dans @supports. */
+    --ak-panel-soft: var(--holaf-surface-raised, #2C2C54);
+    --ak-input: var(--holaf-surface-raised, #2C2C54);
+    /* Fond du panneau System Monitoring (historiquement plus sombre que panel) */
+    --ak-panel-monitoring: var(--holaf-surface-elev, #2A2A4A);
+    --ak-hover: var(--holaf-surface-hover, rgba(44, 44, 84, 0.7));
+    --ak-satellite-bg: rgba(0, 0, 0, 0.2);
+
+    /* Bordures */
+    --ak-border: var(--holaf-border, #3B3B6B);
+    --ak-border-muted: var(--holaf-border-muted, rgba(59, 59, 107, 0.45));
+
+    /* Textes */
+    --ak-text: var(--holaf-text, #E0E0E0);
+    --ak-text-strong: var(--holaf-text, #E0E0E0);
+    --ak-text-muted: var(--holaf-text-muted, #B8B8CC);
+    /* text-faint est FOURNI explicitement par nos packs (sinon la dérivation
+       Holaf donne une valeur trop faible) */
+    --ak-text-faint: var(--holaf-text-faint, #9696AE);
+
+    /* Accent */
+    --ak-accent: var(--holaf-accent, #4DA6FF);
+    --ak-accent-hover: var(--holaf-accent-hover, #6DB6FF);
+    --ak-accent-text: var(--holaf-accent-text, #0D1B2A);
+    --ak-accent-soft: var(--holaf-accent-soft, rgba(77, 166, 255, 0.16));
+    --ak-accent-glow: var(--holaf-accent-glow, rgba(77, 166, 255, 0.5));
+    --ak-focus-ring: rgba(111, 66, 193, 0.3); /* repli : secondary aikore 30 % */
+
+    /* Danger */
+    --ak-danger: var(--holaf-danger, #DC3545);
+    --ak-danger-hover: var(--holaf-danger-hover, #C82333);
+    --ak-danger-text: var(--holaf-danger-text, #FFFFFF);
+    --ak-danger-soft: var(--holaf-danger-soft, rgba(220, 53, 69, 0.12));
+    /* Badge erreur (contraste validé, identique dans les deux modes) */
+    --ak-danger-deep-bg: #8B0000;
+    --ak-danger-deep-fg: #FFCCCC;
+
+    /* Succès / avertissement */
+    --ak-success: var(--holaf-ok, #28A745);
+    --ak-success-soft: var(--holaf-ok-soft, rgba(40, 167, 69, 0.1));
+    --ak-warning: var(--holaf-warn, #FFC107);
+    --ak-warn-text: var(--holaf-warn-text, #212529);
+    --ak-warn-soft: rgba(255, 193, 7, 0.1);
+    --ak-warn-border: rgba(255, 193, 7, 0.3);
+
+    /* Secondaire (violet d'identité) : par défaut aligné sur l'accent (familles
+       holaf) ; surchargé en #6F42C1 par les blocs aikore ci-dessous. */
+    --ak-secondary: var(--holaf-accent, #4DA6FF);
+    --ak-on-secondary: var(--holaf-accent-text, #0D1B2A);
+
+    /* Neutres / chrome */
+    --ak-menu-bg: var(--holaf-border, #3B3B6B);
+    --ak-shadow: var(--holaf-shadow, 0 5px 15px rgba(0, 0, 0, 0.4));
+    --ak-shadow-strong: 0 12px 40px rgba(0, 0, 0, 0.5);
+    --ak-radius: var(--holaf-radius, 8px);
+    --ak-font-size: var(--holaf-font-size, 14px);
+    --ak-switch-knob: #FFFFFF;
+    --ak-btn-neutral-bg: #4A4A70;
+
+    /* Voiles / terminaux (défauts sombres ; surchargés par mode + identité) */
+    --ak-veil: rgba(6, 6, 16, 0.62);
+    --ak-terminal-bg: #111111;
+    --ak-tool-bg: #111111;
+    /* Conteneur des logs du builder : couplé au thème xterm du builder
+       (tools.js — fond #000 en sombre, #FFF en clair). */
+    --ak-builder-log-bg: #000000;
+    --ak-log-error: #FF6B6B;
+    --ak-editor-text: #00FF41;
+
+    /* États de statuts (base sombre ; cf. corrections de contraste validées) */
+    --ak-success-strong: #1E8336;
+    --ak-on-success: #FFFFFF;
+    --ak-stalled: #FD7E14;
+    --ak-on-stalled: #212529;
+    --ak-stopped: #6C757D;
+    --ak-on-stopped: #FFFFFF;
+    --ak-info: #17A2B8;
+    --ak-info-strong: #17A2B8;
+    --ak-on-info: #FFFFFF;
+    --ak-on-info-strong: #04262B;
+
+    /* Neutres de chrome & panneaux d'outils (refactor des CSS d'app).
+       Fallbacks = littéraux historiques aikore-dark, préservés à l'identique ;
+       les dérivés light sont dans [data-mode="light"] / @supports ci-dessous. */
+    --ak-on-color: #FFFFFF;          /* encre sur aplats colorés (boutons d'action) */
+    --ak-text-metric: #C0C0C0;       /* label de donnée (monitoring) */
+    --ak-text-dim: #CCCCCC;          /* contrôle secondaire (zoom, switch) */
+    --ak-text-soft: #AAAAAA;         /* label tertiaire */
+    --ak-text-disabled: #888888;     /* élément désactivé / affordance */
+    --ak-text-ghost: #666666;        /* structure discrète (connecteurs, catégories) */
+    --ak-veil-hover: rgba(255, 255, 255, 0.1); /* survol d'un contrôle de header */
+    --ak-menu-hover: #4A4A70;        /* survol d'un item de menu / dropdown */
+    --ak-panel-group: #2E2E50;       /* fond d'un groupe de lignes (tbody) */
+    --ak-menu-group-bg: #161630;     /* fond du label de groupe (dropdown) */
+    --ak-inset-bg: #2A2A2A;          /* fond neutre inséré (changes-list, ligne survolée) */
+    --ak-tool-panel: #1A1A1A;        /* fond secondaire des panneaux outils */
+    --ak-border-faint: #444444;      /* bordure neutre (tables/panneaux outils) */
+    --ak-tool-input-bg: #222222;     /* fond des champs neutres (builder) */
+    --ak-disabled-bg: rgba(0, 0, 0, 0.3); /* fond d'un champ désactivé */
+    --ak-btn-light-bg: #F8F9FA;      /* bouton clair (Cancel) sur fond sombre */
+    --ak-btn-light-fg: #212529;
+    --ak-success-hover: #218838;     /* survol du CTA de build vert */
+    --ak-building-bg: #E67E22;       /* bouton Build Module en cours de build */
+}
+
+/* ─── 2. Littéraux dépendant du mode (posés par themes.js) ───────────────── */
+:root[data-mode="dark"] {
+    --ak-text-strong: #FFFFFF;
+    --ak-menu-bg: var(--holaf-border, #3B3B6B);
+    --ak-veil: rgba(6, 6, 16, 0.62);
+    --ak-shadow-strong: 0 12px 40px rgba(0, 0, 0, 0.5);
+    --ak-satellite-bg: rgba(0, 0, 0, 0.2);
+    --ak-terminal-bg: #111111;
+    --ak-tool-bg: #111111;
+    --ak-log-error: #FF6B6B;
+    --ak-editor-text: #00FF41;
+    --ak-success-strong: #1E8336; /* started — contraste validé */
+    --ak-stalled: #FD7E14;        /* installing / stalled — contraste validé */
+    --ak-on-stalled: #212529;
+    --ak-info: #17A2B8;
+    --ak-info-strong: #17A2B8;
+    --ak-on-info-strong: #04262B;
+    --ak-on-warning: #212529;
+    --ak-btn-neutral-bg: #4A4A70;
+    --ak-btn-neutral-fg: #FFFFFF;
+    --ak-switch-bg: #444444;
+    --ak-focus-ring: rgba(111, 66, 193, 0.3);
+    --ak-warn-soft: rgba(255, 193, 7, 0.1);
+    --ak-warn-border: rgba(255, 193, 7, 0.3);
+    /* Replis color-mix (valeurs actuelles constatées en dark) */
+    --ak-panel-soft: #1E1E3F;
+    --ak-input: #1E1E3F;
+    --ak-panel-monitoring: #252545;
+}
+
+:root[data-mode="light"] {
+    --ak-text-strong: #1A1A2E;
+    --ak-menu-bg: var(--holaf-surface-elev, #FFFFFF);
+    --ak-veil: rgba(26, 26, 46, 0.35);
+    --ak-shadow-strong: 0 12px 40px rgba(26, 26, 46, 0.22); /* teinte du shadow light validé */
+    --ak-satellite-bg: rgba(26, 26, 46, 0.05);               /* voile dérivé du texte light */
+    --ak-terminal-bg: #FFFFFF;
+    --ak-tool-bg: #FFFFFF;
+    --ak-log-error: #C82333; /* = danger light validé */
+    --ak-editor-text: #1E7E34;
+    --ak-success-strong: #1E7E34; /* started — contraste validé */
+    --ak-stalled: #C05621;        /* installing / stalled — contraste validé */
+    --ak-on-stalled: #FFFFFF;
+    --ak-info: #0F7C8C;
+    --ak-info-strong: #0F7C8C;
+    --ak-on-info-strong: #FFFFFF;
+    --ak-on-warning: #FFFFFF;
+    --ak-btn-neutral-bg: #D9DCEB; /* dérivé border 65 % + panel-alt 35 % */
+    --ak-btn-neutral-fg: var(--ak-text, #1A1A2E);
+    --ak-switch-bg: #D7DAEA;      /* dérivé border 70 % + panel-alt 30 % */
+    --ak-focus-ring: rgba(111, 66, 193, 0.25);
+    --ak-warn-soft: rgba(180, 83, 9, 0.12);  /* teinte du warn light validé */
+    --ak-warn-border: rgba(180, 83, 9, 0.35);
+    /* Replis color-mix (dérivés calculés des palettes light validées) */
+    --ak-panel-soft: #F5F6FB;
+    --ak-input: #F5F6FB;
+    --ak-panel-monitoring: #FCFDFE;
+    /* Neutres de chrome : dérivés du texte light (replis littéraux) */
+    --ak-text-metric: #565667;    /* dérivé text 72 % + bg */
+    --ak-text-dim: #4A4A5B;       /* dérivé text 78 % + bg */
+    --ak-text-soft: #5F5F6F;      /* dérivé text 68 % + bg */
+    --ak-text-disabled: #7B7B8A;  /* dérivé text 55 % + bg */
+    --ak-text-ghost: #91919E;     /* dérivé text 45 % + bg */
+    --ak-veil-hover: rgba(26, 26, 46, 0.06);
+    --ak-menu-hover: #E5E7F2;     /* dérivé border 40 % + panel-alt 60 % */
+    --ak-panel-group: var(--ak-panel-soft, #F5F6FB);
+    --ak-menu-group-bg: #EAECF5;  /* dérivé border 30 % + panel-alt 70 % */
+    --ak-inset-bg: #F5F6FB;
+    --ak-tool-panel: #F8F9FD;
+    --ak-border-faint: var(--ak-border, #C9CDE2);
+    --ak-tool-input-bg: #F5F6FB;
+    --ak-disabled-bg: rgba(26, 26, 46, 0.06);
+    --ak-btn-light-bg: #E8EAF4;   /* dérivé border 35 % + panel-alt 65 % */
+    --ak-btn-light-fg: var(--ak-text-strong, #1A1A2E);
+    --ak-success-hover: #1D6F33;  /* dérivé success 85 % + text-strong light */
+    --ak-building-bg: var(--ak-stalled, #C05621);
+
+    /* Replis littéraux aikore-light des rôles MAPPÉS AUX TOKENS --holaf-*.
+       Ils couvrent l'anti-FOUC : le script inline d'index.html pose
+       data-mode="light" avant que holaf-tokens.js (defer, non render-blocking)
+       n'ait posé les tokens ; sans eux le premier paint mélangerait des
+       surfaces sombres (replis de :root) et des neutres clairs. Dès que les
+       tokens existent, var() les prend et ces littéraux deviennent inertes. */
+    --ak-bg: var(--holaf-surface, #F2F3FA);
+    --ak-panel: var(--holaf-surface-elev, #FFFFFF);
+    --ak-panel-alt: var(--holaf-surface-raised, #F8F9FD);
+    --ak-border: var(--holaf-border, #C9CDE2);
+    --ak-border-muted: var(--holaf-border-muted, rgba(201, 205, 226, 0.45));
+    --ak-text: var(--holaf-text, #1A1A2E);
+    --ak-text-muted: var(--holaf-text-muted, #5A5A74);
+    --ak-text-faint: var(--holaf-text-faint, #6A6A82);
+    --ak-hover: var(--holaf-surface-hover, rgba(201, 205, 226, 0.35));
+    --ak-accent: var(--holaf-accent, #0066D6);
+    --ak-accent-hover: var(--holaf-accent-hover, #0057B8);
+    --ak-accent-text: var(--holaf-accent-text, #FFFFFF);
+    --ak-accent-soft: var(--holaf-accent-soft, rgba(0, 102, 214, 0.12));
+    --ak-accent-glow: var(--holaf-accent-glow, rgba(0, 102, 214, 0.5));
+    --ak-danger: var(--holaf-danger, #C82333);
+    --ak-danger-hover: var(--holaf-danger-hover, #B21F2D);
+    --ak-danger-text: var(--holaf-danger-text, #FFFFFF);
+    --ak-danger-soft: var(--holaf-danger-soft, rgba(200, 35, 51, 0.12));
+    --ak-success: var(--holaf-ok, #1E7E34);
+    --ak-success-soft: var(--holaf-ok-soft, rgba(30, 126, 52, 0.1));
+    --ak-warning: var(--holaf-warn, #B45309);
+    --ak-warn-text: var(--holaf-warn-text, #FFFFFF);
+    --ak-secondary: var(--holaf-accent, #0066D6);
+    --ak-on-secondary: var(--holaf-accent-text, #FFFFFF);
+    --ak-shadow: var(--holaf-shadow, 0 5px 15px rgba(26, 26, 46, 0.12));
+    --ak-builder-log-bg: #FFFFFF;
+}
+
+/* ─── 3. Dérivés color-mix (navigateurs modernes) ─────────────────────────── */
+/* Les replis sûrs sont définis ci-dessus ([data-mode]) ; ce bloc les remplace
+   par des dérivés calculés à partir des tokens du thème actif. */
+@supports (color: color-mix(in srgb, #000000, #FFFFFF)) {
+    :root[data-mode] {
+        --ak-warn-soft: color-mix(in srgb, var(--ak-warning) 12%, transparent);
+        --ak-warn-border: color-mix(in srgb, var(--ak-warning) 35%, transparent);
+        --ak-focus-ring: color-mix(in srgb, var(--ak-secondary) 30%, transparent);
+    }
+    :root[data-mode="dark"] {
+        --ak-text-strong: color-mix(in srgb, var(--ak-text) 70%, #FFFFFF);
+    }
+    /* Les fonds « creusés » et le voile satellite gardent leurs littéraux dark
+       historiques (#1E1E3F / #252545 / rgba(0,0,0,0.2) — identité aikore-dark
+       exigée) : le dérivé calculé ne remplace que les replis light. */
+    :root[data-mode="light"] {
+        --ak-text-strong: color-mix(in srgb, var(--ak-text) 70%, #000000);
+        --ak-btn-neutral-bg: color-mix(in srgb, var(--ak-border) 65%, var(--ak-panel-alt));
+        --ak-switch-bg: color-mix(in srgb, var(--ak-border) 70%, var(--ak-panel-alt));
+        --ak-panel-soft: color-mix(in srgb, var(--ak-panel-alt) 45%, var(--ak-bg));
+        --ak-input: color-mix(in srgb, var(--ak-panel-alt) 45%, var(--ak-bg));
+        --ak-panel-monitoring: color-mix(in srgb, var(--ak-panel) 80%, var(--ak-bg));
+        --ak-satellite-bg: color-mix(in srgb, var(--ak-text) 6%, transparent);
+        --ak-text-metric: color-mix(in srgb, var(--ak-text) 72%, var(--ak-bg));
+        --ak-text-dim: color-mix(in srgb, var(--ak-text) 78%, var(--ak-bg));
+        --ak-text-soft: color-mix(in srgb, var(--ak-text) 68%, var(--ak-bg));
+        --ak-text-disabled: color-mix(in srgb, var(--ak-text) 55%, var(--ak-bg));
+        --ak-text-ghost: color-mix(in srgb, var(--ak-text) 45%, var(--ak-bg));
+        --ak-veil-hover: color-mix(in srgb, var(--ak-text) 6%, transparent);
+        --ak-menu-hover: color-mix(in srgb, var(--ak-border) 40%, var(--ak-panel-alt));
+        --ak-menu-group-bg: color-mix(in srgb, var(--ak-border) 30%, var(--ak-panel-alt));
+        --ak-disabled-bg: color-mix(in srgb, var(--ak-text) 6%, transparent);
+        --ak-btn-light-bg: color-mix(in srgb, var(--ak-border) 35%, var(--ak-panel-alt));
+        --ak-success-hover: color-mix(in srgb, var(--ak-success) 85%, var(--ak-text-strong));
+    }
+}
+
+/* ─── 4. Overrides d'identité aikore ─────────────────────────────────────── */
+/* Valeurs propres à la famille « aikore » (pack hôte, cf. js/themes.js).
+   Placés après le @supports : à spécificité égale, l'ordre les fait gagner. */
+:root[data-theme="aikore-dark"] {
+    --ak-secondary: #6F42C1; /* violet d'identité (groupes, outils, builder) */
+    --ak-on-secondary: #FFFFFF;
+    --ak-text-strong: #FFFFFF;
+    --ak-terminal-bg: #111111;
+    --ak-tool-bg: #111111;
+    --ak-log-error: #FF6B6B;
+    --ak-editor-text: #00FF41;
+}
+
+:root[data-theme="aikore-light"] {
+    --ak-secondary: #6F42C1;
+    --ak-on-secondary: #FFFFFF;
+    --ak-text-strong: #1A1A2E;
+    --ak-terminal-bg: #FFFFFF;
+    --ak-tool-bg: #FFFFFF;
+    --ak-log-error: #C82333;
+    --ak-editor-text: #1E7E34;
+}

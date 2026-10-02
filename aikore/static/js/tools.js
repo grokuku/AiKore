@@ -1,8 +1,82 @@
 import { state, DOM } from './state.js';
 import { fetchLogs, performVersionCheck, fetchFileContent, fetchTorchVersions, fetchCudaVersions, fetchAvailablePythonVersions, authHeaders } from './api.js';
 import { showToast } from './ui.js';
+import { HolafIcons } from '../vendor/holaf-icons.js';
+import { getCurrentTheme } from './themes.js';
 
 const ansi_up = new AnsiUp();
+
+/* ─── Thèmes techniques : xterm + CodeMirror (lot X) ────────────────────────
+ * Seul le MODE (dark/light) pilote ces composants — les familles de thème
+ * (indigo/midnight/…) ne changent délibérément PAS les terminaux/éditeur.
+ * En mode sombre, les objets sont STRICTEMENT ceux d'avant le chantier
+ * (aucune régression) ; en mode clair, fonds clairs + palette ANSI lisible.
+ * `aikore-theme-changed` (themes.js) met à jour les terminaux déjà ouverts et
+ * l'éditeur ; les futures instances lisent l'état à leur création. */
+const XTERM_DARK_THEME = {
+    instance: { background: '#111111', foreground: '#e0e0e0', cursor: '#e0e0e0' },
+    builder: { background: '#000000', foreground: '#e0e0e0' },
+};
+const XTERM_LIGHT_THEME = {
+    background: '#FFFFFF',
+    foreground: '#1A1A2E',
+    cursor: '#1A1A2E',
+    cursorAccent: '#FFFFFF',
+    selectionBackground: 'rgba(0, 102, 214, 0.25)',
+    // Palette ANSI éclaircie : les « blancs » ANSI deviennent des gris lisibles
+    // sur fond blanc ; le reste s'aligne sur les rôles sémantiques du mode clair.
+    black: '#3B3B4F',
+    red: '#C82333',
+    green: '#1E7E34',
+    yellow: '#B45309',
+    blue: '#0066D6',
+    magenta: '#6F42C1',
+    cyan: '#0F7C8C',
+    white: '#B8B8CC',
+    brightBlack: '#91919E',
+    brightRed: '#DC3545',
+    brightGreen: '#28A745',
+    brightYellow: '#D97706',
+    brightBlue: '#4DA6FF',
+    brightMagenta: '#8B5CF6',
+    brightCyan: '#17A2B8',
+    brightWhite: '#9696AE',
+};
+const EDITOR_THEME = { dark: 'darcula', light: 'default' };
+
+/** Mode courant (dark/light) : getCurrentTheme(), sinon data-mode (anti-FOUC/boot). */
+function _themeMode() {
+    const current = getCurrentTheme();
+    if (current && current.mode) return current.mode;
+    return document.documentElement.getAttribute('data-mode') === 'light' ? 'light' : 'dark';
+}
+
+function _xtermTheme(kind) {
+    return _themeMode() === 'light' ? XTERM_LIGHT_THEME : XTERM_DARK_THEME[kind];
+}
+
+function _editorTheme() {
+    return EDITOR_THEME[_themeMode()] || EDITOR_THEME.dark;
+}
+
+// Mise à jour à chaud : terminaux du pool + terminal builder + éditeur.
+// (xterm 5.x expose `terminal.options` ; l'affectation de theme re-rend le canvas.)
+document.addEventListener('aikore-theme-changed', () => {
+    const mode = _themeMode();
+    Object.values(state.terminals).forEach((termState) => {
+        const terminal = termState && termState.terminal;
+        if (!terminal || !terminal.options) return;
+        terminal.options.theme = mode === 'light' ? XTERM_LIGHT_THEME : XTERM_DARK_THEME.instance;
+        try { terminal.refresh(0, terminal.rows - 1); } catch (e) { /* terminal non visible */ }
+    });
+    if (builderTerminal && builderTerminal.options) {
+        builderTerminal.options.theme = mode === 'light' ? XTERM_LIGHT_THEME : XTERM_DARK_THEME.builder;
+        try { builderTerminal.refresh(0, builderTerminal.rows - 1); } catch (e) { /* ignore */ }
+    }
+    if (state.codeEditor) {
+        state.codeEditor.setOption('theme', EDITOR_THEME[mode] || EDITOR_THEME.dark);
+    }
+});
 
 // --- Authenticated WebSocket helper -------------------------------------------
 // Browsers cannot set custom headers on a WebSocket, so when AIKORE_API_KEY is
@@ -83,7 +157,7 @@ function _createTerminalForInstance(instanceId, instanceName) {
     const termState = {
         terminal: new Terminal({
             cursorBlink: true, fontSize: 14, fontFamily: 'Courier New, Courier, monospace',
-            theme: { background: '#111111', foreground: '#e0e0e0', cursor: '#e0e0e0' }
+            theme: _xtermTheme('instance')
         }),
         fitAddon: new FitAddon.FitAddon(),
         socket: null,
@@ -170,7 +244,9 @@ function _showTerminalInstance(instanceId) {
         // is not always enough when switching between hidden/shown DOM subtrees.
         setTimeout(() => {
             try { termState.fitAddon.fit(); } catch (e) { /* ignore */ }
-            termState.terminal.refresh(0);
+            // xterm 5.x : refresh(start, end) exige DEUX entiers — un refresh(0)
+            // seul jette « This API only accepts integers » (bug préexistant).
+            try { termState.terminal.refresh(0, termState.terminal.rows - 1); } catch (e) { /* ignore */ }
             termState.terminal.focus();
         }, 50);
     }
@@ -207,6 +283,12 @@ let builderTerminal = null;
 let builderFitAddon = null;
 let builderBtnInterval = null;
 let builderResizeObserver = null;
+
+// Builder buttons rewrite their own label at runtime (stats poll, build
+// lifecycle), so the reset writes must carry the icon: a plain textContent
+// assignment would silently strip the injected SVG.
+const BUILD_MODULE_BTN_HTML = `${HolafIcons.render('gear', { size: 14 })} Build Module`;
+const START_BUILD_BTN_HTML = `${HolafIcons.render('play', { size: 14 })} BUILD MODULE`;
 
 async function fetchBuilderInfo() {
     const res = await fetch('/api/builder/info', { headers: authHeaders() });
@@ -281,15 +363,17 @@ export function renderBuilderStatus() {
     const isBuilding = builderSocket && builderSocket.readyState === WebSocket.OPEN;
 
     if (isBuilding) {
-        if (btn.textContent === "Build Module") {
+        if (btn.textContent.trim() === "Build Module") {
             btn.textContent = "BUILDING...";
         }
-        btn.style.backgroundColor = "#e67e22";
-        btn.style.borderColor = "#e67e22";
+        btn.style.backgroundColor = "var(--ak-building-bg)";
+        btn.style.borderColor = "var(--ak-building-bg)";
     } else {
-        btn.textContent = "Build Module";
-        btn.style.backgroundColor = "#6f42c1";
-        btn.style.borderColor = "#6f42c1";
+        // innerHTML, not textContent: keep the gear icon applied when the
+        // button was created (main.js) — this runs from the stats poll.
+        btn.innerHTML = BUILD_MODULE_BTN_HTML;
+        btn.style.backgroundColor = "var(--ak-secondary)";
+        btn.style.borderColor = "var(--ak-secondary)";
     }
 }
 
@@ -338,7 +422,7 @@ async function renderWheelsTable() {
         const wheels = await fetchWheelsList();
         tbody.innerHTML = '';
         if (wheels.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#666;">No wheels built yet.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--ak-text-ghost);">No wheels built yet.</td></tr>';
             return;
         }
 
@@ -362,12 +446,12 @@ async function renderWheelsTable() {
             const dlBtn = document.createElement('button');
             dlBtn.className = 'btn-icon btn-download';
             dlBtn.title = 'Download';
-            dlBtn.textContent = '⬇';
+            dlBtn.innerHTML = HolafIcons.render('download', { size: 16 });
             dlBtn.addEventListener('click', () => downloadWheel(w.filename));
             const delBtn = document.createElement('button');
             delBtn.className = 'btn-icon btn-delete';
             delBtn.title = 'Delete';
-            delBtn.textContent = '🗑';
+            delBtn.innerHTML = HolafIcons.render('trash', { size: 16 });
             delBtn.addEventListener('click', () => deleteWheel(w.filename));
             actionsTd.appendChild(dlBtn);
             actionsTd.appendChild(delBtn);
@@ -381,7 +465,7 @@ async function renderWheelsTable() {
             tbody.appendChild(tr);
         });
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="7" style="color:red">Error loading wheels</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" style="color:var(--ak-log-error)">Error loading wheels</td></tr>`;
     }
 }
 
@@ -406,7 +490,7 @@ function closeBuilderTerminal() {
         const btn = document.getElementById('btn-start-build');
         if (btn) {
             btn.disabled = false;
-            btn.textContent = "BUILD MODULE";
+            btn.innerHTML = START_BUILD_BTN_HTML;
         }
     }
 }
@@ -420,7 +504,7 @@ function initBuilderTerminal() {
         disableStdin: true,
         fontSize: 12,
         fontFamily: 'Courier New, Courier, monospace',
-        theme: { background: '#000000', foreground: '#e0e0e0' },
+        theme: _xtermTheme('builder'),
         convertEol: true
     });
 
@@ -531,7 +615,7 @@ async function startBuild() {
             builderBtnInterval = null;
         }
         btn.disabled = false;
-        btn.textContent = "BUILD MODULE";
+        btn.innerHTML = START_BUILD_BTN_HTML;
         renderWheelsTable();
     };
 }
@@ -570,7 +654,7 @@ export async function showBuilderView() {
                     <div class="builder-field">
                         <label>
                             Target GPU Architecture 
-                            <a href="https://developer.nvidia.com/cuda/gpus" target="_blank" class="builder-info-link" title="Lookup GPU Compute Capability">(List)</a>
+                            <a href="https://developer.nvidia.com/cuda/gpus" target="_blank" class="builder-info-link" title="Lookup GPU Compute Capability" aria-label="Lookup GPU Compute Capability">${HolafIcons.render('external-link', { size: 12 })}</a>
                         </label>
                         <select id="builder-arch">
                             <option value="12.0">12.0 (Blackwell - RTX 5090, B200)</option>
@@ -584,11 +668,11 @@ export async function showBuilderView() {
                         </select>
                     </div>
                     <div class="builder-field build-btn-container">
-                        <button id="btn-start-build">BUILD MODULE</button>
+                        <button id="btn-start-build">${START_BUILD_BTN_HTML}</button>
                     </div>
                 </div>
                 <div id="builder-wheels">
-                    <div style="padding:0.5rem; background:#252545; color:#fff; font-weight:bold; border-bottom:1px solid #444;">Available Wheels</div>
+                    <div style="padding:0.5rem; background:var(--ak-panel-monitoring); color:var(--ak-text-strong); font-weight:bold; border-bottom:1px solid var(--ak-border-faint);">Available Wheels</div>
                     <div id="wheels-table-container">
                         <table class="wheels-table">
                             <thead>
@@ -740,6 +824,10 @@ export async function showBuilderView() {
 
 // --- INSTANCE WHEELS MANAGER ---
 
+// Same trap as the builder buttons: saveInstanceWheels() rewrites this label
+// ("SYNCING...") and must restore the icon afterwards.
+const WHEELS_APPLY_BTN_HTML = `${HolafIcons.render('check', { size: 14 })} APPLY CHANGES`;
+
 let currentWheelsData = [];
 
 export async function showInstanceWheelsManager(instanceId, instanceName) {
@@ -755,8 +843,8 @@ export async function showInstanceWheelsManager(instanceId, instanceName) {
                     Files will be copied to <code>/wheels</code> folder.
                 </div>
                 <div class="toolbar-actions">
-                    <button id="btn-wheels-refresh" class="btn-secondary" style="padding: 0.5rem 1rem; cursor:pointer;">Refresh</button>
-                    <button id="btn-wheels-apply" class="btn-primary" style="padding: 0.5rem 1rem; background-color:#28a745; color:white; border:none; font-weight:bold; border-radius:4px; cursor:pointer;">APPLY CHANGES</button>
+                    <button id="btn-wheels-refresh" class="btn-secondary" style="padding: 0.5rem 1rem; cursor:pointer;">${HolafIcons.render('refresh', { size: 14 })} Refresh</button>
+                    <button id="btn-wheels-apply" class="btn-primary" style="padding: 0.5rem 1rem; background-color:var(--ak-success); color:var(--ak-on-color); border:none; font-weight:bold; border-radius:4px; cursor:pointer;">${WHEELS_APPLY_BTN_HTML}</button>
                 </div>
             </div>
             <div class="wheels-manager-columns">
@@ -825,8 +913,8 @@ async function loadInstanceWheels(instanceId) {
         renderManagerTables();
 
     } catch (e) {
-        document.getElementById('wheels-available-body').innerHTML = `<tr><td colspan="3" style="color:red">Error: ${e.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td></tr>`;
-        document.getElementById('wheels-installed-body').innerHTML = `<tr><td colspan="3" style="color:red">Error: ${e.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td></tr>`;
+        document.getElementById('wheels-available-body').innerHTML = `<tr><td colspan="3" style="color:var(--ak-log-error)">Error: ${e.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td></tr>`;
+        document.getElementById('wheels-installed-body').innerHTML = `<tr><td colspan="3" style="color:var(--ak-log-error)">Error: ${e.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</td></tr>`;
     }
 }
 
@@ -850,7 +938,7 @@ function renderManagerTables() {
     const installedWheels = currentWheelsData.filter(w => w.installed);
 
     if (availableWheels.length === 0) {
-        availableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888;">No global wheels available.</td></tr>';
+        availableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--ak-text-disabled);">No global wheels available.</td></tr>';
     } else {
         availableWheels.forEach(w => {
             const tr = document.createElement('tr');
@@ -865,7 +953,7 @@ function renderManagerTables() {
             const installBtn = document.createElement('button');
             installBtn.className = 'btn-action install';
             installBtn.title = 'Install';
-            installBtn.textContent = '➕';
+            installBtn.innerHTML = HolafIcons.render('plus', { size: 18 });
             installBtn.addEventListener('click', () => window.toggleWheelState(w.filename, true));
             actTd.appendChild(installBtn);
             tr.appendChild(nameTd);
@@ -876,7 +964,7 @@ function renderManagerTables() {
     }
 
     if (installedWheels.length === 0) {
-        installedBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888;">No wheels currently installed.</td></tr>';
+        installedBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:var(--ak-text-disabled);">No wheels currently installed.</td></tr>';
     } else {
         installedWheels.forEach(w => {
             const tr = document.createElement('tr');
@@ -891,7 +979,7 @@ function renderManagerTables() {
             const removeBtn = document.createElement('button');
             removeBtn.className = 'btn-action remove';
             removeBtn.title = 'Remove';
-            removeBtn.textContent = '❌';
+            removeBtn.innerHTML = HolafIcons.render('x', { size: 18 });
             removeBtn.addEventListener('click', () => window.toggleWheelState(w.filename, false));
             actTd.appendChild(removeBtn);
             tr.appendChild(nameTd);
@@ -929,7 +1017,7 @@ async function saveInstanceWheels(instanceId) {
         showToast(`Sync failed: ${e.message}`, "error");
     } finally {
         btn.disabled = false;
-        btn.textContent = "APPLY CHANGES";
+        btn.innerHTML = WHEELS_APPLY_BTN_HTML;
     }
 }
 
@@ -986,7 +1074,7 @@ export async function openEditor(instanceId, instanceName, fileType) {
     if (!state.codeEditor) {
         const textarea = document.getElementById('file-editor-textarea');
         state.codeEditor = CodeMirror.fromTextArea(textarea, {
-            lineNumbers: true, mode: 'shell', theme: 'darcula',
+            lineNumbers: true, mode: 'shell', theme: _editorTheme(),
             indentUnit: 4, smartIndent: true,
         });
     }

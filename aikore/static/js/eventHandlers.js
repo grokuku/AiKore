@@ -2,7 +2,7 @@ import { state, DOM } from './state.js';
 import * as api from './api.js';
 import { showToolsMenu, hideToolsMenu, openDeleteModal, openRebuildModal, openRestartConfirmModal, openSaveBlueprintModal, openUpdateConfirmModal } from './modals.js';
 import { openEditor, openTerminal, showVersionCheckView, openInstanceView, showLogViewer, showInstanceWheelsManager } from './tools.js';
-import { renderInstanceRow, buildInstanceUrl, showToast, resolveGpuIds } from './ui.js';
+import { renderInstanceRow, buildInstanceUrl, showToast, resolveGpuIds, setButtonLabel } from './ui.js';
 import { fetchAndRenderInstances } from './main.js';
 
 export function setupMainEventListeners() {
@@ -348,7 +348,7 @@ export function setupMainEventListeners() {
             const { fileType } = state.editorState;
             const content = state.codeEditor.getValue();
             
-            DOM.editorUpdateBtn.textContent = 'Updating...';
+            setButtonLabel(DOM.editorUpdateBtn, 'Updating...');
             DOM.editorUpdateBtn.disabled = true;
             api.updateInstanceScript(instanceId, fileType, content, false)
                 .then(() => {
@@ -358,7 +358,7 @@ export function setupMainEventListeners() {
                     showToast(`Error updating script: ${error.message}`, 'error');
                 })
                 .finally(() => {
-                    DOM.editorUpdateBtn.textContent = 'Update Instance';
+                    setButtonLabel(DOM.editorUpdateBtn, 'Update Instance', 'refresh');
                     DOM.editorUpdateBtn.disabled = false;
                 });
         }

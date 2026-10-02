@@ -15,9 +15,9 @@
         overflow: hidden;
         /* Prevent body from scrolling */
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background-color: #1a1a2e;
+        background-color: var(--ak-bg);
         /* Main background color */
-        color: #e0e0e0;
+        color: var(--ak-text);
     }
     
     .main-container {
@@ -31,7 +31,7 @@
     }
     
     .main-title {
-        color: #ffffff;
+        color: var(--ak-text-strong);
         margin: 0 0 8px 0;
         /* Space below the main title */
         flex-shrink: 0;
@@ -55,7 +55,7 @@
     }
     
     .gutter {
-        background-color: #1a1a2e;
+        background-color: var(--ak-bg);
         background-repeat: no-repeat;
         background-position: center;
     }
@@ -72,22 +72,22 @@
         display: flex;
         flex-direction: column;
         border-radius: 8px;
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.4);
+        box-shadow: var(--ak-shadow);
         overflow: hidden;
         /* <-- Re-enabled for proper pane encapsulation */
     }
     
     /* --- PANE-SPECIFIC COLORS --- */
     #instance-pane {
-        background-color: #2a2a4a;
+        background-color: var(--ak-panel);
     }
     
     #tools-pane {
-        background-color: #2c2c54;
+        background-color: var(--ak-panel-alt);
     }
     
     #monitoring-pane {
-        background-color: #252545;
+        background-color: var(--ak-panel-monitoring);
     }
     
     .pane-header {
@@ -95,14 +95,14 @@
         justify-content: space-between;
         align-items: center;
         padding: 0.5rem 1.5rem; /* Reduced from 0.75rem */
-        border-bottom: 1px solid #3b3b6b;
+        border-bottom: 1px solid var(--ak-border);
         flex-shrink: 0;
     }
     
     .pane-header h2 {
         margin: 0;
         font-size: 1.2rem;
-        color: #ffffff;
+        color: var(--ak-text-strong);
     }
     
     .pane-content {
@@ -140,7 +140,7 @@
         display: flex;
         align-items: center;
         gap: 2px;
-        background: rgba(0,0,0,0.2);
+        background: var(--ak-satellite-bg);
         border-radius: 4px;
         padding: 0 4px;
         height: 24px;
@@ -149,28 +149,172 @@
     .zoom-btn {
         background: none;
         border: none;
-        color: #ccc;
+        color: var(--ak-text-dim);
         cursor: pointer;
         font-size: 16px;
         font-weight: bold;
         line-height: 1;
         padding: 0 4px;
         user-select: none;
+        display: inline-flex; /* Icon (+ / −) centered like the old text glyph */
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Neutralise the inline baseline of the injected SVG icons */
+    .zoom-btn svg {
+        display: block;
+        flex: none;
     }
     
     .zoom-btn:hover {
-        color: #fff;
-        background: rgba(255,255,255,0.1);
+        color: var(--ak-text-strong);
+        background: var(--ak-veil-hover);
         border-radius: 2px;
     }
     
     .zoom-label {
         font-size: 11px;
-        color: #aaa;
+        color: var(--ak-text-soft);
         min-width: 32px;
         text-align: center;
         user-select: none;
         cursor: pointer;
+    }
+
+    /* --- THEME SELECTOR (pane header) ---
+       Même gabarit que .zoom-controls (pilule 24 px sur fond satellite).
+       Le menu vit sur <body> en position:fixed : .pane a overflow:hidden et
+       clipperait un dropdown enfant (même contrainte que .bp-select). */
+    .theme-select-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 8px;
+        background: var(--ak-satellite-bg);
+        border: 1px solid var(--ak-border);
+        border-radius: 4px;
+        color: var(--ak-text-dim);
+        font-family: inherit;
+        font-size: 12px;
+        line-height: 1;
+        cursor: pointer;
+        user-select: none;
+        transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+
+    /* Neutralise the inline baseline of the injected SVG icons */
+    .theme-select-trigger svg,
+    .theme-select-option svg {
+        display: block;
+        flex: none;
+    }
+
+    .theme-select-trigger:hover,
+    .theme-select-trigger[aria-expanded="true"] {
+        color: var(--ak-text-strong);
+        background: var(--ak-veil-hover);
+        border-color: var(--ak-secondary);
+    }
+
+    .theme-select-label {
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .theme-select-arrow {
+        display: inline-flex;
+        color: var(--ak-text-disabled);
+        transition: transform 0.15s ease;
+    }
+
+    .theme-select-trigger[aria-expanded="true"] .theme-select-arrow {
+        transform: rotate(180deg);
+    }
+
+    .theme-select-dropdown {
+        display: none;
+        position: fixed;
+        z-index: 9999;
+        min-width: 200px;
+        max-height: 60vh;
+        overflow-y: auto;
+        padding: 4px 0;
+        background-color: var(--ak-input);
+        border: 1px solid var(--ak-border);
+        border-radius: 6px;
+        box-shadow: var(--ak-shadow-strong);
+    }
+
+    .theme-select-dropdown.open {
+        display: block;
+    }
+
+    .theme-select-group-label {
+        padding: 8px 12px 4px;
+        font-size: 11px;
+        font-weight: bold;
+        color: var(--ak-text-disabled);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        background-color: var(--ak-menu-group-bg);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .theme-select-option {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 6px 12px;
+        background: none;
+        border: none;
+        color: var(--ak-text);
+        font-family: inherit;
+        font-size: 13px;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .theme-select-option:hover,
+    .theme-select-option:focus-visible {
+        background-color: var(--ak-hover);
+        outline: none;
+    }
+
+    .theme-select-option[aria-selected="true"] {
+        background-color: var(--ak-menu-bg);
+        color: var(--ak-text-strong);
+    }
+
+    .theme-select-option-label {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .theme-select-option-icon {
+        color: var(--ak-text-faint);
+    }
+
+    .theme-select-option[aria-selected="true"] .theme-select-option-icon {
+        color: var(--ak-text-strong);
+    }
+
+    .theme-select-option-check {
+        margin-left: auto;
+        color: var(--ak-accent);
+        visibility: hidden;
+    }
+
+    .theme-select-option[aria-selected="true"] .theme-select-option-check {
+        visibility: visible;
     }
     
     .hidden {
