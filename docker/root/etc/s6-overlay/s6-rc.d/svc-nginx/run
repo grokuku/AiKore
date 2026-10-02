@@ -1,5 +1,14 @@
 #!/usr/bin/with-contenv bash
 
+# --- AiKore boot instrumentation (dormante sauf AIKORE_BOOT_CHRONO=1) ---------
+# Fallback no-op si la lib est absente : aucune sortie ajoutée.
+if [ -r /usr/local/bin/aikore-boot-chrono.sh ]; then
+    . /usr/local/bin/aikore-boot-chrono.sh
+else
+    aikore_chrono_mark() { return 0; }
+fi
+
 # Start NGINX in the foreground, as required by s6-overlay
 # This syntax is more robust than execlineb for this command.
+aikore_chrono_mark svc-nginx start
 exec nginx -g 'daemon off;'

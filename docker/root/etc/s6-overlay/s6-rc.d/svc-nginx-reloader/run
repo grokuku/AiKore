@@ -1,10 +1,19 @@
 #!/usr/bin/with-contenv bash
 
+# --- AiKore boot instrumentation (dormante sauf AIKORE_BOOT_CHRONO=1) ---------
+# Fallback no-op si la lib est absente : aucune sortie ajoutée.
+if [ -r /usr/local/bin/aikore-boot-chrono.sh ]; then
+    . /usr/local/bin/aikore-boot-chrono.sh
+else
+    aikore_chrono_mark() { return 0; }
+fi
+
 # This script runs as root and watches for a flag file created by the AiKore app.
 # When the flag is found, it reloads NGINX and removes the flag.
 
 FLAG_FILE="/run/aikore/nginx_reload.flag"
 
+aikore_chrono_mark svc-nginx-reloader start
 echo "Starting NGINX reloader service..."
 
 # Loop indefinitely

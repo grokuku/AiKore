@@ -1,0 +1,56 @@
+name: Boot Timing Guard
+
+# Verrou anti-régression du temps de boot AiKore.
+# Fichier séparé : ne modifie pas les workflows existants.
+#
+# Déclenchement :
+#   - automatiquement après un "Docker Build Test" réussi (l'image :test vient
+#     d'être poussée sur GHCR) ;
+#   - manuellement via workflow_dispatch.
+#
+# Il démarre un conteneur NEUF avec l'instrumentation activée
+# (AIKORE_BOOT_CHRONO=1, PUID=99/PGID=100 comme le compose linuxserver.io),
+# mesure l'écart entre les marques `phase=init-chown event=start/end` et échoue
+# au-delà de 20 s (attendu : quelques centaines de ms après correctif ; ~96 s
+# dans la régression historique).
+
+on:
+  workflow_run:
+    workflows: ["Docker Build Test"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: boot-timing-guard
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    # Rien à vérifier si le build amont a échoué (sauf lancement manuel).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref }}
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull test image
+        run: |
+          IMAGE="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]'):test"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          docker pull "$IMAGE"
+
+      - name: Boot timing guard
+        run: ./scripts/check-boot-timing.sh --threshold-ms 20000 --timeout-s 300 "$IMAGE"

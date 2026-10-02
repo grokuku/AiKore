@@ -52,18 +52,6 @@ RUN for i in 1 2 3; do \
     && rm -rf /var/lib/apt/lists/* && break || sleep 10; \
     done
 
-# --- s6-overlay & Sudoers Configuration ---
-# Copy our custom s6-overlay services and sudoers configuration
-COPY docker/root/ /
-
-# Ensure all s6-overlay scripts are executable and have correct line endings.
-RUN find /etc/s6-overlay/ -type f -print0 | xargs -0 dos2unix -- && \
-    find /etc/s6-overlay/ -type f -print0 | xargs -0 chmod +x
-
-# Secure the sudoers file (Sudo ignores files with insecure permissions)
-RUN chown root:root /etc/sudoers.d/aikore-sudo && \
-    chmod 0440 /etc/sudoers.d/aikore-sudo
-
 # --- Override and Neutralize Default Desktop Services ---
 RUN printf '#!/bin/bash\n# Service disabled by AiKore\nexit 0\n' > /etc/s6-overlay/s6-rc.d/svc-de/run && \
     printf '#!/bin/bash\n# Service disabled by AiKore\nexit 0\n' > /etc/s6-overlay/s6-rc.d/svc-pulseaudio/run && \
@@ -138,6 +126,25 @@ RUN . /home/abc/miniconda3/bin/activate && \
 # --- Final Step: Switch back to root ---
 # The container must start as root to allow the s6-overlay init system to function.
 USER root
+
+# --- s6-overlay & Sudoers Configuration ---
+# IMPORTANT: ce bloc est volontairement placé APRÈS les couches lourdes (apt,
+# miniforge, pip) et après le dernier `USER abc` : éditer docker/root/ n'invalide
+# plus le cache de ces couches lors des rebuilds, et les chown/chmod ci-dessous
+# s'exécutent bien en root (ne pas remonter ce bloc au-dessus d'un USER abc).
+# Copy our custom s6-overlay services and sudoers configuration
+COPY docker/root/ /
+
+# Ensure all s6-overlay scripts and the boot chrono lib are executable with
+# correct line endings.
+RUN find /etc/s6-overlay/ -type f -print0 | xargs -0 dos2unix -- && \
+    find /etc/s6-overlay/ -type f -print0 | xargs -0 chmod +x && \
+    dos2unix /usr/local/bin/aikore-boot-chrono.sh && \
+    chmod +x /usr/local/bin/aikore-boot-chrono.sh
+
+# Secure the sudoers file (Sudo ignores files with insecure permissions)
+RUN chown root:root /etc/sudoers.d/aikore-sudo && \
+    chmod 0440 /etc/sudoers.d/aikore-sudo
 
 # Expose AiKore's default port
 EXPOSE 9000/tcp

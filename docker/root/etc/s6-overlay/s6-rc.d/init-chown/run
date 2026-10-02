@@ -1,5 +1,23 @@
 #!/usr/bin/with-contenv bash
 
+# --- AiKore boot instrumentation (dormante sauf AIKORE_BOOT_CHRONO=1) ---------
+# Fallback no-op si la lib est absente : mêmes commandes, aucune sortie ajoutée.
+if [ -r /usr/local/bin/aikore-boot-chrono.sh ]; then
+    . /usr/local/bin/aikore-boot-chrono.sh
+else
+    aikore_chrono_mark() { return 0; }
+    aikore_chrono_run() {
+        if [ "$#" -lt 1 ]; then
+            return 0
+        fi
+        shift
+        "$@"
+        return $?
+    }
+fi
+
+aikore_chrono_mark init-chown start
+
 echo "-------------------------------------"
 # AiKore specific permissions
 echo "Ensuring AiKore has ownership of necessary directories..."
@@ -12,10 +30,76 @@ mkdir -p /run/aikore
 chown -R abc:abc /run/aikore
 echo "Done."
 
+# --- /home/abc : chown ciblé O(1) + réparation conditionnelle -----------------
+# Contexte : au runtime linuxserver.io remappe l'utilisateur abc (uid=911/gid=1001
+# au build) sur PUID/PGID. L'ancien `find /home/abc ! -user abc -exec chown -R`
+# réécrivait des dizaines de milliers de fichiers d'image à CHAQUE boot
+# (copy-up overlay2, ~96 s). Désormais :
+#   N1 (toujours) : chown CIBLÉ, non récursif, des seuls emplacements qui
+#      doivent être inscriptibles au runtime (racine + entrées de premier niveau
+#      de /home/abc, miniconda3/{envs,pkgs,conda-meta}, site-packages). Le reste
+#      de l'image n'a besoin que d'être LU -> aucun chown nécessaire.
+#   N2 (conditionnel) : réparation récursive COMPLÈTE uniquement si le marqueur
+#      persistant $BASE_DIR/.aikore_home_perms.marker indique un PUID:PGID
+#      différent (changement volontaire) ou si AIKORE_FORCE_REPAIR=1.
+#      Le tout premier boot ne répare JAMAIS : il écrit le marqueur.
+_aikore_fix_home_perms() {
+    local runtime_ids marker marker_current site_packages
+    runtime_ids="${PUID:-$(id -u abc 2>/dev/null)}:${PGID:-$(id -g abc 2>/dev/null)}"
+    marker="$BASE_DIR/.aikore_home_perms.marker"
+
+    # Mesure du coût potentiel (uniquement quand l'instrumentation est active).
+    if [ "${AIKORE_BOOT_CHRONO:-0}" = "1" ]; then
+        aikore_chrono_mark init-chown/home-perms mismatch mismatch_count="$(find /home/abc ! -user abc 2>/dev/null | wc -l)"
+    fi
+
+    # N1 — chown ciblé O(1), inconditionnel, best-effort (aucune récursion).
+    mkdir -p /home/abc/miniconda3/envs /home/abc/miniconda3/pkgs 2>/dev/null
+    chown abc:abc /home/abc 2>/dev/null
+    find /home/abc -mindepth 1 -maxdepth 1 -exec chown -h abc:abc {} + 2>/dev/null
+    chown abc:abc /home/abc/miniconda3 /home/abc/miniconda3/envs \
+        /home/abc/miniconda3/pkgs /home/abc/miniconda3/conda-meta 2>/dev/null
+    for site_packages in /home/abc/miniconda3/lib/python3.*/site-packages; do
+        if [ -d "$site_packages" ]; then
+            chown abc:abc "$site_packages" 2>/dev/null
+        fi
+    done
+
+    # N2 — réparation lourde, seulement si les ids runtime ont changé.
+    if [ "${AIKORE_FORCE_REPAIR:-0}" = "1" ]; then
+        aikore_chrono_mark init-chown/home-perms repair reason=AIKORE_FORCE_REPAIR ids="$runtime_ids"
+        aikore_chrono_run init-chown/home-perms-repair chown -R abc:abc /home/abc 2>/dev/null
+    elif [ -f "$marker" ]; then
+        marker_current="$(cat "$marker" 2>/dev/null)"
+        if [ "$marker_current" != "$runtime_ids" ]; then
+            aikore_chrono_mark init-chown/home-perms repair reason=marker-changed previous="$marker_current" current="$runtime_ids"
+            aikore_chrono_run init-chown/home-perms-repair chown -R abc:abc /home/abc 2>/dev/null
+        else
+            aikore_chrono_mark init-chown/home-perms repair skipped reason=marker-match ids="$runtime_ids"
+        fi
+    else
+        aikore_chrono_mark init-chown/home-perms repair skipped reason=first-boot ids="$runtime_ids"
+    fi
+
+    # Toujours (ré)écrire le marqueur -> les boots suivants ne réparent pas.
+    printf '%s\n' "$runtime_ids" > "$marker" 2>/dev/null
+
+    return 0
+}
+
+# --- /config : comportement inchangé (conditionné par le fichier de reset) ----
+_aikore_fix_config_perms() {
+    mkdir -p $BASE_DIR/models $BASE_DIR/outputs
+    chown -R abc:users $BASE_DIR
+    chmod -R 774 $BASE_DIR
+    chmod -R 664 $BASE_DIR/models
+    chmod -R 664 $BASE_DIR/outputs
+    find $BASE_DIR -type d -exec chmod 777 {} +
+}
+
 # General permissions
 echo "chown'ing home directory to ensure correct permissions."
-find /home/abc -type d \( ! -user abc -o ! -group abc \) -exec chown -R abc:abc {} \;
-find /home/abc -type f \( ! -user abc -o ! -group abc \) -exec chown abc:abc {} \;
+aikore_chrono_run init-chown/home-perms _aikore_fix_home_perms
 echo "Done!"
 echo -e "-------------------------------------\n"
 
@@ -23,13 +107,12 @@ echo -e "-------------------------------------\n"
 if [ ! -f "$BASE_DIR/Delete_this_file_to_reset_access_rights_at_next_launch" ]; then
 echo "-------------------------------------"
 echo "chown'ing main config directory to ensure correct permissions."
-mkdir -p $BASE_DIR/models $BASE_DIR/outputs
-chown -R abc:users $BASE_DIR
-chmod -R 774 $BASE_DIR
-chmod -R 664 $BASE_DIR/models
-chmod -R 664 $BASE_DIR/outputs
-find $BASE_DIR -type d -exec chmod 777 {} +
+aikore_chrono_mark init-chown/config-perms start
+aikore_chrono_run init-chown/config-perms _aikore_fix_config_perms
 echo "Delete this file to reset access rights at next launch" > "$BASE_DIR/Delete_this_file_to_reset_access_rights_at_next_launch"
+aikore_chrono_mark init-chown/config-perms end
 echo "Done!"
 echo -e "-------------------------------------\n"
 fi
+
+aikore_chrono_mark init-chown end

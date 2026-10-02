@@ -1,7 +1,16 @@
 #!/usr/bin/with-contenv bash
 
+# --- AiKore boot instrumentation (dormante sauf AIKORE_BOOT_CHRONO=1) ---------
+# Fallback no-op si la lib est absente : aucune sortie ajoutée.
+if [ -r /usr/local/bin/aikore-boot-chrono.sh ]; then
+    . /usr/local/bin/aikore-boot-chrono.sh
+else
+    aikore_chrono_mark() { return 0; }
+fi
+
 # This service is now solely responsible for running the AiKore application.
 # The KasmVNC startup logic has been removed as it's not needed for a backend service.
 
+aikore_chrono_mark svc-app start
 echo "--- Preparing to launch AiKore application ---"
 exec s6-setuidgid abc /opt/sd-install/entry.sh
