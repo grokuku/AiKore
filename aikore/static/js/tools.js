@@ -23,8 +23,12 @@ const XTERM_LIGHT_THEME = {
     cursor: '#1A1A2E',
     cursorAccent: '#FFFFFF',
     selectionBackground: 'rgba(0, 102, 214, 0.25)',
-    // Palette ANSI éclaircie : les « blancs » ANSI deviennent des gris lisibles
-    // sur fond blanc ; le reste s'aligne sur les rôles sémantiques du mode clair.
+    // Palette ANSI du mode CLAIR. Les « blancs » ANSI sont pensés pour un fond
+    // sombre : laissés tels quels sur fond blanc, ils deviennent invisibles
+    // (l'audit a mesuré white 1.95:1 et brightWhite 2.6:1). On les ancre donc
+    // sur les rôles sémantiques clairs (text / text-muted) et on assombrit les
+    // « bright » trop clairs (blue/cyan/green/yellow) pour rester lisibles.
+    // Même objet pour xterm ET le log viewer ansi_up (aucune palette dupliquée).
     black: '#3B3B4F',
     red: '#C82333',
     green: '#1E7E34',
@@ -32,17 +36,46 @@ const XTERM_LIGHT_THEME = {
     blue: '#0066D6',
     magenta: '#6F42C1',
     cyan: '#0F7C8C',
-    white: '#B8B8CC',
-    brightBlack: '#91919E',
+    white: '#5A5A74',          // = --ak-text-muted (light) — « blanc » ANSI lisible
+    brightBlack: '#91919E',    // = --ak-text-ghost (light) — volontairement faint
     brightRed: '#DC3545',
-    brightGreen: '#28A745',
-    brightYellow: '#D97706',
-    brightBlue: '#4DA6FF',
+    brightGreen: '#1D6F33',    // = --ak-success-hover (light)
+    brightYellow: '#C05621',   // = --ak-stalled (light)
+    brightBlue: '#0057B8',     // = --ak-accent-hover (light)
     brightMagenta: '#8B5CF6',
-    brightCyan: '#17A2B8',
-    brightWhite: '#9696AE',
+    brightCyan: '#0F7C8C',     // = --ak-info (light)
+    brightWhite: '#1A1A2E',    // = --ak-text (light)
 };
 const EDITOR_THEME = { dark: 'darcula', light: 'default' };
+
+/* ─── Log viewer ansi_up : palette ANSI par mode ─────────────────────────────
+ * ansi_up colore les logs en INLINE avec une palette figée (xterm d'origine) :
+ * sur fond clair le « blanc » ANSI (#FFFFFF) devient invisible et le
+ * vert/jaune/cyan tombent sous 3:1. On fournit donc une palette par mode :
+ *   • sombre → palette d'origine d'ansi_up RESTAURÉE telle quelle (stricte
+ *     non-régression) ;
+ *   • clair  → mêmes teintes que le thème xterm clair (rôles sémantiques
+ *     validés du mode clair). Aucune couleur inventée.                     */
+const ANSI_UP_DEFAULT_PALETTE = ansi_up.ansi_colors;
+const ANSI_CLASS_NAMES = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'];
+
+function _hexToRgb(hex) {
+    const m = String(hex).replace('#', '').match(/.{2}/g) || [];
+    return m.slice(0, 3).map((h) => parseInt(h, 16));
+}
+
+function _ansiPalette(theme) {
+    const normal = [theme.black, theme.red, theme.green, theme.yellow, theme.blue, theme.magenta, theme.cyan, theme.white];
+    const bright = [theme.brightBlack, theme.brightRed, theme.brightGreen, theme.brightYellow, theme.brightBlue, theme.brightMagenta, theme.brightCyan, theme.brightWhite];
+    return [normal, bright].map((colors, group) => colors.map((hex, index) => ({
+        rgb: _hexToRgb(hex),
+        class_name: group === 0 ? `ansi-${ANSI_CLASS_NAMES[index]}` : `ansi-bright-${ANSI_CLASS_NAMES[index]}`,
+    })));
+}
+
+function _applyAnsiPalette() {
+    ansi_up.ansi_colors = _themeMode() === 'light' ? _ansiPalette(XTERM_LIGHT_THEME) : ANSI_UP_DEFAULT_PALETTE;
+}
 
 /** Mode courant (dark/light) : getCurrentTheme(), sinon data-mode (anti-FOUC/boot). */
 function _themeMode() {
@@ -76,7 +109,58 @@ document.addEventListener('aikore-theme-changed', () => {
     if (state.codeEditor) {
         state.codeEditor.setOption('theme', EDITOR_THEME[mode] || EDITOR_THEME.dark);
     }
+    // Le log viewer ansi_up colore en inline : palette + re-rendu complet.
+    _applyAnsiPalette();
+    _rerenderLogViewer();
+    // L'iframe welcome est un document séparé : on lui pousse le mode.
+    _postThemeToWelcome();
 });
+
+/* ─── Log viewer : buffer brut pour re-rendu au changement de thème ────────
+ * ansi_up produit des <span style="color:..."> inline : un recalcul CSS ne
+ * peut pas les suivre. On conserve donc le texte (déjà échappé HTML) du flux
+ * courant et on re-rend le panneau quand la palette change. */
+let logRawBuffer = '';
+
+function _rerenderLogViewer() {
+    if (!DOM.logContentArea || !logRawBuffer) return;
+    const wasAtBottom = DOM.logViewerContainer.scrollHeight - DOM.logViewerContainer.scrollTop <= DOM.logViewerContainer.clientHeight + 4;
+    DOM.logContentArea.innerHTML = ansi_up.ansi_to_html(logRawBuffer);
+    if (wasAtBottom) DOM.logViewerContainer.scrollTop = DOM.logViewerContainer.scrollHeight;
+}
+
+/* ─── Welcome iframe : le thème traverse le document séparé ────────────────
+ * /static/welcome/index.html est un DOCUMENT PROPRE : il n'hérite pas des
+ * variables :root de l'hôte. L'hôte pousse {mode, theme, vars} au chargement
+ * de l'iframe ET à chaque changement de thème (postMessage same-origin) ; la
+ * page welcome accuse réception (« aikore-theme-ready ») pour couvrir la
+ * course load/message. En sombre, vars = null : la page garde ses littéraux
+ * historiques (#111111 / #e0e0e0) → non-régression stricte. En clair, vars
+ * porte les custom properties CALCULÉES de l'hôte (aucune palette dupliquée). */
+function _postThemeToWelcome() {
+    const win = DOM.welcomeIframe && DOM.welcomeIframe.contentWindow;
+    if (!win) return;
+    const mode = _themeMode();
+    const rootStyle = getComputedStyle(document.documentElement);
+    const vars = mode === 'light' ? {
+        bg: rootStyle.getPropertyValue('--ak-bg').trim(),
+        text: rootStyle.getPropertyValue('--ak-text').trim(),
+    } : null;
+    try {
+        win.postMessage({ type: 'aikore-theme', theme: (getCurrentTheme() || {}).name || null, mode, vars }, window.location.origin);
+    } catch (e) { /* iframe démontée — ignore */ }
+}
+
+let welcomeThemeHooked = false;
+function _hookWelcomeTheme() {
+    if (welcomeThemeHooked || !DOM.welcomeIframe) return;
+    welcomeThemeHooked = true;
+    DOM.welcomeIframe.addEventListener('load', _postThemeToWelcome);
+    window.addEventListener('message', (event) => {
+        if (event.origin !== window.location.origin) return;
+        if (event.data && event.data.type === 'aikore-theme-ready') _postThemeToWelcome();
+    });
+}
 
 // --- Authenticated WebSocket helper -------------------------------------------
 // Browsers cannot set custom headers on a WebSocket, so when AIKORE_API_KEY is
@@ -1042,6 +1126,8 @@ export function showWelcomeScreen() {
     hideAllToolViews();
     DOM.welcomeScreenContainer.classList.remove('hidden');
     DOM.welcomeIframe.src = '/static/welcome/index.html';
+    // Prépare la poussée du thème vers l'iframe (load + ready + changements).
+    _hookWelcomeTheme();
     DOM.toolsPaneTitle.textContent = 'Tools / Welcome';
     setToolZoom('welcome');
 
@@ -1172,6 +1258,8 @@ export async function showLogViewer(instanceId, instanceName) {
     DOM.logContentArea.textContent = 'Loading logs...';
     state.activeLogInstanceId = instanceId;
     state.logSize = 0;
+    logRawBuffer = '';
+    _applyAnsiPalette();
 
     const updateLogs = async () => {
         if (!state.activeLogInstanceId) return;
@@ -1184,6 +1272,7 @@ export async function showLogViewer(instanceId, instanceName) {
                     // Sanitize log content before ANSI conversion to prevent XSS
                     // ansi_up doesn't escape HTML — raw <script> tags in logs would execute
                     const sanitized = data.content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    logRawBuffer += sanitized;
                     const logHtml = ansi_up.ansi_to_html(sanitized);
                     DOM.logContentArea.insertAdjacentHTML('beforeend', logHtml);
                     state.logSize = data.size;

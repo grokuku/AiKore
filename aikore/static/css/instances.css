@@ -25,6 +25,15 @@
     background-color: var(--ak-accent-hover);
 }
 
+/* Le bouton « Build Module » (injecté par main.js avec .add-new-btn + fond
+   secondary inline) doit porter l'encre « on-secondary » : sans cette règle
+   il hérite de --ak-accent-text (encre sombre pensée pour un accent clair) et
+   tombe à 2.7:1 sur le violet en mode sombre — régression du refactor, il
+   était blanc avant. */
+#btn-open-builder {
+    color: var(--ak-on-secondary);
+}
+
 .instances-table {
     width: 100%;
     border-collapse: separate;
@@ -299,6 +308,9 @@ tbody.instance-group tr:last-child td {
 [data-action="open"],
 [data-action="view"] {
     background-color: var(--ak-btn-neutral-bg);
+    /* Sans cette encre, le bouton gardait --ak-on-color (blanc) et devenait
+       blanc sur blanc en mode clair (contraste 1:1 constaté à l'audit). */
+    color: var(--ak-btn-neutral-fg);
 }[data-action="cancel_new"] {
     background-color: var(--ak-btn-light-bg);
     /* Light grey */
@@ -309,6 +321,9 @@ tbody.instance-group tr:last-child td {
 .action-btn:not([data-action]) {
     background-color: var(--ak-btn-neutral-bg);
 }
+/* NB : ne PAS fixer de color ici — les boutons réellement concernés
+   (#global-save-btn, #editor-save/update-btn) portent un fond spécifique
+   (success/secondary) et doivent garder l'encre blanche de .action-btn. */
 
 /* Drag and Drop Handle */
 .instances-table th.drag-handle-column {
@@ -533,13 +548,12 @@ select.compact-env-select:disabled {
     margin-left: auto;
     padding-left: 12px;
     font-size: 11px;
-    color: var(--ak-text-ghost);
+    /* Libellé de catégorie discret mais lisible : #666666 sur #1E1E3F ne
+       faisait que 2.8:1 (idem en clair). --ak-text-faint reste discret et
+       passe à 3.6:1 (sombre) / 5.1:1 (clair). */
+    color: var(--ak-text-faint);
     white-space: nowrap;
     text-align: right;
-}
-
-.bp-option.selected .bp-option-category {
-    color: var(--ak-text-faint);
 }
 
 .bp-option-group + .bp-option-group {

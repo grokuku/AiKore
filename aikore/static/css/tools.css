@@ -111,6 +111,13 @@
     background-color: var(--ak-tool-bg);
 }
 
+/* CodeMirror « default » (mode clair) : ses numéros de ligne #999 sur #F7F7F7
+   ne font que ~2.9:1. On les aligne sur le rôle « texte tertiaire » clair ;
+   le thème darcula (sombre) garde ses valeurs d'origine (non-régression). */
+:root[data-mode="light"] .CodeMirror .CodeMirror-linenumber {
+    color: var(--ak-text-soft);
+}
+
 
 /* --- Instance View (iframe) & Welcome Screen --- */
 #instance-view-container,
@@ -537,6 +544,21 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
+}
+
+/* Le bouton Refresh (.btn-secondary) n'avait AUCUNE couleur : il gardait le
+   style navigateur (~blanc #EFEFEF, encre noire) dans les DEUX modes. On
+   l'ancre sur les rôles neutres du thème ; APPLY CHANGES garde son inline
+   (--ak-success, déjà thémé). */
+.toolbar-actions .btn-secondary {
+    background-color: var(--ak-btn-neutral-bg);
+    color: var(--ak-btn-neutral-fg);
+    border: 1px solid var(--ak-border);
+    border-radius: 4px;
+}
+
+.toolbar-actions .btn-secondary:hover {
+    background-color: var(--ak-hover);
 }
 
 .toolbar-actions .btn-secondary svg,

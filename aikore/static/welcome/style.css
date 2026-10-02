@@ -1,5 +1,8 @@
 html, body {
-    background-color: #111111;
+    /* Fond piloté par le mode : repli sombre historique (#111111) ; en mode
+       clair, l'hôte pousse --welcome-bg (custom property calculée du thème
+       actif) via postMessage — cf. js/main.js. */
+    background-color: var(--welcome-bg, #111111);
     margin: 0;
     padding: 0;
     width: 100%;
@@ -10,6 +13,17 @@ html, body {
         0deg,
         rgba(0, 0, 0, 0.2),
         rgba(0, 0, 0, 0.2) 1px,
+        transparent 1px,
+        transparent 2px
+    );
+}
+
+/* Mode clair (thème hôte) : scanlines à peine visibles sur fond clair. */
+html[data-mode="light"] body {
+    background-image: repeating-linear-gradient(
+        0deg,
+        rgba(26, 26, 46, 0.06),
+        rgba(26, 26, 46, 0.06) 1px,
         transparent 1px,
         transparent 2px
     );

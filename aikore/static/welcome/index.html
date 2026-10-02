@@ -4,6 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AiKore Welcome</title>
+    <!-- Anti-FOUC du mode : ce document est SÉPARÉ du dashboard (iframe) et
+         n'hérite donc pas des variables :root de l'hôte. On lit le thème
+         persisté (même origine) AVANT le premier paint pour choisir le fond ;
+         l'hôte affine ensuite par postMessage avec les valeurs --ak-* réelles
+         du thème actif (cf. tools.js _postThemeToWelcome / js/main.js). -->
+    <script>
+        (function () {
+            try {
+                var saved = localStorage.getItem('aikoreTheme');
+                if (saved && /-light$/.test(saved)) {
+                    document.documentElement.setAttribute('data-mode', 'light');
+                }
+            } catch (e) { /* stockage indisponible — repli sombre historique */ }
+        })();
+    </script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>

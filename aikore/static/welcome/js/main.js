@@ -8,12 +8,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const LOGO_PATH = 'logos/aikore-smooth.txt';
     const FONT = '"Courier New", Courier, monospace';
-    const CHAR_COLOR = '#e0e0e0';
+    const DEFAULT_CHAR_COLOR = '#e0e0e0';
     const ACCENT_COLORS = ['#00ff9d', '#ff00ff', '#00ffff', '#ffff00', '#ff9900', '#ff4d4d', '#4d4dff'];
     const WAVE_AMPLITUDE = 3;
     const WAVE_SPEED = 8.0;
     const COLOR_IDLE_MS = 3800;
     const COLOR_TRANSITION_MS = 1200;
+
+    // --- Thème (document séparé : reçoit le mode de l'hôte en postMessage) ---
+    // Sombre = littéraux historiques (#111111 / #e0e0e0), pour une
+    // non-régression stricte ; clair = valeurs --ak-* poussées par le
+    // dashboard (repli littéral du mode clair si le message n'arrive pas).
+    let charColor = DEFAULT_CHAR_COLOR;
+    let themeMode = document.documentElement.getAttribute('data-mode') === 'light' ? 'light' : 'dark';
 
     // --- State ---
     let particles = [];   // { char, x, y, cellW, size }
@@ -142,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // White characters on top
         c.globalAlpha = 1.0;
-        c.fillStyle = CHAR_COLOR;
+        c.fillStyle = charColor;
         for (const p of particles) {
             c.fillText(p.char, p.x, p.y);
         }
@@ -246,10 +253,50 @@ document.addEventListener('DOMContentLoaded', () => {
     // ResizeObserver for reliable detection (works inside iframes)
     new ResizeObserver(handleResize).observe(canvas);
 
-    // Also listen for parent resize messages (iframe context)
+    // --- Thème reçu de l'hôte (dashboard) ---
+    // {type:'aikore-theme', mode, theme, vars:{bg,text}} — same-origin only.
+    // Le canvas est un rendu maison : il n'y a pas de var() à recalculer, on
+    // met à jour le fond (custom property consommée par style.css) et l'encre
+    // du logo, puis on force la reconstruction de l'offscreen.
+    function applyThemeMessage(data) {
+        if (!data || data.type !== 'aikore-theme') return;
+        if (data.mode === 'light') {
+            themeMode = 'light';
+            document.documentElement.setAttribute('data-mode', 'light');
+            document.documentElement.style.setProperty('--welcome-bg', (data.vars && data.vars.bg) || '#F2F3FA');
+            charColor = (data.vars && data.vars.text) || '#1A1A2E';
+        } else {
+            themeMode = 'dark';
+            document.documentElement.removeAttribute('data-mode');
+            document.documentElement.style.removeProperty('--welcome-bg');
+            charColor = DEFAULT_CHAR_COLOR;
+        }
+        lastAccentColor = null; // force rebuildOffscreen (encre) au prochain frame
+    }
+
+    // Messages de l'hôte : thème + redimensionnement (l'iframe ne reçoit pas
+    // toujours les resize events du parent).
     window.addEventListener('message', (e) => {
-        if (e.data?.type === 'aikore-resize') handleResize();
+        if (e.origin !== window.location.origin) return;
+        if (e.data?.type === 'aikore-theme') applyThemeMessage(e.data);
+        else if (e.data?.type === 'aikore-resize') handleResize();
     });
+
+    // État initial si localStorage annonçait déjà le mode clair : appliquer
+    // les replis littéraux en attendant le message de l'hôte (qui affinera
+    // avec les valeurs réelles du thème actif).
+    if (themeMode === 'light') {
+        document.documentElement.style.setProperty('--welcome-bg', '#F2F3FA');
+        charColor = '#1A1A2E';
+    }
+
+    // Signale à l'hôte qu'on est prêt à recevoir le thème (couvre la course
+    // entre le load de l'iframe et l'exécution de ce script).
+    try {
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'aikore-theme-ready' }, window.location.origin);
+        }
+    } catch (e) { /* parent inaccessible — replis littéraux */ }
 
     // Start
     init();

@@ -88,6 +88,10 @@
     --ak-font-size: var(--holaf-font-size, 14px);
     --ak-switch-knob: #FFFFFF;
     --ak-btn-neutral-bg: #4A4A70;
+    /* Encre des boutons neutres (View/Open/Refresh) : les blocs
+       [data-mode] la spécialisent (blanc en sombre, texte foncé en clair) ;
+       ce repli couvre la fenêtre anti-FOUC avant themes.js. */
+    --ak-btn-neutral-fg: #FFFFFF;
 
     /* Voiles / terminaux (défauts sombres ; surchargés par mode + identité) */
     --ak-veil: rgba(6, 6, 16, 0.62);
