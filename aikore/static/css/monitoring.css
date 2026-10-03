@@ -1,0 +1,328 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * AiKore — monitoring.css : panneau « System Monitoring »
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Deux modes d'affichage commutables (localStorage['aikoreMonitorMode']) :
+ *   • normal (défaut) — une carte par périphérique : en-tête (nom + sous-titre,
+ *     température en gros colorée par seuil), chips ventilo/puissance, barres
+ *     fines (VRAM/Charge, RAM/Charge) et sparkline de charge pour les GPU.
+ *   • compact — une ligne dense par périphérique : nom + valeurs alignées
+ *     (temp · ventilo · puissance) puis deux barres très fines avec leurs
+ *     valeurs. Aucune métrique perdue, pas de sparkline.
+ *
+ * COULEURS : uniquement des rôles sémantiques --ak-* (theme.css) — aucun
+ * littéral, donc les 12 thèmes (sombres ET clairs) sont couverts.
+ * LARGEUR : le panneau vit dans une colonne étroite (~400 px) → grilles
+ * fluides, min-width:0 partout et ellipses sur les noms.
+ *
+ * La structure DOM est construite par ui.js (updateSystemStats) ; les valeurs
+ * sont mises à jour EN PLACE à chaque tick (2 s) pour éviter tout clignotement.
+ * ═════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Bascule normal/compact (en-tête, à gauche des contrôles de zoom) ───── */
+.monitor-mode-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 24px;
+    padding: 0 2px;
+    background: var(--ak-satellite-bg);
+    border-radius: 4px;
+}
+
+.monitor-mode-btn {
+    display: inline-flex; /* même gabarit centré que .zoom-btn */
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 20px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 3px;
+    color: var(--ak-text-soft);
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Neutralise la ligne de base de l'SVG injecté (comme .zoom-btn svg) */
+.monitor-mode-btn svg {
+    display: block;
+    flex: none;
+}
+
+.monitor-mode-btn:hover {
+    color: var(--ak-text-strong);
+    background: var(--ak-veil-hover);
+}
+
+.monitor-mode-btn[aria-pressed="true"] {
+    color: var(--ak-accent);
+    background: var(--ak-veil-hover);
+}
+
+/* ─── Conteneur ─────────────────────────────────────────────────────────── */
+
+/* Colonne étroite (Split peut descendre à ~200 px) : le titre cède la place
+   aux contrôles (bascule + zoom) au lieu de les pousser hors du panneau. */
+#monitoring-pane .pane-header h2 {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+#system-stats-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#system-stats-container[data-monitor-mode="compact"] {
+    gap: 6px;
+}
+
+/* Masquage fiable des cellules indisponibles (valeur null côté backend) */
+#system-stats-container [hidden] {
+    display: none;
+}
+
+.ak-monitor-empty {
+    margin: 0;
+    text-align: center;
+    color: var(--ak-text-soft);
+    font-size: 13px;
+}
+
+/* ─── Cartes (mode normal) ──────────────────────────────────────────────── */
+.ak-monitor-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px 12px;
+    background-color: var(--ak-panel-alt);
+    border: 1px solid var(--ak-border);
+    border-radius: var(--ak-radius, 8px);
+}
+
+.ak-monitor-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+}
+
+.ak-monitor-device {
+    min-width: 0;
+}
+
+.ak-monitor-name {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ak-text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ak-monitor-sub {
+    display: block;
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--ak-text-soft);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ─── Relevé de température (coloré par seuil) ───────────────────────────── */
+.ak-temp {
+    flex: none;
+    font-weight: 700;
+    font-size: 26px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--ak-temp-ok);
+    white-space: nowrap;
+}
+
+.ak-temp--warn {
+    color: var(--ak-temp-warn);
+}
+
+.ak-temp--danger {
+    color: var(--ak-temp-danger);
+}
+
+.ak-temp--compact {
+    font-size: 13px;
+}
+
+/* ─── Chips (ventilo, puissance, charge, fréquence) ─────────────────────── */
+.ak-monitor-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ak-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border: 1px solid var(--ak-border-muted);
+    border-radius: 999px;
+    background: var(--ak-satellite-bg);
+    color: var(--ak-text-muted);
+    font-size: 11px;
+    line-height: 1.6;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ak-chip svg {
+    display: block;
+    flex: none;
+}
+
+.ak-chip-value {
+    color: var(--ak-text-strong);
+    font-weight: 600;
+}
+
+.ak-chip-limit {
+    color: var(--ak-text-soft);
+}
+
+/* ─── Barres fines étiquetées ───────────────────────────────────────────── */
+.ak-monitor-meters {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.ak-meter-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ak-meter-label {
+    flex: 0 0 44px;
+    font-size: 11px;
+    color: var(--ak-text-metric);
+}
+
+.ak-meter {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 8px;
+    border-radius: 999px;
+    background-color: var(--ak-input);
+    overflow: hidden;
+}
+
+.ak-meter-fill {
+    width: 0%;
+    height: 100%;
+    border-radius: 999px;
+    background-color: var(--ak-accent);
+    transition: width 0.5s ease-in-out;
+}
+
+.ak-meter-fill--info {
+    background-color: var(--ak-info);
+}
+
+.ak-meter-value {
+    flex: 0 1 auto;
+    max-width: 46%;
+    text-align: right;
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--ak-text-metric);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ─── Sparkline (mode normal, GPU uniquement) ───────────────────────────── */
+.ak-sparkline {
+    display: block;
+    width: 100%;
+    height: 28px;
+    color: var(--ak-accent);
+}
+
+.ak-sparkline-line {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    vector-effect: non-scaling-stroke;
+}
+
+/* ─── Lignes denses (mode compact) ──────────────────────────────────────── */
+.ak-monitor-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+    padding: 7px 10px;
+    background-color: var(--ak-panel-alt);
+    border: 1px solid var(--ak-border);
+    border-radius: var(--ak-radius, 8px);
+}
+
+.ak-monitor-row-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ak-monitor-row-name {
+    min-width: 0;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--ak-text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ak-compact-values {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    flex: none;
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--ak-text-metric);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ak-compact-sep {
+    color: var(--ak-text-ghost);
+    font-size: 10px;
+}
+
+.ak-monitor-row .ak-meter {
+    height: 5px;
+}
+
+.ak-monitor-row .ak-meter-label {
+    flex-basis: 38px;
+    font-size: 10px;
+}
+
+.ak-monitor-row .ak-meter-value {
+    font-size: 10px;
+}

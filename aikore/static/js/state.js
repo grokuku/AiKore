@@ -18,12 +18,9 @@ export const DOM = {
     versionCheckConflictsArea: document.getElementById('version-check-conflicts-area'),
     toolsCloseBtn: document.getElementById('tools-close-btn'),
     toolsContextMenu: document.getElementById('tools-context-menu'),
-    cpuProgress: document.getElementById('cpu-progress'),
-    cpuPercentText: document.getElementById('cpu-percent-text'),
-    ramProgress: document.getElementById('ram-progress'),
-    ramUsageText: document.getElementById('ram-usage-text'),
-    gpuStatsContainer: document.getElementById('gpu-stats-container'),
-    gpuStatTemplate: document.getElementById('gpu-stat-template'),
+    // Panneau System Monitoring : contenu entièrement construit par ui.js
+    // (cartes CPU/GPU ou lignes denses selon state.monitorMode).
+    systemStatsContainer: document.getElementById('system-stats-container'),
 };
 
 export const state = {
@@ -33,6 +30,13 @@ export const state = {
     // Latest /api/system/stats payload (cached so GPU cells can degrade to it
     // when /api/system/info has not answered yet during the progressive boot).
     systemStats: null,
+    // Monitoring display mode ('normal' | 'compact'). Restored from
+    // localStorage['aikoreMonitorMode'] by main.js at boot; drives the layout
+    // built by ui.js (rebuild only when the mode or the device list changes).
+    monitorMode: 'normal',
+    // Rolling GPU utilization history for the normal-mode sparklines:
+    // { gpus: { [gpuId]: number[] } }, capped by ui.js (~1 min at 2 s poll).
+    monitorHistory: { gpus: {} },
     // Becomes true once the GPU list has been revealed from any source; guards
     // against repeatedly rebuilding the GPU checkboxes on every stats poll.
     gpuDataLoaded: false,

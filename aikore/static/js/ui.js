@@ -938,12 +938,443 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
 }
 
 function formatBytes(bytes, decimals = 2) {
-    if (bytes === 0) return '0 Bytes';
+    const value = asNumber(bytes);
+    if (value === null) return '—';
+    if (value === 0) return '0 Bytes';
     const k = 1024;
     const dm = decimals < 0 ? 0 : decimals;
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    const i = Math.floor(Math.log(value) / Math.log(k));
+    return parseFloat((value / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// System Monitoring panel — two display modes (normal | compact)
+// ─────────────────────────────────────────────────────────────────────────────
+// The panel is rebuilt ONLY when the mode or the device list changes; every
+// 2 s tick updates the existing nodes in place (textContent / width / points)
+// so the polling never flashes or discards the current DOM. Metrics that are
+// null/absent (fan_percent on A100/H100, cpu_temp without hwmon driver, ...)
+// hide their cell — no "null", "NaN" or fake 0 is ever rendered.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const MONITOR_HISTORY_LEN = 30; // ~1 minute at the 2 s poll rate (normal mode)
+// NVML does not expose per-device high/critical thresholds the way hwmon does:
+// fall back to documented amber/red defaults for GPU readings (and for CPU
+// sensors that report no thresholds, e.g. ACPI zones).
+const GPU_TEMP_WARN_DEFAULT = 80;
+const GPU_TEMP_DANGER_DEFAULT = 90;
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+// Airflow glyph for the fan chip (drawn here: HolafIcons has no fan icon).
+const FAN_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9.5a2.5 2.5 0 1 0-2.5-2.5"></path><path d="M3 12h13a2.5 2.5 0 1 1-2.5 2.5"></path><path d="M3 16h7"></path></svg>';
+
+// Filled on the last layout build; null forces a rebuild on the next render.
+let monitorView = null;
+
+/** Finite number or null — the backend sends null for unavailable metrics. */
+function asNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function createEl(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+
+/** Severity of a temperature reading: sensor thresholds, else GPU defaults. */
+function tempSeverity(temp, high, critical) {
+    const warn = asNumber(high) ?? GPU_TEMP_WARN_DEFAULT;
+    const danger = asNumber(critical) ?? GPU_TEMP_DANGER_DEFAULT;
+    if (temp >= danger) return 'danger';
+    if (temp >= warn) return 'warn';
+    return 'ok';
+}
+
+/**
+ * Apply a temperature reading to a .ak-temp element (hides it when null).
+ * Colors come from --ak-temp-ok/--ak-temp-warn/--ak-temp-danger (theme.css).
+ */
+function applyTemp(node, temp, high, critical) {
+    if (!node) return;
+    const value = asNumber(temp);
+    node.hidden = value === null;
+    if (value === null) return;
+    node.textContent = `${Math.round(value)}°C`;
+    const severity = tempSeverity(value, high, critical);
+    node.classList.toggle('ak-temp--warn', severity === 'warn');
+    node.classList.toggle('ak-temp--danger', severity === 'danger');
+}
+
+function formatFrequency(mhz) {
+    return mhz >= 1000 ? `${(mhz / 1000).toFixed(2)} GHz` : `${Math.round(mhz)} MHz`;
+}
+
+function formatPower(power, limit, separator = ' / ') {
+    if (power !== null && limit !== null) return `${power.toFixed(1)}${separator}${Math.round(limit)} W`;
+    if (power !== null) return `${power.toFixed(1)} W`;
+    if (limit !== null) return `≤ ${Math.round(limit)} W`;
+    return null;
+}
+
+/** Meter row (label + track/fill + value); updated in place by applyMeter. */
+function buildMeter(label, fillModifier = '') {
+    const row = createEl('div', 'ak-meter-row');
+    const labelEl = createEl('span', 'ak-meter-label', label);
+    const track = createEl('div', 'ak-meter');
+    const fill = createEl('div', `ak-meter-fill${fillModifier ? ' ' + fillModifier : ''}`);
+    track.appendChild(fill);
+    const value = createEl('span', 'ak-meter-value');
+    row.append(labelEl, track, value);
+    return { row, fill, value };
+}
+
+/** Apply a 0..100 percentage + text; the whole row hides when percent is null. */
+function applyMeter(meter, percent, text) {
+    const value = asNumber(percent);
+    meter.row.hidden = value === null;
+    if (value === null) return;
+    meter.fill.style.width = `${Math.min(100, Math.max(0, value))}%`;
+    meter.value.textContent = text;
+}
+
+/** Plain chip (value only) — used for charge/frequency in normal mode. */
+function buildChip(iconSvg = null) {
+    const chip = createEl('span', 'ak-chip');
+    if (iconSvg) chip.insertAdjacentHTML('afterbegin', iconSvg);
+    const value = createEl('span', 'ak-chip-value');
+    chip.appendChild(value);
+    return { chip, value };
+}
+
+/** Power chip: value (W) + muted limit (W). */
+function buildPowerChip() {
+    const chip = createEl('span', 'ak-chip');
+    chip.insertAdjacentHTML('afterbegin', HolafIcons.render('power', { size: 11 }));
+    const value = createEl('span', 'ak-chip-value');
+    const limit = createEl('span', 'ak-chip-limit');
+    chip.append(value, limit);
+    return { chip, value, limit };
+}
+
+function buildSparkline() {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'ak-sparkline');
+    svg.setAttribute('viewBox', '0 0 100 28');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    const line = document.createElementNS(SVG_NS, 'polyline');
+    line.setAttribute('class', 'ak-sparkline-line');
+    svg.append(line);
+    return { svg, line };
+}
+
+/**
+ * Rolling GPU utilization history (bounded): one point per stats tick.
+ * Null readings are skipped instead of recorded as 0 (a fake dip would lie).
+ */
+function recordGpuHistory(gpuId, utilization) {
+    const series = state.monitorHistory.gpus[String(gpuId)] ||
+        (state.monitorHistory.gpus[String(gpuId)] = []);
+    series.push(Math.min(100, Math.max(0, utilization)));
+    if (series.length > MONITOR_HISTORY_LEN) {
+        series.splice(0, series.length - MONITOR_HISTORY_LEN);
+    }
+    return series;
+}
+
+function applySparkline(refs, series) {
+    const hasData = series.length >= 2;
+    refs.svg.hidden = !hasData;
+    if (!hasData) return;
+    const n = series.length;
+    const stepX = 100 / (n - 1);
+    const points = series.map((value, i) => {
+        const x = (i * stepX).toFixed(2);
+        const y = (27 - value * 0.26).toFixed(2); // viewBox height 28, 1 px padding
+        return `${x},${y}`;
+    });
+    refs.line.setAttribute('points', points.join(' '));
+}
+
+// --- Normal mode builders ----------------------------------------------------
+
+function buildNormalCpuCard() {
+    const card = createEl('div', 'ak-monitor-card');
+    card.dataset.monitorDevice = 'cpu';
+
+    const head = createEl('div', 'ak-monitor-head');
+    const device = createEl('div', 'ak-monitor-device');
+    device.append(
+        createEl('span', 'ak-monitor-name', 'CPU'),
+        createEl('span', 'ak-monitor-sub', 'Processor'),
+    );
+    const temp = createEl('span', 'ak-temp');
+    head.append(device, temp);
+
+    const chips = createEl('div', 'ak-monitor-chips');
+    const chargeChip = buildChip();
+    const freqChip = buildChip();
+    chips.append(chargeChip.chip, freqChip.chip);
+
+    const meters = createEl('div', 'ak-monitor-meters');
+    const ramMeter = buildMeter('RAM', 'ak-meter-fill--info');
+    meters.appendChild(ramMeter.row);
+
+    card.append(head, chips, meters);
+    return { card, temp, chargeChip, freqChip, ramMeter };
+}
+
+function buildNormalGpuCard(gpuId) {
+    const card = createEl('div', 'ak-monitor-card');
+    card.dataset.monitorDevice = `gpu-${gpuId}`;
+
+    const head = createEl('div', 'ak-monitor-head');
+    const device = createEl('div', 'ak-monitor-device');
+    const name = createEl('span', 'ak-monitor-name');
+    const sub = createEl('span', 'ak-monitor-sub');
+    device.append(name, sub);
+    const temp = createEl('span', 'ak-temp');
+    head.append(device, temp);
+
+    const chips = createEl('div', 'ak-monitor-chips');
+    const fanChip = buildChip(FAN_ICON_SVG);
+    const powerChip = buildPowerChip();
+    chips.append(fanChip.chip, powerChip.chip);
+
+    const meters = createEl('div', 'ak-monitor-meters');
+    const vramMeter = buildMeter('VRAM', 'ak-meter-fill--info');
+    const chargeMeter = buildMeter('Charge');
+    meters.append(vramMeter.row, chargeMeter.row);
+
+    const spark = buildSparkline();
+
+    card.append(head, chips, meters, spark.svg);
+    return { card, name, sub, temp, fanChip, powerChip, vramMeter, chargeMeter, spark };
+}
+
+// --- Compact mode builders ---------------------------------------------------
+
+function buildCompactRow(deviceKey, label1, label2) {
+    const row = createEl('div', 'ak-monitor-row');
+    row.dataset.monitorDevice = deviceKey;
+
+    const head = createEl('div', 'ak-monitor-row-head');
+    const name = createEl('span', 'ak-monitor-row-name');
+    const values = createEl('span', 'ak-compact-values');
+    const temp = createEl('span', 'ak-temp ak-temp--compact');
+    const sep1 = createEl('span', 'ak-compact-sep', '·');
+    const second = createEl('span', 'ak-compact-value');
+    const sep2 = createEl('span', 'ak-compact-sep', '·');
+    const third = createEl('span', 'ak-compact-value');
+    values.append(temp, sep1, second, sep2, third);
+    head.append(name, values);
+
+    const meters = createEl('div', 'ak-monitor-meters');
+    const meter1 = buildMeter(label1, 'ak-meter-fill--info');
+    const meter2 = buildMeter(label2);
+    meters.append(meter1.row, meter2.row);
+
+    row.append(head, meters);
+    return { row, name, temp, second, third, sep1, sep2, meter1, meter2 };
+}
+
+/**
+ * Compact line values: [temp, second, third]. `temp` is handled by applyTemp,
+ * the two others get their text here; separators only appear between visible
+ * items so a missing metric leaves no dangling "·".
+ */
+function applyCompactValues(refs, secondText, thirdText) {
+    const nodes = [refs.second, refs.third];
+    const texts = [secondText, thirdText];
+    nodes.forEach((node, i) => {
+        node.hidden = !texts[i];
+        if (texts[i]) node.textContent = texts[i];
+    });
+    const visible = [];
+    if (!refs.temp.hidden) visible.push(0);
+    nodes.forEach((node, i) => { if (!node.hidden) visible.push(i + 1); });
+    [refs.sep1, refs.sep2].forEach((sep, i) => {
+        const anyBefore = visible.some(index => index <= i);
+        sep.hidden = !(anyBefore && visible.includes(i + 1));
+    });
+}
+
+// --- Layout assembly & per-tick updates --------------------------------------
+
+function buildMonitorLayout(stats) {
+    const container = DOM.systemStatsContainer;
+    if (!container) return null;
+    const gpus = Array.isArray(stats.gpus) ? stats.gpus.filter(Boolean) : [];
+    const mode = state.monitorMode === 'compact' ? 'compact' : 'normal';
+    const key = `${mode}|${gpus.map(gpu => gpu.id).join(',')}`;
+    if (monitorView && monitorView.key === key) return monitorView;
+
+    container.innerHTML = '';
+    container.dataset.monitorMode = mode;
+    const view = { key, mode, cpu: null, gpus: [] };
+
+    if (mode === 'compact') {
+        view.cpu = buildCompactRow('cpu', 'RAM', 'Charge');
+        container.appendChild(view.cpu.row);
+        gpus.forEach(gpu => {
+            const refs = buildCompactRow(`gpu-${gpu.id}`, 'VRAM', 'Charge');
+            refs.id = gpu.id;
+            view.gpus.push(refs);
+            container.appendChild(refs.row);
+        });
+    } else {
+        view.cpu = buildNormalCpuCard();
+        container.appendChild(view.cpu.card);
+        gpus.forEach(gpu => {
+            const refs = buildNormalGpuCard(gpu.id);
+            refs.id = gpu.id;
+            view.gpus.push(refs);
+            container.appendChild(refs.card);
+        });
+    }
+
+    if (gpus.length === 0) {
+        container.appendChild(createEl('p', 'ak-monitor-empty', 'No NVIDIA GPUs detected.'));
+    }
+
+    monitorView = view;
+    return view;
+}
+
+function applyNormalCpu(refs, stats) {
+    const cpuTemp = stats.cpu_temp || null;
+    const cpuPercent = asNumber(stats.cpu_percent);
+    const freqMhz = asNumber(stats.cpu_freq_mhz);
+    const ram = stats.ram || {};
+
+    applyTemp(refs.temp, cpuTemp && cpuTemp.current, cpuTemp && cpuTemp.high, cpuTemp && cpuTemp.critical);
+
+    refs.chargeChip.chip.hidden = cpuPercent === null;
+    if (cpuPercent !== null) refs.chargeChip.value.textContent = `${cpuPercent.toFixed(1)}%`;
+
+    refs.freqChip.chip.hidden = freqMhz === null;
+    if (freqMhz !== null) refs.freqChip.value.textContent = formatFrequency(freqMhz);
+
+    const ramUsed = asNumber(ram.used);
+    const ramTotal = asNumber(ram.total);
+    const ramText = (ramUsed !== null && ramTotal !== null)
+        ? `${formatBytes(ramUsed, 1)} / ${formatBytes(ramTotal, 1)}` : '';
+    applyMeter(refs.ramMeter, ram.percent, ramText);
+}
+
+function applyNormalGpu(refs, gpu) {
+    refs.name.textContent = gpu.name || `GPU ${gpu.id}`;
+    const vram = gpu.vram || null;
+    const vramTotal = vram ? asNumber(vram.total) : null;
+    refs.sub.textContent = (vramTotal !== null && vramTotal > 0)
+        ? `GPU ${gpu.id} · ${formatBytes(vramTotal, 0)} VRAM`
+        : `GPU ${gpu.id}`;
+
+    applyTemp(refs.temp, gpu.temperature_c, null, null);
+
+    const fan = asNumber(gpu.fan_percent);
+    refs.fanChip.chip.hidden = fan === null;
+    if (fan !== null) refs.fanChip.value.textContent = `${Math.round(fan)}%`;
+
+    const power = asNumber(gpu.power_w);
+    const limit = asNumber(gpu.power_limit_w);
+    refs.powerChip.chip.hidden = power === null && limit === null;
+    if (!refs.powerChip.chip.hidden) {
+        refs.powerChip.value.textContent = power !== null ? `${power.toFixed(1)} W` : '';
+        refs.powerChip.limit.textContent = limit !== null ? `/ ${Math.round(limit)} W` : '';
+    }
+
+    const vramUsed = vram ? asNumber(vram.used) : null;
+    const vramText = (vramUsed !== null && vramTotal !== null && vramTotal > 0)
+        ? `${formatBytes(vramUsed, 1)} / ${formatBytes(vramTotal, 1)}` : '';
+    applyMeter(refs.vramMeter, vram && vram.percent, vramText);
+
+    const utilization = asNumber(gpu.utilization_percent);
+    applyMeter(refs.chargeMeter, utilization, utilization !== null ? `${utilization}%` : '');
+    applySparkline(refs.spark, utilization !== null
+        ? recordGpuHistory(gpu.id, utilization)
+        : (state.monitorHistory.gpus[String(gpu.id)] || []));
+}
+
+function applyCompactCpu(refs, stats) {
+    const cpuTemp = stats.cpu_temp || null;
+    const cpuPercent = asNumber(stats.cpu_percent);
+    const freqMhz = asNumber(stats.cpu_freq_mhz);
+    const ram = stats.ram || {};
+
+    applyTemp(refs.temp, cpuTemp && cpuTemp.current, cpuTemp && cpuTemp.high, cpuTemp && cpuTemp.critical);
+    applyCompactValues(refs,
+        cpuPercent !== null ? `${cpuPercent.toFixed(1)}%` : null,
+        freqMhz !== null ? formatFrequency(freqMhz) : null);
+
+    const ramUsed = asNumber(ram.used);
+    const ramTotal = asNumber(ram.total);
+    const ramText = (ramUsed !== null && ramTotal !== null)
+        ? `${formatBytes(ramUsed, 0)}/${formatBytes(ramTotal, 0)}` : '';
+    applyMeter(refs.meter1, ram.percent, ramText);
+    applyMeter(refs.meter2, cpuPercent, cpuPercent !== null ? `${cpuPercent.toFixed(0)}%` : '');
+}
+
+function applyCompactGpu(refs, gpu) {
+    refs.name.textContent = gpu.name || `GPU ${gpu.id}`;
+    const fan = asNumber(gpu.fan_percent);
+    const power = asNumber(gpu.power_w);
+    const limit = asNumber(gpu.power_limit_w);
+
+    applyTemp(refs.temp, gpu.temperature_c, null, null);
+    applyCompactValues(refs,
+        fan !== null ? `${Math.round(fan)}%` : null,
+        formatPower(power, limit, '/'));
+
+    const vram = gpu.vram || null;
+    const vramUsed = vram ? asNumber(vram.used) : null;
+    const vramTotal = vram ? asNumber(vram.total) : null;
+    const vramText = (vramUsed !== null && vramTotal !== null && vramTotal > 0)
+        ? `${formatBytes(vramUsed, 0)}/${formatBytes(vramTotal, 0)}` : '';
+    applyMeter(refs.meter1, vram && vram.percent, vramText);
+
+    const utilization = asNumber(gpu.utilization_percent);
+    applyMeter(refs.meter2, utilization, utilization !== null ? `${utilization}%` : '');
+}
+
+/**
+ * Apply the latest stats payload to the current layout (in place). The layout
+ * itself is (re)built only when the mode or the GPU list changes.
+ */
+function renderSystemStats(stats) {
+    const view = buildMonitorLayout(stats);
+    if (!view) return;
+    const gpus = Array.isArray(stats.gpus) ? stats.gpus.filter(Boolean) : [];
+
+    if (view.mode === 'compact') applyCompactCpu(view.cpu, stats);
+    else applyNormalCpu(view.cpu, stats);
+
+    // Drop history of GPUs that disappeared (bounded memory in all cases).
+    const present = new Set(gpus.map(gpu => String(gpu.id)));
+    Object.keys(state.monitorHistory.gpus).forEach(id => {
+        if (!present.has(id)) delete state.monitorHistory.gpus[id];
+    });
+
+    gpus.forEach((gpu, index) => {
+        const refs = view.gpus[index];
+        if (!refs) return;
+        if (view.mode === 'compact') applyCompactGpu(refs, gpu);
+        else applyNormalGpu(refs, gpu);
+    });
+}
+
+/** Switch the monitoring layout ('normal' | 'compact') and re-render at once. */
+export function setMonitorMode(mode) {
+    const next = mode === 'compact' ? 'compact' : 'normal';
+    if (state.monitorMode !== next) {
+        state.monitorMode = next;
+        monitorView = null; // force a rebuild with the other structure
+    }
+    if (DOM.systemStatsContainer) DOM.systemStatsContainer.dataset.monitorMode = next;
+    if (state.systemStats) renderSystemStats(state.systemStats);
 }
 
 export async function updateSystemStats(stats) {
@@ -952,22 +1383,5 @@ export async function updateSystemStats(stats) {
     // GPU cells degrade to /api/system/stats when /api/system/info is slow.
     // No-op once the cells are already populated (cheap guard in the function).
     refreshAllGpuCells();
-    DOM.cpuProgress.style.width = `${stats.cpu_percent}%`;
-    DOM.cpuPercentText.textContent = `${stats.cpu_percent.toFixed(1)}%`;
-    DOM.ramProgress.style.width = `${stats.ram.percent}%`;
-    DOM.ramUsageText.textContent = `${formatBytes(stats.ram.used)} / ${formatBytes(stats.ram.total)}`;
-    DOM.gpuStatsContainer.innerHTML = '';
-    if (stats.gpus && stats.gpus.length > 0) {
-        stats.gpus.forEach(gpu => {
-            const gpuEl = DOM.gpuStatTemplate.content.cloneNode(true);
-            gpuEl.querySelector('.gpu-name').textContent = `GPU ${gpu.id}: ${gpu.name}`;
-            gpuEl.querySelector('.vram-progress').style.width = `${gpu.vram.percent}%`;
-            gpuEl.querySelector('.vram-usage-text').textContent = `${formatBytes(gpu.vram.used)} / ${formatBytes(gpu.vram.total)}`;
-            gpuEl.querySelector('.util-progress').style.width = `${gpu.utilization_percent}%`;
-            gpuEl.querySelector('.util-percent-text').textContent = `${gpu.utilization_percent}%`;
-            DOM.gpuStatsContainer.appendChild(gpuEl);
-        });
-    } else {
-        DOM.gpuStatsContainer.innerHTML = '<p style="text-align:center;color:var(--ak-text-soft);">No NVIDIA GPUs detected.</p>';
-    }
+    renderSystemStats(stats);
 }

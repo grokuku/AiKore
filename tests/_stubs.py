@@ -312,8 +312,66 @@ def _make_psutil_stub():
     def cpu_percent(interval=None):
         return 0.0
 
+    def virtual_memory():
+        return types.SimpleNamespace(total=16 * 1024**3, used=8 * 1024**3, percent=50.0)
+
+    # sensors_temperatures() is a dict keyed by chip name (coretemp, k10temp,
+    # acpitz, ...) whose entries expose label/current/high/critical. The empty
+    # dict is the graceful default: /api/system/stats then reports cpu_temp
+    # as None instead of crashing. Tests monkeypatch this (or the pynvml
+    # getters) to cover the enriched payload.
+    def sensors_temperatures():
+        return {}
+
+    def cpu_freq():
+        return None
+
     mod.pid_exists = pid_exists
     mod.cpu_percent = cpu_percent
+    mod.virtual_memory = virtual_memory
+    mod.sensors_temperatures = sensors_temperatures
+    mod.cpu_freq = cpu_freq
+    return mod
+
+
+def _make_pynvml_stub():
+    """Minimal pynvml (nvidia-ml-py) stub: error classes + getters.
+
+    The default getters raise NVMLError_NotSupported; tests patch the names
+    imported by aikore.api.system (nvmlDeviceGetCount, ...GetTemperature,
+    ...GetFanSpeed, ...GetPowerUsage, ...PowerManagementLimit/DefaultLimit)
+    to exercise the enriched /api/system/stats payload.
+    """
+    mod = types.ModuleType("pynvml")
+
+    class NVMLError(Exception):
+        def __init__(self, value=None):
+            self.value = value
+            super().__init__(f"NVML error {value}")
+
+    class NVMLError_NotSupported(NVMLError):
+        pass
+
+    def _unavailable(*a, **k):
+        raise NVMLError_NotSupported()
+
+    mod.NVMLError = NVMLError
+    mod.NVMLError_NotSupported = NVMLError_NotSupported
+    mod.NVML_TEMPERATURE_GPU = 0
+    mod.nvmlDeviceGetCount = lambda: 0
+    mod.nvmlDeviceGetHandleByIndex = lambda i: i
+    for _name in (
+        "nvmlDeviceGetMemoryInfo",
+        "nvmlDeviceGetUtilizationRates",
+        "nvmlDeviceGetName",
+        "nvmlDeviceGetTemperature",
+        "nvmlDeviceGetFanSpeed",
+        "nvmlDeviceGetPowerUsage",
+        "nvmlDeviceGetPowerManagementLimit",
+        "nvmlDeviceGetPowerManagementDefaultLimit",
+        "nvmlDeviceGetEnforcedPowerLimit",
+    ):
+        setattr(mod, _name, _unavailable)
     return mod
 
 
@@ -421,6 +479,10 @@ def ensure_stubs():
 
     if _try_import("psutil") is None:
         _install_stub("psutil", _make_psutil_stub())
+        stubbed = True
+
+    if _try_import("pynvml") is None:
+        _install_stub("pynvml", _make_pynvml_stub())
         stubbed = True
 
     if _try_import("requests") is None:

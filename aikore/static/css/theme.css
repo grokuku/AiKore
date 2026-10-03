@@ -81,6 +81,14 @@
     --ak-warn-soft: rgba(255, 193, 7, 0.1);
     --ak-warn-border: rgba(255, 193, 7, 0.3);
 
+    /* Températures (monitoring) : encre des relevés colorés par seuil. Repli =
+       statut brut ; les dérivations éclaircies/assombries vivent dans le bloc
+       @supports (section 3) pour rester lisibles sur les 12 thèmes, sombres
+       comme clairs, sans littéral de famille. */
+    --ak-temp-ok: var(--ak-success);
+    --ak-temp-warn: var(--ak-warning);
+    --ak-temp-danger: var(--ak-danger);
+
     /* Secondaire (violet d'identité) : par défaut aligné sur l'accent (familles
        holaf) ; surchargé en #6F42C1 par les blocs aikore ci-dessous. */
     --ak-secondary: var(--holaf-accent, #4DA6FF);
@@ -344,6 +352,11 @@
     :root[data-mode="dark"] {
         --ak-text-strong: color-mix(in srgb, var(--ak-text) 70%, #FFFFFF);
         --ak-panel-group: color-mix(in srgb, var(--ak-panel-alt) 55%, var(--ak-panel));
+        /* Relevés de température : éclaircis vers le blanc pour rester nets
+           sur les surfaces sombres de toutes les familles. */
+        --ak-temp-ok: color-mix(in srgb, var(--ak-success) 82%, #FFFFFF);
+        --ak-temp-warn: color-mix(in srgb, var(--ak-warning) 85%, #FFFFFF);
+        --ak-temp-danger: color-mix(in srgb, var(--ak-danger) 78%, #FFFFFF);
     }
     /* Spécifiques au mode clair : encre forte + neutres clairs. */
     :root[data-mode="light"] {
@@ -352,6 +365,12 @@
         --ak-disabled-bg: color-mix(in srgb, var(--ak-text) 6%, transparent);
         --ak-btn-light-bg: color-mix(in srgb, var(--ak-border) 35%, var(--ak-panel-alt));
         --ak-success-hover: color-mix(in srgb, var(--ak-success) 85%, var(--ak-text-strong));
+        /* Relevés de température : assombris pour rester lisibles sur les
+           surfaces claires (les statuts bruts de certaines familles light
+           descendent sous 4.5:1 en petit corps). */
+        --ak-temp-ok: color-mix(in srgb, var(--ak-success) 88%, #000000);
+        --ak-temp-warn: color-mix(in srgb, var(--ak-warning) 92%, #000000);
+        --ak-temp-danger: color-mix(in srgb, var(--ak-danger) 90%, #000000);
     }
 }
 

@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 
-SUITES = ["test_auth", "test_validation", "test_stability", "test_monitor"]
+SUITES = ["test_auth", "test_validation", "test_stability", "test_monitor", "test_system_stats"]
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 

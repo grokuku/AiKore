@@ -46,83 +46,11 @@
         cursor: not-allowed;
     }
     
-    /* --- MONITORING PANE COMPONENTS --- */
-    #system-stats-container {
-        display: flex;
-        flex-direction: column;
-        gap: 8px; /* Reduced gap */
-    }
-    
-    .system-stat-row,
-    .gpu-metric {
-        display: flex;
-        align-items: center;
-        gap: 12px; /* Reduced gap */
-    }
-    
-    .stat-label {
-        flex-basis: 40px;
-        /* Fixed width for labels like CPU, RAM */
-        font-weight: 500;
-        color: var(--ak-text-metric);
-        font-size: 13px;
-    }
-    
-    .progress-bar-container {
-        flex-grow: 1;
-        background-color: var(--ak-input);
-        border-radius: 4px; /* Slightly sharper */
-        overflow: hidden;
-        height: 14px; /* Reduced from 20px */
-    }
-    
-    .progress-bar {
-        height: 100%;
-        width: 0%;
-        /* Start at 0, updated by JS */
-        background-color: var(--ak-accent);
-        border-radius: 4px;
-        transition: width 0.5s ease-in-out;
-    }
-    
-    .stat-value {
-        flex-basis: 110px; /* Slightly narrower */
-        /* Fixed width for value text */
-        text-align: right;
-        font-family: monospace;
-        font-size: 13px;
-        color: var(--ak-text-strong);
-    }
-    
-    #gpu-stats-container {
-        display: flex;
-        flex-direction: column;
-        gap: 8px; /* Reduced gap */
-    }
-    
-    .system-stat-block,
-    .gpu-stat {
-        border: 1px solid var(--ak-border);
-        border-radius: 8px;
-        padding: 8px 12px; /* Reduced padding */
-        background-color: var(--ak-panel-alt);
-    }
-    
-    .system-block-name,
-    .gpu-name {
-        font-weight: bold;
-        margin-bottom: 8px;
-        display: block;
-        color: var(--ak-text-strong);
-        font-size: 14px;
-    }
-    
-    .system-block-metrics,
-    .gpu-metrics {
-        display: flex;
-        flex-direction: column;
-        gap: 6px; /* Reduced gap */
-    }
+    /* --- MONITORING PANE COMPONENTS ---
+       Déplacées dans static/css/monitoring.css : le panneau a été redessiné
+       (cartes CPU/GPU en mode normal, lignes denses en mode compact). Les
+       anciennes classes .system-stat-*/.gpu-stat/.progress-bar-* ne sont plus
+       produites par index.html ni par ui.js. */
     
     /* --- TOAST NOTIFICATION STYLES ---
        Supprimées : les notifications passent désormais par la brique HolafToast

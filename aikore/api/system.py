@@ -4,10 +4,16 @@ import os
 import psutil
 from pynvml import (
     NVMLError,
+    NVML_TEMPERATURE_GPU,
     nvmlDeviceGetCount,
+    nvmlDeviceGetFanSpeed,
     nvmlDeviceGetHandleByIndex,
     nvmlDeviceGetMemoryInfo,
     nvmlDeviceGetName,
+    nvmlDeviceGetPowerManagementDefaultLimit,
+    nvmlDeviceGetPowerManagementLimit,
+    nvmlDeviceGetPowerUsage,
+    nvmlDeviceGetTemperature,
     nvmlDeviceGetUtilizationRates
 )
 from sqlalchemy.orm import Session
@@ -108,16 +114,117 @@ def get_system_info():
         info["gpu_count"] = 0
     return info
 
+# --- System stats helpers ----------------------------------------------------
+
+def _nvml_metric(fn, *args):
+    """Best-effort NVML getter -> value or None (never raises).
+
+    Each metric is probed INDEPENDENTLY: an unavailable metric (typically
+    NVMLError_NotSupported, e.g. fan speed on A100/H100 or power limit on
+    some mobile parts) must only null THAT field — never hide the GPU, the
+    other metrics or the other GPUs from the panel.
+    """
+    try:
+        return fn(*args)
+    except NVMLError:
+        return None
+    except Exception as error:  # noqa: BLE001 - one broken metric must not kill the panel
+        print(f"NVML metric failed ({getattr(fn, '__name__', fn)}): {error}")
+        return None
+
+
+def _gpu_power_limit_w(handle):
+    """GPU power limit in watts, or None when NVML cannot report it.
+
+    nvidia-ml-py exposes both getters (verified against the package API);
+    the effective management limit is preferred, with a fallback on the
+    board default limit. Both return milliwatts.
+    """
+    for getter in (nvmlDeviceGetPowerManagementLimit,
+                   nvmlDeviceGetPowerManagementDefaultLimit):
+        value_mw = _nvml_metric(getter, handle)
+        if value_mw is not None:
+            return round(value_mw / 1000.0, 2)
+    return None
+
+
+# CPU temperature chip/label preference. Intel coretemp exposes the package
+# temperature as "Package id 0"; AMD k10temp/zenpower expose Tctl (then Tdie);
+# acpitz/acpu are last-resort ACPI zones (possibly not the CPU itself).
+_CPU_TEMP_SENSORS = (
+    ("coretemp", ("Package id 0",)),
+    ("k10temp", ("Tctl", "Tdie")),
+    ("zenpower", ("Tctl", "Tdie")),
+    ("acpitz", ()),
+    ("acpu", ()),
+)
+
+
+def _read_cpu_temperature():
+    """{'current', 'high', 'critical'} from the best hwmon sensor, or None.
+
+    `high`/`critical` are passed through exactly as reported by the driver
+    (they may be None). Empty dict, missing psutil API or any read error
+    degrade to None: the UI hides the metric instead of showing a fake
+    value. Reading /sys/class/hwmon is cheap enough for the 2 s poll rate.
+    """
+    try:
+        sensors = psutil.sensors_temperatures()
+    except Exception as error:
+        print(f"CPU temperature unavailable: {error}")
+        return None
+    if not sensors:
+        return None
+
+    for chip, preferred_labels in _CPU_TEMP_SENSORS:
+        entries = sensors.get(chip) or []
+        if not entries:
+            continue
+        entry = next(
+            (e for e in entries if getattr(e, "label", None) in preferred_labels),
+            entries[0],
+        )
+        current = getattr(entry, "current", None)
+        if current is None:
+            continue
+        return {
+            "current": round(float(current), 1),
+            "high": getattr(entry, "high", None),
+            "critical": getattr(entry, "critical", None),
+        }
+    return None
+
+
+def _read_cpu_freq_mhz():
+    """Current CPU frequency in MHz, or None when the platform reports none."""
+    try:
+        freq = psutil.cpu_freq()
+    except Exception:
+        return None
+    current = getattr(freq, "current", None)
+    if current is None or current <= 0:
+        return None
+    return round(float(current), 1)
+
+
 @router.get("/stats")
 def get_system_stats():
     """
     Retrieves system and GPU statistics.
+
+    Payload contract: the historical fields (cpu_percent, ram{total,used,
+    percent}, gpus[].id/name/vram/utilization_percent) keep their exact
+    shape. The enriched fields (cpu_temp, cpu_freq_mhz, gpus[].temperature_c,
+    fan_percent, power_w, power_limit_w) are additive and may be null when
+    the metric is unavailable — the frontend must tolerate null/absence.
     """
     # cpu_percent(interval=None) is non-blocking (no sleep). The counter is
     # seeded once at server startup (lifespan in main.py) so deltas are
     # meaningful from the first request.
     stats = {
         "cpu_percent": psutil.cpu_percent(interval=None),
+        "cpu_temp": _read_cpu_temperature(),
+        "cpu_freq_mhz": _read_cpu_freq_mhz(),
         "ram": {
             "total": psutil.virtual_memory().total,
             "used": psutil.virtual_memory().used,
@@ -129,30 +236,46 @@ def get_system_stats():
     try:
         device_count = nvmlDeviceGetCount()
         for i in range(device_count):
-            handle = nvmlDeviceGetHandleByIndex(i)
-            
-            # Get memory info
-            mem_info = nvmlDeviceGetMemoryInfo(handle)
-            
-            # Get utilization rates
-            util_rates = nvmlDeviceGetUtilizationRates(handle)
-            
+            try:
+                handle = nvmlDeviceGetHandleByIndex(i)
+            except NVMLError as error:
+                # Skip this GPU only: the others (and the CPU metrics) are
+                # still reported.
+                print(f"NVMLError on GPU {i}: {error}. Skipping this GPU.")
+                continue
+
+            mem_info = _nvml_metric(nvmlDeviceGetMemoryInfo, handle)
+            util_rates = _nvml_metric(nvmlDeviceGetUtilizationRates, handle)
+
             # LOT3 (#12): nvmlDeviceGetName may return bytes on older pynvml
             # versions -> json serialization raised TypeError -> raw 500.
             # Same conversion as builder.get_builder_info().
-            gpu_name = nvmlDeviceGetName(handle)
+            gpu_name = _nvml_metric(nvmlDeviceGetName, handle)
             if isinstance(gpu_name, bytes):
                 gpu_name = gpu_name.decode("utf-8", errors="replace")
-            
+
+            if mem_info is not None and getattr(mem_info, "total", 0) > 0:
+                vram = {
+                    "total": mem_info.total,
+                    "used": mem_info.used,
+                    "percent": round((mem_info.used / mem_info.total) * 100, 2)
+                }
+            elif mem_info is not None:
+                vram = {"total": 0, "used": 0, "percent": 0}
+            else:
+                vram = None
+
+            power_mw = _nvml_metric(nvmlDeviceGetPowerUsage, handle)
+
             gpu_info = {
                 "id": i,
                 "name": gpu_name,
-                "vram": {
-                    "total": mem_info.total,
-                    "used": mem_info.used,
-                    "percent": round((mem_info.used / mem_info.total) * 100, 2) if mem_info.total > 0 else 0
-                },
-                "utilization_percent": util_rates.gpu
+                "vram": vram,
+                "utilization_percent": util_rates.gpu if util_rates is not None else None,
+                "temperature_c": _nvml_metric(nvmlDeviceGetTemperature, handle, NVML_TEMPERATURE_GPU),
+                "fan_percent": _nvml_metric(nvmlDeviceGetFanSpeed, handle),
+                "power_w": round(power_mw / 1000.0, 2) if power_mw is not None else None,
+                "power_limit_w": _gpu_power_limit_w(handle),
             }
             stats["gpus"].append(gpu_info)
     except NVMLError as error:
@@ -162,7 +285,7 @@ def get_system_stats():
     except Exception as e:
         # Catch other potential errors to prevent the endpoint from crashing.
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred while fetching system stats: {str(e)}")
-        
+
     return stats
 
 @router.get("/debug-nginx")

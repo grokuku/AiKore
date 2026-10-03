@@ -1,6 +1,6 @@
 import { state, DOM } from './state.js';
 import { fetchInstances, fetchSystemInfo, fetchAndStoreBlueprints, fetchAvailablePorts, getSystemStats, fetchAvailablePythonVersions, fetchCudaVersions } from './api.js';
-import { renderInstanceRow, updateSystemStats, checkRowForChanges, buildInstanceUrl, showToast, refreshAllGpuCells } from './ui.js';
+import { renderInstanceRow, updateSystemStats, setMonitorMode, checkRowForChanges, buildInstanceUrl, showToast, refreshAllGpuCells } from './ui.js';
 import { setupModalEventHandlers } from './modals.js';
 import { setupMainEventListeners } from './eventHandlers.js';
 import { showWelcomeScreen, showBuilderView, renderBuilderStatus } from './tools.js';
@@ -265,6 +265,9 @@ async function initializeApp() {
         { selector: '#editor-save-custom-btn', icon: 'file-text' },
         { selector: '#editor-update-btn', icon: 'refresh' },
         { selector: '.zoom-btn.zoom-in', icon: 'plus', replace: true },
+        // Bascule du panneau System Monitoring : grille = normal, barres = compact.
+        { selector: '.monitor-mode-btn[data-mode="normal"]', icon: 'layout', replace: true },
+        { selector: '.monitor-mode-btn[data-mode="compact"]', icon: 'bar-chart', replace: true },
     ];
 
     staticButtons.forEach(({ selector, icon, size = 14, replace = false }) => {
@@ -314,6 +317,39 @@ async function initializeApp() {
     // (The instances polling loop was already started by the FIRST RENDER
     // above — fetchAndRenderInstances reschedules itself in its finally
     // block; no second call is needed here.)
+
+    // --- MONITORING MODE (normal / compact) ---------------------------------
+    // Toggle lives in the monitoring pane header, LEFT of the zoom controls.
+    // The choice is persisted like the zoom levels (localStorage) and applied
+    // here, before the first stats fetch resolves; ui.js (setMonitorMode)
+    // rebuilds the panel immediately on change.
+    const MONITOR_MODE_KEY = 'aikoreMonitorMode';
+    const monitorModeButtons = document.querySelectorAll('.monitor-mode-btn');
+
+    function applyMonitorMode(mode, { persist = true } = {}) {
+        const next = mode === 'compact' ? 'compact' : 'normal';
+        setMonitorMode(next);
+        monitorModeButtons.forEach(btn => {
+            const active = btn.dataset.mode === next;
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        if (persist) {
+            try { localStorage.setItem(MONITOR_MODE_KEY, next); } catch (e) { /* stockage indisponible */ }
+        }
+    }
+
+    let savedMonitorMode = 'normal';
+    try {
+        const storedMode = localStorage.getItem(MONITOR_MODE_KEY);
+        if (storedMode === 'normal' || storedMode === 'compact') savedMonitorMode = storedMode;
+    } catch (e) {
+        console.warn('Failed to load monitoring mode:', e);
+    }
+    applyMonitorMode(savedMonitorMode, { persist: false });
+
+    monitorModeButtons.forEach(btn => {
+        btn.addEventListener('click', () => applyMonitorMode(btn.dataset.mode));
+    });
 
     // Stats fetched WITHOUT blocking the boot sequence: /api/system/stats has
     // a fixed ~100ms floor (psutil.cpu_percent(interval=0.1) sleep) plus NVML

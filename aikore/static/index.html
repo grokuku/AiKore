@@ -33,6 +33,7 @@
     <link rel="stylesheet" href="/static/css/instances.css">
     <link rel="stylesheet" href="/static/css/modals.css">
     <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/monitoring.css">
     <link rel="stylesheet" href="/static/css/tools.css">
     <!-- NEW: ansi_up for log colors (Browser compatible).
          FIX(perf): was a parser-blocking script in <head> — a slow/unreachable
@@ -213,6 +214,16 @@
                     <div class="pane-header">
                         <h2>System Monitoring</h2>
                         <div class="pane-header-controls">
+                            <!-- Bascule normal/compact : à gauche des contrôles de
+                                 zoom. Les icônes et l'état actif sont posés par
+                                 main.js (passe staticButtons) ; le choix est
+                                 persisté dans localStorage['aikoreMonitorMode']. -->
+                            <div class="monitor-mode-controls" role="group" aria-label="Monitoring display mode">
+                                <button type="button" class="monitor-mode-btn" data-mode="normal"
+                                        title="Normal view" aria-label="Normal view" aria-pressed="true"></button>
+                                <button type="button" class="monitor-mode-btn" data-mode="compact"
+                                        title="Compact view" aria-label="Compact view" aria-pressed="false"></button>
+                            </div>
                             <div class="zoom-controls">
                                 <button class="zoom-btn zoom-out" data-pane="monitoring" title="Zoom out">−</button>
                                 <span class="zoom-label" data-pane="monitoring">100%</span>
@@ -220,59 +231,15 @@
                             </div>
                         </div>
                     </div>
-                    <div class="pane-content" id="system-stats-container">
-                        <!-- System Stats will be dynamically inserted here -->
-                        <div class="system-stat-block">
-                            <span class="system-block-name">System</span>
-                            <div class="system-block-metrics">
-                                <div class="system-stat-row">
-                                    <span class="stat-label">CPU</span>
-                                    <div class="progress-bar-container">
-                                        <div id="cpu-progress" class="progress-bar"></div>
-                                    </div>
-                                    <span id="cpu-percent-text" class="stat-value">...</span>
-                                </div>
-                                <div class="system-stat-row">
-                                    <span class="stat-label">RAM</span>
-                                    <div class="progress-bar-container">
-                                        <div id="ram-progress" class="progress-bar"></div>
-                                    </div>
-                                    <span id="ram-usage-text" class="stat-value">...</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div id="gpu-stats-container">
-                            <!-- GPU stats will be populated by JavaScript -->
-                        </div>
-                    </div>
+                    <!-- Cartes CPU/GPU (mode normal) ou lignes denses (mode compact),
+                         construites par ui.js (updateSystemStats) : valeurs mises à
+                         jour EN PLACE à chaque tick, métriques indisponibles masquées
+                         (jamais de null/NaN affiché), couleurs 100 % rôles --ak-*. -->
+                    <div class="pane-content" id="system-stats-container" data-monitor-mode="normal"></div>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Template for a single GPU display -->
-    <template id="gpu-stat-template">
-        <div class="gpu-stat">
-            <span class="gpu-name">GPU 0: NVIDIA GeForce RTX 3090</span>
-            <div class="gpu-metrics">
-                <div class="gpu-metric">
-                    <span class="stat-label">VRAM</span>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar vram-progress"></div>
-                    </div>
-                    <span class="stat-value vram-usage-text">...</span>
-                </div>
-                <div class="gpu-metric">
-                    <span class="stat-label">Util.</span>
-                    <div class="progress-bar-container">
-                        <div class="progress-bar util-progress"></div>
-                    </div>
-                    <span class="stat-value util-percent-text">...</span>
-                </div>
-            </div>
-        </div>
-    </template>
 
     <!-- Universal Context Menu for Tools -->
     <div id="tools-context-menu" class="context-menu">
