@@ -23,6 +23,27 @@ export const DOM = {
     systemStatsContainer: document.getElementById('system-stats-container'),
 };
 
+// --- Offline fallbacks (single source of truth for the UI) ----------------
+// Kept in sync with aikore/api/builder.py. Honest values only:
+//   * no cu131 folder exists on download.pytorch.org (cu132/cu134 do);
+//   * torch is published up to 2.14.1 (versions.env pins 2.10.0 / cu130);
+//   * python 3.15 is still a pre-release, so the newest STABLE is 3.14.
+export const FALLBACK_PYTHON_VERSIONS = ["3.14", "3.13", "3.12", "3.11", "3.10"];
+export const FALLBACK_CUDA_VERSIONS = [
+    {cu: "cu134", version: "13.4"},
+    {cu: "cu132", version: "13.2"},
+    {cu: "cu130", version: "13.0"},
+    {cu: "cu129", version: "12.9"},
+    {cu: "cu128", version: "12.8"},
+    {cu: "cu126", version: "12.6"},
+    {cu: "cu121", version: "12.1"},
+    {cu: "cu118", version: "11.8"}
+];
+export const FALLBACK_TORCH_VERSIONS = [
+    "2.14.1", "2.14.0", "2.13.0", "2.12.1", "2.12.0",
+    "2.11.0", "2.10.0", "2.9.1", "2.8.0"
+];
+
 export const state = {
     availableBlueprints: { stock: [], custom: [] },
     availablePorts:[],
@@ -44,16 +65,8 @@ export const state = {
     lastGpuCount: -1,
     // --- Custom Versions Configuration ---
     versions: {
-        python: ["3.15", "3.14", "3.13", "3.12", "3.11", "3.10"],  // Fallback; replaced by /api/builder/versions/python
-        cuda: [                                                                  // Fallback; replaced by /api/builder/versions/cuda
-            {cu: "cu131", version: "13.1"},
-            {cu: "cu130", version: "13.0"},
-            {cu: "cu128", version: "12.8"},
-            {cu: "cu126", version: "12.6"},
-            {cu: "cu124", version: "12.4"},
-            {cu: "cu121", version: "12.1"},
-            {cu: "cu118", version: "11.8"}
-        ],
+        python: [...FALLBACK_PYTHON_VERSIONS],  // Fallback; replaced by /api/builder/versions/python
+        cuda: FALLBACK_CUDA_VERSIONS.map(v => ({ ...v })),  // Fallback; replaced by /api/builder/versions/cuda
         torchCache: {}     // Filled dynamically per CUDA version from /api/builder/versions/torch/{cu}
     },
     currentMenuInstance: null,

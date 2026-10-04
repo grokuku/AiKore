@@ -262,7 +262,60 @@ class WheelMetadata(BaseModel):
     source_preset: str
 
 # --- FALLBACK PYTHON VERSIONS (single source of truth) ---
-_FALLBACK_PYTHON_VERSIONS = ["3.15", "3.14", "3.13", "3.12", "3.11", "3.10"]
+# Only STABLE CPython minors: 3.15 is not released yet (pre-release), so it
+# must not be advertised offline any more than online (see _clean_python_versions).
+_FALLBACK_PYTHON_VERSIONS = ["3.14", "3.13", "3.12", "3.11", "3.10"]
+
+# --- SHARED VERSION HELPERS -------------------------------------------------
+# Sorting version lists lexicographically is WRONG: 'cu92' > 'cu134' and
+# '2.9.1' > '2.11.0'. Every list produced here (cuda folders, torch tags,
+# python minors) must go through these numeric helpers.
+
+
+def _parse_version_key(value):
+    """Numeric sort key for a dotted version string ('2.14.1' -> [2, 14, 1])."""
+    parts = re.split(r'\D+', str(value))
+    return [int(p) for p in parts if p]
+
+
+def _cuda_sort_key(cu):
+    """Numeric sort key for a 'cuNNN' folder ('cu92' -> 92, 'cu134' -> 134)."""
+    m = re.fullmatch(r'cu(\d+)', str(cu))
+    return int(m.group(1)) if m else -1
+
+
+def _cuda_to_version(cu):
+    """Convert a 'cuNNN' folder name to a human version ('cu92' -> '9.2')."""
+    num = cu[2:]
+    if len(num) == 2:
+        return f"{num[0]}.{num[1:]}"
+    # 3+ digits: XY.Z / XY.ZZ (cu118 -> 11.8, cu130 -> 13.0, cu1010 -> 10.10).
+    return f"{num[:2]}.{num[2:]}"
+
+
+def _clean_python_versions(versions):
+    """Keep only stable CPython >= 3.10, normalised to 'X.Y' and deduped.
+
+    Real semantics (the old regex `3\.(1[0-9]|[0-9])` accepted 3.0-3.9 and
+    read '3.20' as '3.2'): parse major/minor as integers, require >= 3.10 and
+    explicitly DROP pre-/post-releases (a, b, rc, dev, post) — this is what
+    used to surface an unreleased '3.15' at the top of the fresh list.
+    """
+    out = set()
+    for ver in versions or []:
+        if not isinstance(ver, str):
+            continue
+        v = ver.strip()
+        if re.search(r'(?i)(a|b|rc|dev|post)\d*', v):
+            continue
+        m = re.fullmatch(r'(\d+)\.(\d+)(?:\.\d+)?', v)
+        if not m:
+            continue
+        major, minor = int(m.group(1)), int(m.group(2))
+        if major != 3 or minor < 10:
+            continue
+        out.add(f"3.{minor}")
+    return sorted(out, key=_parse_version_key, reverse=True)
 
 # --- MANIFEST CONCURRENCY LOCK ---
 _manifest_lock = asyncio.Lock()
@@ -410,39 +463,114 @@ async def stream_subprocess(cmd, cwd, websocket, env_vars=None):
 
 # --- ENDPOINTS ---
 
-@router.get("/info")
-def get_builder_info():
-    """Returns available presets and detected GPU architecture."""
-    detected_arch = "8.9" # Default fallback
-    gpu_name = "Unknown"
-    
-    # Use pynvml for GPU detection (lightweight, loads in milliseconds)
-    # torch import is intentionally avoided at module level due to multi-minute load times
-    if pynvml:
+def _detect_gpus():
+    """Enumerate every NVIDIA GPU visible to NVML (F8).
+
+    Returns ``(gpus, error)`` where ``gpus`` is a list of
+    ``{"index": int, "name": str, "arch": str|None}`` and ``error`` is a
+    human-readable reason when detection was impossible (None on success).
+    Never raises: a missing driver/GPU is a normal offline condition, but it
+    must stay VISIBLE to the caller instead of silently falling back to 8.9.
+    """
+    if not pynvml:
+        return [], "NVML (pynvml) is not available in this environment."
+    try:
+        pynvml.nvmlInit()
+    except Exception as e:
+        return [], f"NVML init failed: {e}"
+
+    gpus = []
+    try:
         try:
-            pynvml.nvmlInit()
-            handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            cap = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
-            detected_arch = f"{cap[0]}.{cap[1]}"
-            gpu_name = pynvml.nvmlDeviceGetName(handle)
-            # Decode bytes if needed (older pynvml versions return bytes)
-            if isinstance(gpu_name, bytes):
-                gpu_name = gpu_name.decode('utf-8')
-            pynvml.nvmlShutdown()
+            count = int(pynvml.nvmlDeviceGetCount())
         except Exception as e:
-            print(f"[DEBUG] pynvml GPU detection failed: {e}")
+            return [], f"NVML device enumeration failed: {e}"
+        for i in range(count):
+            name = "Unknown"
+            arch = None
+            try:
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                cap = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
+                arch = f"{cap[0]}.{cap[1]}"
+                name = pynvml.nvmlDeviceGetName(handle)
+                # Decode bytes if needed (older pynvml versions return bytes).
+                if isinstance(name, bytes):
+                    name = name.decode('utf-8', errors='replace')
+            except Exception as e:
+                print(f"[DEBUG] pynvml GPU {i} query failed: {e}")
+            gpus.append({"index": i, "name": name, "arch": arch})
+    finally:
+        try:
+            pynvml.nvmlShutdown()
+        except Exception:
+            pass
+
+    return gpus, (None if gpus else "NVML reported no GPU.")
+
+
+@router.get("/info")
+def get_builder_info(gpu_index: Optional[int] = None):
+    """Returns available presets and the detected GPU architecture(ies).
+
+    ``gpu_index`` (optional query param) targets a SPECIFIC GPU instead of
+    always GPU 0: the historical code unconditionally used
+    nvmlDeviceGetHandleByIndex(0), so on a mixed machine (e.g. Ampere in slot 0
+    and a 4090 in slot 1) it advertised the wrong compute capability. Every
+    detected GPU is returned in ``gpus`` and ``detection`` states explicitly
+    whether detection succeeded (a failed detection is no longer silent).
+    """
+    # pynvml is lightweight (ms) — torch is intentionally NOT imported here
+    # (multi-minute load on slow disks).
+    gpus, detect_error = _detect_gpus()
+
+    target = None
+    if gpu_index is not None:
+        # Explicit target GPU: never silently substitute another card (F8).
+        target = next((g for g in gpus if g["index"] == gpu_index), None)
+        if target is None and detect_error is None:
+            detect_error = f"GPU index {gpu_index} was not found."
+    elif gpus:
+        target = next((g for g in gpus if g["index"] == 0), gpus[0])
+
+    detected_arch = (target or {}).get("arch") or "8.9"
+    gpu_name = (target or {}).get("name") or "Unknown"
 
     return {
         "presets": PRESETS,
         "detected_arch": detected_arch,
         "gpu_name": gpu_name,
+        # Every detected GPU is exposed so a mixed machine (e.g. Ampere in
+        # slot 0, Ada in slot 1) cannot hide the target architecture.
+        "gpus": gpus,
+        "detection": {
+            "ok": bool(target and target.get("arch")),
+            "error": detect_error,
+            "gpu_index": target["index"] if target else None,
+        },
         "python_path": sys.executable
     }
     
 # --- Cache for python versions (24h TTL, same model as cuda/torch) ---
 _PYTHON_CACHE_TTL = 24 * 3600  # 24 hours
+# An OFFLINE fallback must NOT be frozen for the full cache TTL: a transient
+# network/conda hiccup at boot would otherwise hide fresh versions for 24h
+# with no retry (F6). Fallback results get a short, dedicated TTL instead.
+_FALLBACK_CACHE_TTL = 5 * 60  # 5 minutes
 _cached_python_versions = []
 _cached_python_versions_at = 0.0
+_cached_python_versions_is_fallback = False
+
+
+def _python_cache_ttl():
+    return _FALLBACK_CACHE_TTL if _cached_python_versions_is_fallback else _PYTHON_CACHE_TTL
+
+
+def _cache_python_fallback():
+    """Store the offline list with the SHORT fallback TTL (F6)."""
+    global _cached_python_versions, _cached_python_versions_at, _cached_python_versions_is_fallback
+    _cached_python_versions = list(_FALLBACK_PYTHON_VERSIONS)
+    _cached_python_versions_at = time.monotonic()
+    _cached_python_versions_is_fallback = True
 
 
 async def prewarm_version_caches():
@@ -465,13 +593,13 @@ async def get_available_python_versions():
     Finds available python versions using conda search.
     Results are cached to avoid slow repeated calls.
     """
-    global _cached_python_versions, _cached_python_versions_at
+    global _cached_python_versions, _cached_python_versions_at, _cached_python_versions_is_fallback
     now = time.monotonic()
-    if _cached_python_versions and (now - _cached_python_versions_at) < _PYTHON_CACHE_TTL:
+    if _cached_python_versions and (now - _cached_python_versions_at) < _python_cache_ttl():
         return _cached_python_versions
 
     async with _cache_lock:
-        if _cached_python_versions and (time.monotonic() - _cached_python_versions_at) < _PYTHON_CACHE_TTL:
+        if _cached_python_versions and (time.monotonic() - _cached_python_versions_at) < _python_cache_ttl():
             return _cached_python_versions
 
         try:
@@ -487,37 +615,26 @@ async def get_available_python_versions():
                 proc.kill()
                 await proc.wait()
                 print("[DEBUG] conda search timed out after 5s.")
-                # Cache the fallback with a timestamp (same mechanism as the
-                # cuda cache; write already guarded by _cache_lock) so a
-                # slow/offline conda doesn't re-trigger a 5s fetch per call.
-                _cached_python_versions = list(_FALLBACK_PYTHON_VERSIONS)
-                _cached_python_versions_at = time.monotonic()
+                _cache_python_fallback()
                 return _cached_python_versions
-            
+
             if proc.returncode == 0:
                 data = json.loads(stdout.decode())
-                versions = set()
-                for entry in data.get("python", []):
-                    ver = entry.get("version", "")
-                    # Match major.minor and ensure it's >= 3.10
-                    # (prefix match is intentional here: '3.12.7' -> '3.12';
-                    # re.match already anchors at the start, so no redundant ^)
-                    match = re.match(r'(3\.(1[0-9]|[0-9]))', ver)
-                    if match:
-                        versions.add(match.group(1))
-                
-                # Sort descending (e.g. 3.15, 3.14...)
-                _cached_python_versions = sorted(list(versions), key=lambda x:[int(p) for p in x.split('.')], reverse=True)
-                _cached_python_versions_at = time.monotonic()
-                return _cached_python_versions
+                versions = _clean_python_versions(
+                    entry.get("version", "") for entry in data.get("python", [])
+                )
+                if versions:
+                    _cached_python_versions = versions
+                    _cached_python_versions_at = time.monotonic()
+                    _cached_python_versions_is_fallback = False
+                    return _cached_python_versions
+                print("[DEBUG] conda search returned no usable stable python version.")
         except Exception as e:
             print(f"[DEBUG] Failed to discover python versions: {e}")
-        
-        # Fallback if conda fails: cache it with a timestamp (same mechanism
-        # as the cuda cache, write guarded by the held _cache_lock) so we
-        # don't re-fetch in a loop while conda is offline.
-        _cached_python_versions = list(_FALLBACK_PYTHON_VERSIONS)
-        _cached_python_versions_at = time.monotonic()
+
+        # Offline: cache the fallback with the SHORT TTL so a returning
+        # network is picked up within minutes, not a full day (F6).
+        _cache_python_fallback()
         return _cached_python_versions
 
 # --- Cache for CUDA versions (6h TTL, thread-safe) ---
@@ -528,6 +645,21 @@ _CUDA_CACHE_TTL = 6 * 3600  # 6 hours
 _cuda_cache_lock = threading.Lock()
 _cached_cuda_versions = None
 _cached_cuda_versions_at = 0.0
+_cached_cuda_versions_is_fallback = False
+
+# Offline fallback aligned with the folders that ACTUALLY exist on
+# download.pytorch.org/whl/ (probed): cu131 does NOT exist, cu132/cu134 do.
+# Sorted numerically, newest first, so the UI's index 0 "(Latest)" is right.
+_FALLBACK_CUDA_VERSIONS = [
+    {"cu": "cu134", "version": "13.4"},
+    {"cu": "cu132", "version": "13.2"},
+    {"cu": "cu130", "version": "13.0"},
+    {"cu": "cu129", "version": "12.9"},
+    {"cu": "cu128", "version": "12.8"},
+    {"cu": "cu126", "version": "12.6"},
+    {"cu": "cu121", "version": "12.1"},
+    {"cu": "cu118", "version": "11.8"},
+]
 
 
 @router.get("/versions/cuda")
@@ -536,31 +668,30 @@ async def get_available_cuda_versions():
     Dynamically discovers available CUDA versions from the PyTorch wheel index.
     Scrapes the top-level directory listing at download.pytorch.org/whl/
     to find all cuXXX folders. Returns both the raw cu-string and a
-    human-readable "X.Y" version string.
+    human-readable "X.Y" version string, newest first (NUMERIC order).
     Falls back to a hardcoded list if the index is unreachable.
     """
-    fallback = [
-        {"cu": "cu131", "version": "13.1"},
-        {"cu": "cu130", "version": "13.0"},
-        {"cu": "cu128", "version": "12.8"},
-        {"cu": "cu126", "version": "12.6"},
-        {"cu": "cu124", "version": "12.4"},
-        {"cu": "cu121", "version": "12.1"},
-        {"cu": "cu118", "version": "11.8"},
-    ]
-    global _cached_cuda_versions, _cached_cuda_versions_at
+    fallback = [dict(v) for v in _FALLBACK_CUDA_VERSIONS]
+    global _cached_cuda_versions, _cached_cuda_versions_at, _cached_cuda_versions_is_fallback
     now = time.monotonic()
     with _cuda_cache_lock:
-        if _cached_cuda_versions is not None and (now - _cached_cuda_versions_at) < _CUDA_CACHE_TTL:
+        ttl = _FALLBACK_CACHE_TTL if _cached_cuda_versions_is_fallback else _CUDA_CACHE_TTL
+        if _cached_cuda_versions is not None and (now - _cached_cuda_versions_at) < ttl:
             return _cached_cuda_versions
+    is_fallback = False
     try:
         result = await asyncio.to_thread(_fetch_cuda_versions, fallback)
+        # _fetch_cuda_versions returns the very ``fallback`` object when the
+        # index gave nothing usable — then cache it with the SHORT TTL (F6).
+        is_fallback = result is fallback
     except Exception as e:
         print(f"[DEBUG] Failed to fetch CUDA versions: {e}")
         result = fallback
+        is_fallback = True
     with _cuda_cache_lock:
         _cached_cuda_versions = result
         _cached_cuda_versions_at = time.monotonic()
+        _cached_cuda_versions_is_fallback = is_fallback
     return result
 
 def _fetch_cuda_versions(fallback):
@@ -580,33 +711,41 @@ def _fetch_cuda_versions(fallback):
     if not matches:
         print("[DEBUG] No CUDA versions found via regex, using fallback.")
         return fallback
-    # Deduplicate and build result
+    # Deduplicate and build result. NUMERIC sort is mandatory: a plain
+    # sorted(reverse=True) on the raw strings puts 'cu92' before 'cu134'
+    # ('9' > '1') and the UI then advertises "CUDA 9.2 (Latest)".
     seen = set()
     result = []
-    for cu in sorted(set(matches), reverse=True):
+    for cu in sorted(set(matches), key=_cuda_sort_key, reverse=True):
         if cu in seen:
             continue
         seen.add(cu)
-        # Convert cuXXX to X.Y format: cu118 -> 11.8, cu130 -> 13.0, cu131 -> 13.1
-        # For 3-digit nums the format is XY.Z (e.g. 118->11.8, 130->13.0)
-        # For 4-digit nums the format is XY.ZZ (e.g. 1010->10.10)
-        # For 2-digit nums the format is X.Y (e.g. 92->9.2)
-        num = cu[2:]  # strip "cu"
-        if len(num) == 3:
-            version = f"{num[:2]}.{num[2:]}"
-        elif len(num) == 4:
-            version = f"{num[:2]}.{num[2:]}"
-        elif len(num) == 2:
-            version = f"{num[0]}.{num[1:]}"
-        result.append({"cu": cu, "version": version})
+        result.append({"cu": cu, "version": _cuda_to_version(cu)})
     if not result:
         return fallback
     return result
 
 # --- Cache for torch versions per CUDA target (24h TTL, thread-safe) ---
 _TORCH_CACHE_TTL = 24 * 3600  # 24 hours
+# Bound the cache so an unbounded set of (validated) keys can never grow forever.
+_MAX_TORCH_CACHE_ENTRIES = 32
 _torch_cache_lock = threading.Lock()
-_cached_torch_versions = {}  # {cu: (fetched_at_monotonic, versions_list)}
+# {cu: (fetched_at_monotonic, versions_list, is_fallback)}
+_cached_torch_versions = {}
+
+# Offline fallback: the real index tops out at 2.14.1 (probed) while
+# versions.env pins TORCH_VERSION=2.10.0 / cu130 — keep a useful window.
+_FALLBACK_TORCH_VERSIONS = [
+    "2.14.1", "2.14.0", "2.13.0", "2.12.1", "2.12.0",
+    "2.11.0", "2.10.0", "2.9.1", "2.8.0",
+]
+
+
+def _evict_torch_cache_locked(now):
+    """Drop the oldest entry when the torch cache is full (F7, bounded cache)."""
+    while len(_cached_torch_versions) >= _MAX_TORCH_CACHE_ENTRIES:
+        oldest = min(_cached_torch_versions, key=lambda k: _cached_torch_versions[k][0])
+        _cached_torch_versions.pop(oldest, None)
 
 
 @router.get("/versions/torch/{cuda_ver}")
@@ -616,24 +755,43 @@ async def get_torch_versions_for_cuda(cuda_ver: str):
     for the specific CUDA version. 
     Fallback to a default list if offline.
     """
-    # Updated fallback list for 2026 (CUDA 12.6, 12.8, 13.0 compatible)
-    fallback_versions = ["2.11.0", "2.10.0", "2.9.1", "2.8.0", "2.7.0", "2.6.0", "2.5.1", "2.4.1"]
+    # F7: validate the path parameter BEFORE interpolating it into the index
+    # URL or using it as a cache key. The builder WS enforces the same shape
+    # (re.fullmatch(r'cu\d+', cuda_ver)); this endpoint used to accept anything,
+    # which created a cache entry per arbitrary string (memory growth).
+    if not isinstance(cuda_ver, str) or not re.fullmatch(r'cu\d+', cuda_ver):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid CUDA version. Expected 'cuXXX' (e.g. 'cu128')."
+        )
+    fallback_versions = list(_FALLBACK_TORCH_VERSIONS)
     now = time.monotonic()
     with _torch_cache_lock:
         entry = _cached_torch_versions.get(cuda_ver)
-        if entry is not None and (now - entry[0]) < _TORCH_CACHE_TTL:
-            return entry[1]
+        if entry is not None:
+            fetched_at, versions, is_fallback = entry
+            ttl = _FALLBACK_CACHE_TTL if is_fallback else _TORCH_CACHE_TTL
+            if (now - fetched_at) < ttl:
+                return versions
     try:
-        result = await asyncio.to_thread(_fetch_torch_versions, cuda_ver, fallback_versions)
+        result, is_fallback = await asyncio.to_thread(
+            _fetch_torch_versions, cuda_ver, fallback_versions
+        )
     except Exception as e:
         print(f"[DEBUG] Failed to fetch torch versions: {e}")
-        result = sorted(fallback_versions, reverse=True)
+        result = sorted(fallback_versions, key=_parse_version_key, reverse=True)
+        is_fallback = True
     with _torch_cache_lock:
-        _cached_torch_versions[cuda_ver] = (time.monotonic(), result)
+        _evict_torch_cache_locked(now)
+        _cached_torch_versions[cuda_ver] = (time.monotonic(), result, is_fallback)
     return result
 
 def _fetch_torch_versions(cuda_ver, fallback_versions):
-    """Blocking I/O helper for get_torch_versions_for_cuda (runs in thread pool)."""
+    """Blocking I/O helper for get_torch_versions_for_cuda (runs in thread pool).
+
+    Returns ``(versions, is_fallback)`` so the caller can apply the SHORT
+    fallback TTL (F6) when the index was unreachable.
+    """
     index_url = f"https://download.pytorch.org/whl/{cuda_ver}/torch/"
     versions = set()
 
@@ -654,12 +812,10 @@ def _fetch_torch_versions(cuda_ver, fallback_versions):
 
     if not versions:
         print("[DEBUG] No versions found via regex, using fallback.")
-        return sorted(fallback_versions, reverse=True)
-            
-    def safe_version_key(s):
-        return [int(p) if p.isdigit() else 0 for p in re.split(r'\D+', s) if p]
-            
-    return sorted(list(versions), key=safe_version_key, reverse=True)
+        # NUMERIC sort: a lexicographic one would put '2.9.1' above '2.11.0'.
+        return sorted(fallback_versions, key=_parse_version_key, reverse=True), True
+
+    return sorted(list(versions), key=_parse_version_key, reverse=True), False
 
 @router.get("/wheels", response_model=List[WheelMetadata])
 def list_wheels():

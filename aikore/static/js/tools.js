@@ -1,5 +1,5 @@
-import { state, DOM } from './state.js';
-import { fetchLogs, performVersionCheck, fetchFileContent, fetchTorchVersions, fetchCudaVersions, fetchAvailablePythonVersions, authHeaders } from './api.js';
+import { state, DOM, FALLBACK_PYTHON_VERSIONS, FALLBACK_CUDA_VERSIONS, FALLBACK_TORCH_VERSIONS } from './state.js';
+import { fetchLogs, performVersionCheck, fetchFileContent, fetchTorchVersions, fetchCudaVersions, fetchAvailablePythonVersions, authHeaders, normalizeCudaKey, sortVersionsDesc, sortCudaVersionsDesc } from './api.js';
 import { showToast } from './ui.js';
 import { HolafIcons } from '../vendor/holaf-icons.js';
 import { getCurrentTheme } from './themes.js';
@@ -376,6 +376,12 @@ const START_BUILD_BTN_HTML = `${HolafIcons.render('play', { size: 14 })} BUILD M
 
 async function fetchBuilderInfo() {
     const res = await fetch('/api/builder/info', { headers: authHeaders() });
+    // F5/F8: an error response (401/500) is JSON too. Without this guard the
+    // caller treated the error body as valid data and then crashed on
+    // Object.entries(info.presets), leaving half the Builder view broken.
+    if (!res.ok) {
+        throw new Error(res.status === 401 ? 'Clé API requise (401)' : `HTTP ${res.status}`);
+    }
     return await res.json();
 }
 
@@ -387,18 +393,21 @@ async function populateTorchVersions() {
     if (!cudaSelect || !torchSelect) return;
 
     const cudaVer = cudaSelect.value;
+    const cacheKey = normalizeCudaKey(cudaVer);
     const previousValue = torchSelect.value;
     torchSelect.innerHTML = '<option value="">Loading...</option>';
     torchSelect.disabled = true;
 
     try {
-        // Check cache first
-        let versions = state.versions.torchCache[cudaVer];
+        // Check cache first — single canonical key ('cuNNN') shared with ui.js
+        // so the same list is not fetched twice under two spellings.
+        let versions = cacheKey ? state.versions.torchCache[cacheKey] : null;
         if (!versions) {
             versions = await fetchTorchVersions(cudaVer);
-            state.versions.torchCache[cudaVer] = versions;
+            if (cacheKey) state.versions.torchCache[cacheKey] = versions;
         }
 
+        versions = sortVersionsDesc(versions);
         torchSelect.innerHTML = '';
 
         if (!versions || versions.length === 0) {
@@ -425,7 +434,7 @@ async function populateTorchVersions() {
     } catch (e) {
         console.error(e);
         torchSelect.innerHTML = '';
-        const fallbackVersions = ['2.11.0', '2.10.0', '2.9.1', '2.8.0', '2.7.0', '2.6.0', '2.5.1'];
+        const fallbackVersions = sortVersionsDesc(FALLBACK_TORCH_VERSIONS);
         fallbackVersions.forEach(v => {
             const opt = document.createElement('option');
             opt.value = v;
@@ -793,6 +802,11 @@ export async function showBuilderView() {
         const cudaSelect = document.getElementById('builder-cuda');
         cudaSelect.addEventListener('change', populateTorchVersions);
 
+        // Remember the user's manual arch choice so re-opening the Builder does
+        // not silently revert to auto-detect (F8).
+        const archSelect = document.getElementById('builder-arch');
+        archSelect.addEventListener('change', () => { archSelect.dataset.userArch = archSelect.value; });
+
         initTableResizers();
     }
 
@@ -809,19 +823,11 @@ export async function showBuilderView() {
         }),
         fetchAvailablePythonVersions().catch(e => {
             logBuilderMessage('\x1b[31m[ERROR] Failed to fetch Python versions: ' + e.message + '. Using fallback.\x1b[0m');
-            return ['3.15', '3.14', '3.13', '3.12', '3.11', '3.10'];
+            return sortVersionsDesc(FALLBACK_PYTHON_VERSIONS);
         }),
         fetchCudaVersions().catch(e => {
             logBuilderMessage('\x1b[31m[ERROR] Failed to fetch CUDA versions: ' + e.message + '. Using fallback.\x1b[0m');
-            return [
-                {cu: 'cu131', version: '13.1'},
-                {cu: 'cu130', version: '13.0'},
-                {cu: 'cu128', version: '12.8'},
-                {cu: 'cu126', version: '12.6'},
-                {cu: 'cu124', version: '12.4'},
-                {cu: 'cu121', version: '12.1'},
-                {cu: 'cu118', version: '11.8'},
-            ];
+            return sortCudaVersionsDesc(FALLBACK_CUDA_VERSIONS);
         })
     ]);
 
@@ -842,11 +848,11 @@ export async function showBuilderView() {
         }
     }
 
-    // --- Populate Python versions ---
+    // --- Populate Python versions (numeric order; newest first) ---
     const pythonSelect = document.getElementById('builder-python');
     if (pythonSelect && pyVersions && pyVersions.length > 0) {
         pythonSelect.innerHTML = '';
-        pyVersions.forEach((v, i) => {
+        sortVersionsDesc(pyVersions).forEach((v, i) => {
             const opt = document.createElement('option');
             opt.value = v;
             opt.textContent = i === 0 ? `${v} (Latest)` : v;
@@ -854,11 +860,11 @@ export async function showBuilderView() {
         });
     }
 
-    // --- Populate CUDA versions ---
+    // --- Populate CUDA versions (NUMERIC order: cu92 must never precede cu134) ---
     const cudaSelect = document.getElementById('builder-cuda');
     if (cudaSelect && cudaVersions && cudaVersions.length > 0) {
         cudaSelect.innerHTML = '';
-        cudaVersions.forEach((v, i) => {
+        sortCudaVersionsDesc(cudaVersions).forEach((v, i) => {
             const opt = document.createElement('option');
             opt.value = v.cu;
             opt.textContent = `CUDA ${v.version}${i === 0 ? ' (Latest)' : ''}`;
@@ -866,24 +872,65 @@ export async function showBuilderView() {
         });
     }
 
-    // --- Populate arch (auto-detect) ---
+    // --- Populate arch (auto-detect, one option per detected GPU) ---
     if (info) {
         const archSelect = document.getElementById('builder-arch');
-        if (archSelect && !archSelect.querySelector('option[value="auto"]')) {
-            const autoOpt = document.createElement('option');
-            autoOpt.value = info.detected_arch;
-            autoOpt.textContent = `Auto-Detect (${info.detected_arch}) - Recommended`;
-            autoOpt.selected = true;
-            archSelect.prepend(autoOpt);
+        if (archSelect) {
+            // F8: rebuild from scratch. The historical guard tested
+            // option[value="auto"] while the created option's value IS the
+            // arch, so it never matched and a new option was PREPENDED on
+            // every open (duplicates/triplicates).
+            archSelect.querySelectorAll('option[data-auto-detect]').forEach(o => o.remove());
+
+            const gpus = Array.isArray(info.gpus) ? info.gpus : [];
+            const detection = info.detection || {};
+            const autoOpts = [];
+
+            if (gpus.length > 0) {
+                gpus.forEach((gpu, i) => {
+                    if (!gpu || !gpu.arch) return;
+                    const opt = document.createElement('option');
+                    opt.value = gpu.arch;
+                    opt.dataset.autoDetect = '1';
+                    opt.dataset.gpuIndex = String(gpu.index);
+                    const who = (gpu.name && gpu.name !== 'Unknown') ? ` — ${gpu.name}` : '';
+                    opt.textContent = `Auto-Detect (${gpu.arch})${who}${i === 0 ? ' - Recommended' : ''}`;
+                    autoOpts.push(opt);
+                });
+            } else {
+                // Detection IMPOSSIBLE: never silent — show the reason and the
+                // default that will actually be sent.
+                const reason = detection.error || 'no NVIDIA GPU detected';
+                const opt = document.createElement('option');
+                opt.value = info.detected_arch || '8.9';
+                opt.dataset.autoDetect = '1';
+                opt.textContent = `Auto-Detect unavailable (${reason}) — using ${opt.value}`;
+                autoOpts.push(opt);
+                logBuilderMessage(`\x1b[33m[WARN] GPU auto-detection unavailable: ${reason}. Defaulting to arch ${opt.value}.\x1b[0m`);
+            }
+
+            // Prepend while preserving order (GPU 0 first).
+            for (let i = autoOpts.length - 1; i >= 0; i--) {
+                archSelect.prepend(autoOpts[i]);
+            }
+
+            // Restore the user's manual choice if it still exists, else select
+            // the first auto-detected option (GPU 0 / default).
+            const prevArch = archSelect.dataset.userArch;
+            if (prevArch && archSelect.querySelector(`option[value="${prevArch}"]`)) {
+                archSelect.value = prevArch;
+            } else if (archSelect.options.length > 0) {
+                archSelect.selectedIndex = 0;
+            }
         }
     }
 
     // --- Fetch PyTorch versions for selected CUDA ---
     await populateTorchVersions();
 
-    // --- Update state cache for reuse ---
-    if (pyVersions) state.versions.python = pyVersions;
-    if (cudaVersions) state.versions.cuda = cudaVersions;
+    // --- Update state cache for reuse (kept numerically sorted) ---
+    if (pyVersions) state.versions.python = sortVersionsDesc(pyVersions);
+    if (cudaVersions) state.versions.cuda = sortCudaVersionsDesc(cudaVersions);
 
     renderWheelsTable();
     // Only init terminal if not already existing (builder keeps its state)

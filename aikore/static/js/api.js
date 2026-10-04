@@ -134,9 +134,48 @@ export async function fetchCudaVersions() {
     }
 }
 
+// --- Version helpers -------------------------------------------------------
+// The UI manipulates CUDA identifiers in two shapes: the PyTorch wheel folder
+// ('cu130') and the dotted version ('13.0'). They must collapse to ONE
+// canonical cache key, otherwise the same torch list is fetched twice under
+// '13.0' and 'cu130'. Returns 'cuNNN' (or '' when there are no digits).
+export function normalizeCudaKey(cudaVer) {
+    if (!cudaVer) return '';
+    const s = String(cudaVer).trim();
+    if (/^cu\d+$/i.test(s)) return s.toLowerCase();
+    const digits = s.replace(/[^0-9]/g, '');
+    return digits ? 'cu' + digits : '';
+}
+
+// Numeric descending sort for dotted version strings ('2.9.1' must NOT rank
+// above '2.11.0', unlike a lexicographic sort).
+export function sortVersionsDesc(list) {
+    return [...(list || [])].sort((a, b) => {
+        const pa = String(a).split('.').map(n => parseInt(n, 10) || 0);
+        const pb = String(b).split('.').map(n => parseInt(n, 10) || 0);
+        const len = Math.max(pa.length, pb.length);
+        for (let i = 0; i < len; i++) {
+            const d = (pb[i] || 0) - (pa[i] || 0);
+            if (d) return d;
+        }
+        return 0;
+    });
+}
+
+// Numeric descending sort for CUDA entries ({cu, version} objects or raw
+// 'cuNNN' strings). Guards the "CUDA 9.2 (Latest)" bug on the client side too.
+export function sortCudaVersionsDesc(list) {
+    const rank = (entry) => {
+        const key = normalizeCudaKey(typeof entry === 'string' ? entry : (entry && entry.cu));
+        const n = parseInt(key.replace(/^cu/, ''), 10);
+        return isNaN(n) ? -1 : n;
+    };
+    return [...(list || [])].sort((a, b) => rank(b) - rank(a));
+}
+
 export async function fetchTorchVersions(cudaVer) {
-    if (!cudaVer) return [];
-    const cuString = cudaVer.startsWith('cu') ? cudaVer : 'cu' + cudaVer.replace('.', '');
+    const cuString = normalizeCudaKey(cudaVer);
+    if (!cuString) return [];
     try {
         return await hf.get(`/api/builder/versions/torch/${cuString}`);
     } catch (error) {

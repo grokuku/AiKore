@@ -1,5 +1,5 @@
-import { state, DOM } from './state.js';
-import { fetchTorchVersions } from './api.js'; // --- NEW IMPORT ---
+import { state, DOM, FALLBACK_TORCH_VERSIONS } from './state.js';
+import { fetchTorchVersions, normalizeCudaKey, sortVersionsDesc, sortCudaVersionsDesc } from './api.js'; // --- NEW IMPORT ---
 import { HolafToast } from '../vendor/holaf-toast.js';
 import { HolafIcons } from '../vendor/holaf-icons.js';
 
@@ -683,62 +683,93 @@ export function renderInstanceRow(instance, isNew = false, level = 0) {
     };
 
     const pySelect = createEnvSelect('python_version', state.versions.python, instance.python_version, 'Py Auto');
-    const cudaSelect = createEnvSelect('cuda_version', state.versions.cuda, instance.cuda_version, 'CUDA Auto');
+    const cudaSelect = createEnvSelect('cuda_version', sortCudaVersionsDesc(state.versions.cuda), instance.cuda_version, 'CUDA Auto');
     const torchSelect = createEnvSelect('torch_version', [], instance.torch_version, 'Torch Auto');
 
     // Logic to dynamically populate Torch options based on selected CUDA
     const updateTorchOptions = async (cudaVal, initialTorchVal) => {
         // Keep only the placeholder
         while (torchSelect.options.length > 1) torchSelect.remove(1);
-        
-        // Always try to fetch something, default to 12.8 if auto
-        const fetchCudaVal = cudaVal || '12.8'; 
-        
-        torchSelect.options[0].textContent = "Loading...";
-        
-        let versions = state.versions.torchCache[fetchCudaVal];
-        if (!versions) {
-            versions = await fetchTorchVersions(fetchCudaVal);
-            state.versions.torchCache[fetchCudaVal] = versions;
-        }
-        
-        versions.forEach(opt => {
-            const o = document.createElement('option');
-            o.value = opt;
-            o.textContent = opt;
-            torchSelect.appendChild(o);
-        });
-        
-        if (initialTorchVal && versions.includes(initialTorchVal)) {
-            torchSelect.value = initialTorchVal;
-        } else if (initialTorchVal) {
-            // Pre-existing or custom version not in the default scraped list
-            const o = document.createElement('option');
-            o.value = initialTorchVal;
-            o.textContent = initialTorchVal;
-            torchSelect.appendChild(o);
-            torchSelect.value = initialTorchVal;
-        }
-        torchSelect.options[0].textContent = 'Torch Auto';
 
-        // FIX: Re-check for changes after async torch load completes.
-        // Without this, the row stays falsely dirty because checkRowForChanges
-        // ran before the torch options were populated.
-        if (!isNew) {
-            checkRowForChanges(row);
+        // Always try to fetch something, default to the newest supported CUDA.
+        // normalizeCudaKey() collapses '13.0' / 'cu130' to the SAME cache key
+        // so the row and the Builder never trigger a duplicate HTTP fetch (F5).
+        const fetchCudaVal = normalizeCudaKey(cudaVal) || 'cu128';
+
+        torchSelect.options[0].textContent = "Loading...";
+        torchSelect.disabled = true;
+
+        try {
+            let versions = state.versions.torchCache[fetchCudaVal];
+            if (!versions) {
+                versions = await fetchTorchVersions(fetchCudaVal);
+                state.versions.torchCache[fetchCudaVal] = versions;
+            }
+
+            versions = sortVersionsDesc(versions);
+
+            versions.forEach(opt => {
+                const o = document.createElement('option');
+                o.value = opt;
+                o.textContent = opt;
+                torchSelect.appendChild(o);
+            });
+
+            if (initialTorchVal && versions.includes(initialTorchVal)) {
+                torchSelect.value = initialTorchVal;
+            } else if (initialTorchVal) {
+                // Pre-existing or custom version not in the default scraped list
+                const o = document.createElement('option');
+                o.value = initialTorchVal;
+                o.textContent = initialTorchVal;
+                torchSelect.appendChild(o);
+                torchSelect.value = initialTorchVal;
+            }
+            torchSelect.options[0].textContent = 'Torch Auto';
+        } catch (e) {
+            // F5: never leave the select stuck on 'Loading...' and never let
+            // this async call become an unhandled rejection. Degrade to an
+            // honest offline list and keep any pre-existing value selectable.
+            console.error('Failed to load PyTorch versions:', e);
+            while (torchSelect.options.length > 1) torchSelect.remove(1);
+            sortVersionsDesc(FALLBACK_TORCH_VERSIONS).forEach(v => {
+                const o = document.createElement('option');
+                o.value = v;
+                o.textContent = v + ' (offline)';
+                torchSelect.appendChild(o);
+            });
+            torchSelect.options[0].textContent = 'Torch Auto (offline)';
+            if (initialTorchVal && !FALLBACK_TORCH_VERSIONS.includes(initialTorchVal)) {
+                const o = document.createElement('option');
+                o.value = initialTorchVal;
+                o.textContent = initialTorchVal;
+                torchSelect.appendChild(o);
+                torchSelect.value = initialTorchVal;
+            }
+        } finally {
+            torchSelect.disabled = false;
+            // FIX: Re-check for changes after async torch load completes.
+            // Without this, the row stays falsely dirty because checkRowForChanges
+            // ran before the torch options were populated.
+            if (!isNew) {
+                checkRowForChanges(row);
+            }
         }
     };
 
     cudaSelect.addEventListener('change', () => {
         const selectedOption = cudaSelect.options[cudaSelect.selectedIndex];
         const cuVal = selectedOption?.dataset?.cu || cudaSelect.value;
-        updateTorchOptions(cuVal, null);
+        // updateTorchOptions handles its own errors; keep an explicit catch so
+        // this fire-and-forget call can never emit an unhandled rejection.
+        updateTorchOptions(cuVal, null).catch(err => console.error('Torch options update failed:', err));
     });
 
     // --- FIX: Always initialize the torch options, even if cuda_version is empty ---
     // Use the cu-string from dataset if available, falling back to the version string
     const initialCu = cudaSelect.options[cudaSelect.selectedIndex]?.dataset?.cu || instance.cuda_version;
-    updateTorchOptions(initialCu || '12.8', instance.torch_version);
+    updateTorchOptions(initialCu || 'cu128', instance.torch_version)
+        .catch(err => console.error('Torch options init failed:', err));
 
     envWrapper.appendChild(pySelect);
     envWrapper.appendChild(cudaSelect);
