@@ -38,6 +38,10 @@ class Instance(Base):
     status = Column(String, default="stopped", nullable=False)
     
     pid = Column(Integer, nullable=True)
+    # C2: process-group id (pgid). Persisted so a surviving group can still be
+    # cleaned up after AiKore restarts (running_instances is in-memory). Equals
+    # the pid at start time because the child runs with os.setsid().
+    pgid = Column(Integer, nullable=True)
     port = Column(Integer, nullable=True)
     persistent_port = Column(Integer, nullable=True)
     persistent_display = Column(Integer, nullable=True)

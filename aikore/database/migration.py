@@ -13,7 +13,7 @@ from .session import SessionLocal, DATABASE_URL, connect_args, engine as _global
 
 # --- AUTOMATED DATABASE MIGRATION LOGIC ---
 
-EXPECTED_DB_VERSION = 6
+EXPECTED_DB_VERSION = 7
 
 
 def _backup_database_before_step(db_path: str, backup_path: str, log_prefix: str = "0."):
@@ -56,6 +56,7 @@ class DatabaseVersionError(RuntimeError):
 _POST_V1_COLUMNS = {
     "hostname", "use_custom_hostname", "output_path",
     "parent_instance_id", "python_version", "cuda_version", "torch_version",
+    "pgid",
 }
 
 def _get_db_version(db_session):
@@ -519,14 +520,60 @@ def _perform_v5_to_v6_migration():
         print("[DB Migration] Manual inspection of the database is required.", file=sys.stderr)
         sys.exit(1)
 
+def _perform_v6_to_v7_migration():
+    """
+    Migrates the database from schema V6 to V7.
+    V6 -> V7 Change: Adds the `pgid` column to the `instances` table.
+
+    C2: persisting the process-group id lets AiKore terminate an instance's
+    surviving process group after its own restart (running_instances is
+    in-memory and lost on restart). Same idempotent ALTER TABLE pattern as the
+    v4->v5 / v5->v6 steps, so an existing v7-moulded DB is left untouched.
+    """
+    print("[DB Migration] Starting migration from V6 to V7...")
+    engine = create_engine(DATABASE_URL, connect_args=connect_args)
+
+    db_path = DATABASE_URL.split("///")[1]
+    backup_path = f"{db_path}.bak.v6_to_v7.{int(time.time())}"
+    _backup_database_before_step(db_path, backup_path, "0.")
+
+    try:
+        with engine.connect() as connection:
+            with connection.begin():
+                inspector = inspect(engine)
+                columns = [col['name'] for col in inspector.get_columns('instances')]
+
+                print("[DB Migration] 1. Adding 'pgid' column to 'instances' table...")
+                if 'pgid' not in columns:
+                    connection.execute(text('ALTER TABLE instances ADD COLUMN pgid INTEGER'))
+                else:
+                    print("[DB Migration] 1. Column 'pgid' already exists.")
+
+                print("[DB Migration] 2. Updating schema version to 7...")
+                with Session(bind=connection) as db:
+                    version_entry = db.query(models.AikoreMeta).filter_by(key="schema_version").first()
+                    if version_entry:
+                        version_entry.value = "7"
+                    else:
+                        db.add(models.AikoreMeta(key="schema_version", value="7"))
+                    db.commit()
+
+        print("[DB Migration] Migration from V6 to V7 complete.")
+    except Exception as e:
+        print(f"[DB Migration] FATAL: Error during V6 to V7 migration: {e}", file=sys.stderr)
+        print(f"[DB Migration] A pre-migration backup exists at: {backup_path}", file=sys.stderr)
+        print("[DB Migration] Manual inspection of the database is required.", file=sys.stderr)
+        sys.exit(1)
+
 # LOT3 (M6): explicit migration-step table, executed SEQUENTIALLY by
-# run_db_migration() so an upgrade from v1 to v6 completes in a single run.
+# run_db_migration() so an upgrade from v1 to v7 completes in a single run.
 _MIGRATION_STEPS = {
     1: _perform_v1_to_v2_migration,
     2: _perform_v2_to_v3_migration,
     3: _perform_v3_to_v4_migration,
     4: _perform_v4_to_v5_migration,
     5: _perform_v5_to_v6_migration,
+    6: _perform_v6_to_v7_migration,
 }
 
 def run_db_migration():

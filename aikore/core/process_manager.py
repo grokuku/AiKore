@@ -41,6 +41,16 @@ NGINX_RELOAD_FLAG = Path("/run/aikore/nginx_reload.flag")
 # Monitor thread polls the web port every N seconds
 MONITOR_POLL_INTERVAL = 1
 
+# C1: grace periods for the group-wide stop escalation. Escalation MUST be
+# driven by the SURVIVAL OF THE PROCESS GROUP, never by the head process: a
+# blueprint's head (e.g. `exec python setup.py`) installs no SIGTERM handler,
+# so it dies in milliseconds while slow/failing descendants keep their RAM
+# pinned. Modelled on Strata's own tools/strata_mcp.py (SIGTERM ~20s -> SIGKILL
+# ~5s).
+INSTANCE_SIGTERM_GRACE_SECONDS = 25
+INSTANCE_SIGKILL_GRACE_SECONDS = 5
+INSTANCE_GROUP_POLL_SECONDS = 0.25
+
 # --- GLOBAL STATE ---
 # In-memory dictionary to keep track of running processes and their monitor threads
 # Structure: { instance_id: {"process": Popen_object, "monitor_thread": Thread_object} }
@@ -105,19 +115,80 @@ def _can_bind_port(port: int) -> bool:
     except OSError:
         return False
 
-def _ensure_runtime_ports_free(db: Session, instance: models.Instance, max_attempts: int = 5):
+def _append_instance_log(instance_name: str, message: str):
+    """C7: append a manager event to the instance's own log file.
+
+    The log surfaced by ``GET /api/instances/<id>/logs`` is
+    ``INSTANCES_DIR/<name>/output.log``. Port reallocations and incomplete
+    stops used to be plain ``print()`` calls only visible in `docker logs`;
+    this makes them visible in the UI too. Best-effort: a logging failure must
+    never abort the operation it is reporting.
+    """
+    try:
+        conf_dir = os.path.join(INSTANCES_DIR, instance_name)
+        os.makedirs(conf_dir, exist_ok=True)
+        log_path = os.path.join(conf_dir, "output.log")
+        stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_path, "a", encoding="utf-8", errors="replace") as f:
+            f.write(f"[AiKore {stamp}] {message}\n")
+    except Exception as e:  # noqa: BLE001 - logging must never break the caller
+        print(f"[Manager-Error] Could not write to instance log for '{instance_name}': {e}")
+
+
+def _port_range_str() -> str:
+    return os.environ.get("AIKORE_INSTANCE_PORT_RANGE", "19001-19020")
+
+
+def _get_instance_port_range():
+    """Parse AIKORE_INSTANCE_PORT_RANGE into (start, end) or None if invalid."""
+    port_range_str = _port_range_str()
+    try:
+        start_port, end_port = (int(x) for x in port_range_str.split('-', 1))
+    except (ValueError, TypeError):
+        return None
+    if start_port > end_port:
+        return None
+    return start_port, end_port
+
+
+def _find_free_port_in_range(start_port: int, end_port: int, other_used=(), exclude=()):
+    """C5: return the smallest free TCP port STRICTLY inside [start, end].
+
+    Deliberately does NOT use ``_find_free_port()`` (which binds to port 0 and
+    therefore returns an ephemeral OS port, 32768-60999). That port is never
+    inside the published ``AIKORE_INSTANCE_PORT_RANGE`` that docker-compose
+    exposes, so persisting it silently breaks the LAN-accessible URL.
+
+    Returns None when the range is saturated (every candidate is used or
+    already bound).
+    """
+    excluded = set(exclude) | set(other_used)
+    for candidate in range(start_port, end_port + 1):
+        if candidate in excluded:
+            continue
+        if _can_bind_port(candidate):
+            return candidate
+    return None
+
+
+def _ensure_runtime_ports_free(db: Session, instance: models.Instance, max_attempts: int = 5) -> list:
     """LOT3 (M1): last-mile port/display verification right before the Popen.
 
     Ports allocated at creation time can be stale by start time (another
     service grabbed the port, leftover X lock, concurrent creation that raced
     past the API-level checks...). This helper:
-      - normal mode: re-binds instance.port; if taken, allocates another free
-        ephemeral port;
-      - persistent mode: re-binds instance.persistent_port; if taken, picks the
-        next free port of AIKORE_INSTANCE_PORT_RANGE; bumps the display if its
-        lock/socket appeared meanwhile.
+      - normal mode: re-binds instance.port; if taken, or if it drifted OUTSIDE
+        AIKORE_INSTANCE_PORT_RANGE, reallocates a free port INSIDE the range;
+      - persistent mode: re-binds instance.persistent_port; if taken/out of
+        range, picks the next free port of AIKORE_INSTANCE_PORT_RANGE; bumps
+        the display if its lock/socket appeared meanwhile.
     Persists any reallocation to the DB. Raises RuntimeError when nothing
-    usable can be found.
+    usable can be found. Returns a list of human-readable events (C7) so the
+    caller can surface them in the instance log AFTER the spawn (the log file
+    is truncated at spawn time).
+
+    C5: the normal branch is now symmetric with the persistent one — it NEVER
+    falls back to an out-of-range ephemeral port.
     """
     # Ports held by OTHER instances, per the DB.
     other_used = {
@@ -129,64 +200,90 @@ def _ensure_runtime_ports_free(db: Session, instance: models.Instance, max_attem
     }
 
     changed = False
+    events = []
+    port_range = _get_instance_port_range()
+    port_range_str = _port_range_str()
+    start_port, end_port = port_range if port_range else (None, None)
+
+    def _record(message: str):
+        print(f"[Manager] {message}")
+        events.append(message)
 
     if instance.persistent_mode:
         public_port = instance.persistent_port
-        pool_ok = True
-        port_range_str = os.environ.get("AIKORE_INSTANCE_PORT_RANGE", "19001-19020")
-        try:
-            start_port, end_port = map(int, port_range_str.split('-'))
-        except (ValueError, TypeError):
-            pool_ok = False
-
-        if public_port is not None and (not _can_bind_port(public_port) or public_port in other_used):
+        out_of_range = (
+            start_port is not None
+            and public_port is not None
+            and not (start_port <= public_port <= end_port)
+        )
+        if public_port is not None and (
+            out_of_range or not _can_bind_port(public_port) or public_port in other_used
+        ):
             replacement = None
-            if pool_ok:
-                for _ in range(max_attempts):
-                    candidate = _find_free_port()
-                    if (
-                        start_port <= candidate <= end_port
-                        and candidate not in other_used
-                        and candidate != public_port
-                        and _can_bind_port(candidate)
-                    ):
-                        replacement = candidate
-                        break
+            if start_port is not None:
+                replacement = _find_free_port_in_range(
+                    start_port, end_port, other_used, exclude=(public_port,)
+                )
             if replacement is None:
                 raise RuntimeError(
                     f"Cannot start persistent instance '{instance.name}': port "
-                    f"{public_port} is busy and no free replacement found in range '{port_range_str}'."
+                    f"{public_port} is unusable and no free port was found in the "
+                    f"published range '{port_range_str}' (AIKORE_INSTANCE_PORT_RANGE)."
                 )
-            print(f"[Manager] Port {public_port} busy at start time; reallocating persistent port to {replacement}.")
+            _record(
+                f"Persistent port {public_port} unusable at start time "
+                f"(out_of_range={out_of_range}); reallocated to {replacement}."
+            )
             instance.persistent_port = replacement
             changed = True
 
         if instance.persistent_display is not None and _display_in_use(instance.persistent_display):
             replacement_display = _find_free_display()
-            print(f"[Manager] Display :{instance.persistent_display} busy at start time; reallocating to :{replacement_display}.")
+            _record(
+                f"Display :{instance.persistent_display} busy at start time; "
+                f"reallocated to :{replacement_display}."
+            )
             instance.persistent_display = replacement_display
             changed = True
     else:
         app_port = instance.port
-        if app_port is not None and (not _can_bind_port(app_port) or app_port in other_used):
+        out_of_range = (
+            start_port is not None
+            and app_port is not None
+            and not (start_port <= app_port <= end_port)
+        )
+        unusable = (
+            app_port is None
+            or out_of_range
+            or app_port in other_used
+            or not _can_bind_port(app_port)
+        )
+        if unusable:
             replacement = None
-            for _ in range(max_attempts):
-                candidate = _find_free_port()
-                if candidate not in other_used and _can_bind_port(candidate):
-                    replacement = candidate
-                    break
+            if start_port is not None:
+                replacement = _find_free_port_in_range(
+                    start_port, end_port, other_used, exclude=(app_port,)
+                )
             if replacement is None:
                 raise RuntimeError(
-                    f"Cannot start instance '{instance.name}': port {app_port} is busy "
-                    f"and no free replacement port could be allocated."
+                    f"Cannot start instance '{instance.name}': port {app_port} is "
+                    f"unusable and no free port is available in the published range "
+                    f"'{port_range_str}' (AIKORE_INSTANCE_PORT_RANGE). Refusing to "
+                    f"fall back to an out-of-range ephemeral port."
                 )
-            print(f"[Manager] Port {app_port} busy at start time; reallocating application port to {replacement}.")
+            _record(
+                f"Application port {app_port} unusable at start time "
+                f"(out_of_range={out_of_range}, busy={app_port is not None and app_port in other_used}); "
+                f"reallocated to {replacement} within range '{port_range_str}'."
+            )
             instance.port = replacement
             changed = True
 
     if changed:
         db.commit()
         db.refresh(instance)
+
+    return events
 
 def remove_nginx_config(instance_slug: str):
     """LOT3 (M9): removes the NGINX location conf of an instance (best effort).
@@ -734,7 +831,9 @@ def start_instance_process(db: Session, instance: models.Instance):
     
     # --- LOT3 (M1): verify ports/display are REALLY free right before spawn,
     # reallocating (and persisting) if something grabbed them since creation.
-    _ensure_runtime_ports_free(db, instance)
+    # C7: any reallocation is returned as an event and appended to the
+    # instance log after the spawn (the log file is truncated by the Popen).
+    startup_events = _ensure_runtime_ports_free(db, instance)
 
     # --- LOT3 (H1): capture WEBUI_PORT + monitor/app ports ONLY AFTER
     # _ensure_runtime_ports_free(). Capturing them before (previous order)
@@ -777,10 +876,24 @@ def start_instance_process(db: Session, instance: models.Instance):
     output_log_path = os.path.join(log_and_cwd_dir, "output.log")
     with open(output_log_path, 'w') as output_log:
         main_process = subprocess.Popen(main_cmd, cwd=log_and_cwd_dir, env=env, stdout=output_log, stderr=output_log, preexec_fn=os.setsid)
-    
+
     instance.pid = main_process.pid
+    # C2: persist the process-group id so a surviving group can still be
+    # cleaned up after AiKore itself restarts (running_instances is in-memory
+    # and lost on restart, and the bare PID may already be reaped). The child
+    # was started with os.setsid(), so it is its own group leader (pgid == pid);
+    # os.getpgid() confirms it and falls back to the pid on the (unlikely)
+    # race where the child already exited.
+    try:
+        instance.pgid = os.getpgid(main_process.pid)
+    except OSError:
+        instance.pgid = main_process.pid
     instance.status = "starting"
     db.commit()
+
+    # C7: surface the pre-spawn events (port reallocations) in the instance log.
+    for event in startup_events:
+        _append_instance_log(instance.name, event)
 
     monitor = threading.Thread(
         target=monitor_instance_thread,
@@ -794,71 +907,369 @@ def start_instance_process(db: Session, instance: models.Instance):
     print(f"[Manager] Started instance '{instance.name}' (PID: {instance.pid}) and its monitor thread.")
 
 
-def stop_instance_process(db: Session, instance: models.Instance):
-    """
-    Stops a running instance process and its monitor thread.
+# --- PROCESS-GROUP TERMINATION (C1/C2/C3) ---
 
-    LOT3 (M3): the entry removal from running_instances, the Firefox teardown
-    and the file cleanup now run in a `finally` block so they execute no matter
-    how the kill sequence fails (a ProcessLookupError on the SIGKILL escalation
-    used to raise out of this function, leaving the instance locked with a
-    stale entry and an HTTP 500).
+def _reap_head(process):
+    """Non-blocking reap of the group HEAD process, if we hold a Popen handle.
+
+    ``os.killpg(pgid, 0)`` reports a group as alive while its HEAD is still a
+    zombie (the entry lingers in the process table until reaped). Calling
+    ``poll()`` reaps our own child, so a dead head no longer keeps the group
+    "alive" from the escalation's point of view.
+    """
+    if process is None:
+        return
+    try:
+        process.poll()
+    except Exception:  # noqa: BLE001 - reaping is best-effort
+        pass
+
+
+def _process_group_exists(pgid: int) -> bool:
+    """True while at least one process still belongs to ``pgid``.
+
+    ``os.killpg(pgid, 0)``: no exception => the group exists; ProcessLookupError
+    (ESRCH) => empty/gone; PermissionError (EPERM) => a process exists but we
+    may not signal it, which we treat as alive.
+    """
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+
+
+def _terminate_process_group(
+    pgid: int,
+    label: str,
+    process=None,
+    term_grace: float | None = None,
+    kill_grace: float | None = None,
+    poll_interval: float | None = None,
+) -> bool:
+    """C1: SIGTERM the whole GROUP -> wait -> SIGKILL if members survive.
+
+    The escalation is driven by the SURVIVAL OF THE GROUP, not of the head
+    process. Returns True when the group is gone (or was already gone), False
+    when members are still alive after the SIGKILL window. Never raises for a
+    group that disappeared mid-sequence.
+    """
+    if term_grace is None:
+        term_grace = INSTANCE_SIGTERM_GRACE_SECONDS
+    if kill_grace is None:
+        kill_grace = INSTANCE_SIGKILL_GRACE_SECONDS
+    if poll_interval is None:
+        poll_interval = INSTANCE_GROUP_POLL_SECONDS
+
+    def _wait_group_dead(grace: float) -> bool:
+        deadline = time.time() + grace
+        while True:
+            _reap_head(process)
+            if not _process_group_exists(pgid):
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(poll_interval)
+
+    # 1. SIGTERM to the whole group.
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+        print(f"[Manager] Sent SIGTERM to the process group of {label} (pgid={pgid}).")
+    except ProcessLookupError:
+        print(f"[Manager] Process group of {label} (pgid={pgid}) already gone before SIGTERM.")
+        return True
+    except PermissionError as e:
+        print(f"[Manager-ERROR] Not permitted to SIGTERM process group {pgid} ({label}): {e}")
+        return False
+    except OSError as e:
+        print(f"[Manager-ERROR] Failed to SIGTERM process group {pgid} ({label}): {e}")
+        return False
+
+    # 2. Wait for the GROUP to die (the head dying instantly is NOT enough).
+    if _wait_group_dead(term_grace):
+        print(f"[Manager] Process group of {label} (pgid={pgid}) exited gracefully.")
+        return True
+
+    # 3. Escalate: SIGKILL the surviving members.
+    print(
+        f"[Manager] Process group of {label} (pgid={pgid}) survived {term_grace}s "
+        f"after SIGTERM; sending SIGKILL."
+    )
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        print(f"[Manager] Process group {pgid} ({label}) gone just before SIGKILL.")
+        return True
+    except PermissionError as e:
+        print(f"[Manager-ERROR] Not permitted to SIGKILL process group {pgid} ({label}): {e}")
+        return False
+    except OSError as e:
+        print(f"[Manager-ERROR] Failed to SIGKILL process group {pgid} ({label}): {e}")
+        return False
+
+    # 4. Wait again after the SIGKILL.
+    if _wait_group_dead(kill_grace):
+        print(f"[Manager] Process group of {label} (pgid={pgid}) terminated by SIGKILL.")
+        return True
+
+    print(
+        f"[Manager-ERROR] Process group of {label} (pgid={pgid}) is STILL alive "
+        f"after SIGKILL ({kill_grace}s). Memory may still be held."
+    )
+    return False
+
+
+def _read_proc_cmdline(pid: int) -> str:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().decode("utf-8", "replace").replace("\x00", " ")
+    except OSError:
+        return ""
+
+
+def _read_proc_cwd(pid: int) -> str:
+    try:
+        return os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        return ""
+
+
+def _read_proc_uid(pid: int) -> int | None:
+    try:
+        return os.stat(f"/proc/{pid}").st_uid
+    except OSError:
+        return None
+
+
+def _list_group_members(pgid: int) -> list:
+    """PIDs whose process-group id equals ``pgid`` (from /proc/<pid>/stat)."""
+    members = []
+    try:
+        entries = [n for n in os.listdir("/proc") if n.isdigit()]
+    except OSError:
+        return members
+    for n in entries:
+        try:
+            with open(f"/proc/{n}/stat", "rb") as f:
+                data = f.read().decode("utf-8", "replace")
+        except OSError:
+            continue
+        # /proc/<pid>/stat: "pid (comm) state ppid pgrp session ...". comm can
+        # contain spaces and parentheses, so parse after the LAST ')'.
+        try:
+            tail = data[data.rindex(")") + 2:].split()
+            pgrp = int(tail[2])
+        except (ValueError, IndexError):
+            continue
+        if pgrp == pgid:
+            members.append(int(n))
+    return members
+
+
+def _group_belongs_to_instance(pgid: int, instance: models.Instance) -> bool:
+    """C2 anti-PID-recycled guard: never kill a group blindly.
+
+    A persisted pgid may have been recycled by an unrelated process after
+    AiKore restarted. Only consider it ours when a member's cmdline or cwd
+    references the instance (name, output path or its instances directory).
+    Members belonging to another uid are ignored. Returns False when nothing
+    can be tied to the instance, in which case the caller must NOT kill.
+    """
+    if pgid == os.getpid():
+        return False
+    try:
+        my_uid = os.getuid()
+    except AttributeError:
+        my_uid = None
+
+    markers = [m for m in (
+        instance.name,
+        getattr(instance, "output_path", None),
+        _slugify(instance.name),
+        os.path.join(INSTANCES_DIR, instance.name),
+    ) if m]
+
+    members = _list_group_members(pgid)
+    if not members:
+        # The head may have been reaped already; fall back to the leader itself.
+        members = [pgid] if os.path.exists(f"/proc/{pgid}") else []
+    if not members:
+        return False
+
+    for pid in members:
+        uid = _read_proc_uid(pid)
+        if uid is None:
+            continue
+        if my_uid is not None and uid != my_uid:
+            continue
+        blob = f"{_read_proc_cmdline(pid)} {_read_proc_cwd(pid)}"
+        if any(marker in blob for marker in markers):
+            return True
+    return False
+
+
+def _safe_terminate_persisted_group(instance: models.Instance):
+    """C2/C3: kill a group recorded in the DB, guarded against PID reuse.
+
+    Returns ``(dead, pgid)`` where ``dead`` is True only when the group is
+    confirmed gone (or there was nothing to kill) and ``pgid`` is the group
+    that was targeted (or None when no candidate existed).
+    """
+    pgid = getattr(instance, "pgid", None) or getattr(instance, "pid", None)
+    if not pgid:
+        return True, None
+    if not _group_belongs_to_instance(pgid, instance):
+        print(
+            f"[Manager-WARNING] Refusing to kill process group {pgid} for instance "
+            f"'{instance.name}': it no longer looks like this instance's group "
+            f"(PID may have been recycled). Nothing killed."
+        )
+        return True, None
+    label = f"instance '{instance.name}' (persisted pgid)"
+    dead = _terminate_process_group(pgid, label)
+    return dead, pgid
+
+
+def cleanup_surviving_instance_groups(db: Session) -> int:
+    """C2: on AiKore startup, terminate instance groups left over from a
+    previous run (running_instances is in-memory and lost on restart).
+
+    Must be called BEFORE the status rows are reset to 'stopped'. Each group
+    is verified against the instance (anti-PID-recycled guard) and killed via
+    the group-wide escalation. Returns the number of instances for which a
+    surviving group was found. Never raises for a single bad row.
+    """
+    handled = 0
+    try:
+        instances = db.query(models.Instance).all()
+    except Exception as e:  # noqa: BLE001 - startup must not crash on this
+        print(f"[Manager-ERROR] Could not query instances for group cleanup: {e}")
+        return 0
+
+    for instance in instances:
+        if instance.id in running_instances:
+            continue
+        pgid = getattr(instance, "pgid", None)
+        pid = getattr(instance, "pid", None)
+        if not pgid and not pid:
+            continue
+        handled += 1
+        try:
+            dead, targeted = _safe_terminate_persisted_group(instance)
+            if targeted is not None:
+                message = (
+                    f"Startup cleanup: terminated surviving process group {targeted} "
+                    f"left by the previous AiKore run (group_dead={dead})."
+                )
+            else:
+                message = (
+                    f"Startup cleanup: no surviving, verifiable process group for "
+                    f"persisted pgid/pid {pgid or pid} (already gone or recycled)."
+                )
+            _append_instance_log(instance.name, message)
+        except Exception as e:  # noqa: BLE001
+            print(f"[Manager-ERROR] Startup cleanup failed for instance '{instance.name}': {e}")
+    return handled
+
+
+def stop_instance_process(db: Session, instance: models.Instance):
+    """Stops a running instance process and its monitor thread.
+
+    C1: the escalation (SIGTERM -> wait -> SIGKILL) is driven by the death of
+    the whole process GROUP, not of the head process — see
+    _terminate_process_group().
+    C3: when the instance is not tracked in memory, the persisted pgid/pid is
+    used (with an anti-PID-recycled guard) and a loud WARNING is emitted.
+    C4: status is flipped to 'stopped' and the NGINX conf removed ONLY once the
+    group is confirmed dead; otherwise the instance is left in a coherent
+    'error' state (never a fake 'stopped') so the RAM leak stays visible.
+
+    LOT3 (M3): the entry removal from running_instances and the Firefox
+    teardown run in a `finally` block so they execute no matter how the kill
+    sequence fails.
     """
     instance_id = instance.id
+    group_dead = True
+
     try:
         if instance_id not in running_instances:
-            print(f"[Manager] Stop requested, but instance {instance_id} not in running_instances dict. Cleaning up files.")
+            # C3: not tracked in memory (e.g. after an AiKore restart). Do not
+            # stay silent: attempt a persisted-state cleanup + WARNING.
+            print(
+                f"[Manager-WARNING] Stop requested but instance {instance_id} "
+                f"('{instance.name}') is not in running_instances. "
+                f"Attempting cleanup from persisted pgid/pid."
+            )
+            _append_instance_log(
+                instance.name,
+                "Stop requested while the instance was not tracked in memory "
+                "(AiKore may have restarted); attempting persisted-group cleanup.",
+            )
+            group_dead, _targeted = _safe_terminate_persisted_group(instance)
         else:
             process_info = running_instances[instance_id]
             process = process_info["process"]
-            print(f"[Manager] Stopping process group for PID {process.pid}...")
             try:
-                os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-                process.wait(timeout=10)
-            except ProcessLookupError:
-                print(f"[Manager] Process with PID {process.pid} not found. It may have already terminated.")
-            except subprocess.TimeoutExpired:
-                print(f"[Manager] Process did not terminate gracefully. Sending SIGKILL.")
-                # LOT3 (M3): the process may have died between the SIGTERM and
-                # this escalation; ProcessLookupError must not escape.
-                try:
-                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                except ProcessLookupError:
-                    print(f"[Manager] Process group {process.pid} already gone before SIGKILL.")
-                try:
-                    process.wait(timeout=5)
-                except Exception:
-                    pass
-            except Exception as e:
-                print(f"[Manager] Error stopping process: {e}")
+                pgid = process_info.get("pgid") or os.getpgid(process.pid)
+            except OSError:
+                pgid = process_info.get("pgid") or getattr(instance, "pgid", None) or process.pid
+            process_info["pgid"] = pgid
+            print(f"[Manager] Stopping process group for PID {process.pid} (pgid={pgid})...")
+            group_dead = _terminate_process_group(
+                pgid, f"instance '{instance.name}'", process=process
+            )
     finally:
-        # LOT3 (M3): unconditional teardown — previously `del
-        # running_instances[instance_id]` and _cleanup_instance_files were
-        # skipped entirely when the kill sequence raised.
+        # LOT3 (M3): unconditional teardown of the in-memory state.
         running_instances.pop(instance_id, None)
         # LOT3 (M4): kill the tracked kiosk Firefox, if any.
         terminate_firefox_for_instance(instance_id)
-        try:
-            _cleanup_instance_files(_slugify(instance.name))
-        except Exception as e:
-            print(f"[Manager-Error] File cleanup failed for '{instance.name}': {e}")
-    
-    # LOT3 (B1): this commit used to sit OUTSIDE the try/finally — a DB error
-    # here (locked file, full volume) meant the process was killed but the
-    # instance stayed 'started' forever, with no trace. Best-effort persist,
-    # loud ERROR on failure.
+        # C4: the NGINX conf / Firefox profile are removed ONLY once the group
+        # is really dead — otherwise the proxy would dangle on a live process.
+        if group_dead:
+            try:
+                _cleanup_instance_files(_slugify(instance.name))
+            except Exception as e:
+                print(f"[Manager-Error] File cleanup failed for '{instance.name}': {e}")
+        else:
+            print(
+                f"[Manager-ERROR] Keeping NGINX config / files for '{instance.name}': "
+                f"its process group is still alive after SIGKILL."
+            )
+            _append_instance_log(
+                instance.name,
+                "Stop incomplete: the process group is still alive after SIGTERM+SIGKILL. "
+                "NGINX config kept and status set to 'error' (memory may still be held).",
+            )
+
+    # LOT3 (B1): best-effort persist, loud ERROR on failure.
     try:
-        instance.status = "stopped"
-        instance.pid = None
+        if group_dead:
+            instance.status = "stopped"
+            instance.pid = None
+            instance.pgid = None
+        else:
+            # C4: do NOT lie with a fake 'stopped'. 'error' is an existing
+            # frontend status (CSS class status-error) and lets a later Stop
+            # be retried (the stop endpoint only refuses when already
+            # 'stopped'). Keep pid/pgid so the group can be retried or cleaned
+            # up on the next AiKore startup.
+            instance.status = "error"
         db.commit()
     except Exception as commit_err:
         print(
-            f"[Manager-ERROR] Failed to persist 'stopped' status for instance "
+            f"[Manager-ERROR] Failed to persist stop status for instance "
             f"'{instance.name}' (id={instance_id}) after teardown: "
             f"{type(commit_err).__name__}: {commit_err}",
             file=sys.stderr,
         )
-    print(f"[Manager] Instance {instance.name} stopped and cleaned up.")
+    if group_dead:
+        print(f"[Manager] Instance {instance.name} stopped and cleaned up.")
+    else:
+        print(f"[Manager] Instance {instance.name} stop INCOMPLETE (process group still alive).")
 
 
 def _get_instance_venv_metadata(instance: models.Instance, instance_conf_dir: str) -> dict:

@@ -154,7 +154,17 @@ async def lifespan(app: FastAPI):
     try:
         # 2. Reset instance statuses
         print("[Startup] Step 2: Resetting instance statuses...")
-        num_rows_updated = db.query(models.Instance).update({"status": "stopped", "pid": None})
+        # C2: BEFORE resetting, terminate any process group left over from a
+        # previous AiKore run (running_instances is in-memory and lost on
+        # restart). Each group is verified against its instance (anti-PID-
+        # recycled guard) before any kill.
+        try:
+            swept = process_manager.cleanup_surviving_instance_groups(db)
+            if swept:
+                print(f"[Startup] Swept {swept} instance(s) with a persisted process group.")
+        except Exception as e:  # noqa: BLE001 - startup must not crash on this
+            print(f"[Startup] [Warning] Surviving process-group cleanup failed: {e}")
+        num_rows_updated = db.query(models.Instance).update({"status": "stopped", "pid": None, "pgid": None})
         db.commit()
         print(f"[Startup] Reset status for {num_rows_updated} instances. ({__import__('time').time() - _t1:.2f}s)")
 

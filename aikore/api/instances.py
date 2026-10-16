@@ -611,17 +611,34 @@ def start_instance(instance_id: int, db: Session = Depends(get_db)):
         _ensure_legacy_runtime_values_safe(db_instance)
 
         # --- SELF-HEALING (CORRECTION AUTO) ---
-        # Si une instance est en mode persistant mais n'a pas de ports définis, on les alloue maintenant.
+        # Si une instance est en mode persistant mais n'a pas de ports définis,
+        # ou si un port a dérivé HORS de AIKORE_INSTANCE_PORT_RANGE (un ancien
+        # repli éphémère a pu persister ex. 32581 au lieu du port publié 9003),
+        # on les réalloue maintenant DANS la plage (C6).
+        range_bounds = None
+        try:
+            _rs, _re, _ = _parse_instance_port_range(status_code=500)
+            range_bounds = (_rs, _re)
+        except HTTPException:
+            range_bounds = None
+
+        def _port_out_of_range(value):
+            if value is None or range_bounds is None:
+                return False
+            return not (range_bounds[0] <= value <= range_bounds[1])
+
         needs_repair = False
         if db_instance.persistent_mode:
-            if db_instance.persistent_port is None or db_instance.persistent_display is None:
+            if (db_instance.persistent_port is None
+                    or db_instance.persistent_display is None
+                    or _port_out_of_range(db_instance.persistent_port)):
                 needs_repair = True
         else:
-            if db_instance.port is None:
+            if db_instance.port is None or _port_out_of_range(db_instance.port):
                 needs_repair = True
             
         if needs_repair:
-            print(f"[API] Auto-healing instance '{db_instance.name}' configuration before start.")
+            print(f"[API] Auto-healing instance '{db_instance.name}' configuration before start (port={db_instance.port}, persistent_port={db_instance.persistent_port}).")
             # Force reallocation
             alloc = _allocate_ports(db, db_instance.persistent_mode, None, instance_to_exclude_id=db_instance.id)
             
